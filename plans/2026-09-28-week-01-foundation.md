@@ -74,10 +74,10 @@ The repo today is a clean scaffold:
   - Future weeks' plans go in the same folder, e.g. `2026-10-05-week-02-models-and-polish.md`.
 - [x] Add `Product_Spec.md` to `.gitignore`, then commit `chore: keep product spec local until launch` together with the `plans/` folder.
 - [x] Add `package.json` scripts: `typecheck: "next typegen && tsc --noEmit && tsc --noEmit -p convex"` and `dev:convex: "convex dev"`. `next typegen` is needed because `layout.tsx` uses the generated `LayoutProps` type.
-- [ ] Create the repo **without pushing**:
+- [x] Create the repo **without pushing**:
 
   `gh repo create abdtriedcoding/a8-chat --public --source=. --remote=origin --description "Open-source AI workspace that gets work done across your apps"`
-- [ ] Turn on secret scanning and push protection **before the first push**:
+- [x] Turn on secret scanning and push protection **before the first push**:
   - `gh api -X PATCH repos/abdtriedcoding/a8-chat -f "security_and_analysis[secret_scanning][status]=enabled" -f "security_and_analysis[secret_scanning_push_protection][status]=enabled"`
   - Confirm both with `gh api repos/abdtriedcoding/a8-chat --jq .security_and_analysis`.
 - [ ] Run `git push -u origin main`.
