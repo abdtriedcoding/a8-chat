@@ -80,8 +80,8 @@ The repo today is a clean scaffold:
 - [x] Turn on secret scanning and push protection **before the first push**:
   - `gh api -X PATCH repos/abdtriedcoding/a8-chat -f "security_and_analysis[secret_scanning][status]=enabled" -f "security_and_analysis[secret_scanning_push_protection][status]=enabled"`
   - Confirm both with `gh api repos/abdtriedcoding/a8-chat --jq .security_and_analysis`.
-- [ ] Run `git push -u origin main`.
-- [ ] **Check:**
+- [x] Run `git push -u origin main`.
+- [x] **Check:**
   - The repo is public at github.com/abdtriedcoding/a8-chat.
   - `Product_Spec.md` is not on GitHub.
   - `bun run typecheck` and `bun run lint` pass.
