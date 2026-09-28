@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:convex": "convex dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p convex"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

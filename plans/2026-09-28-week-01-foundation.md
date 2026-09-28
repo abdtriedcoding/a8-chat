@@ -73,7 +73,7 @@ The repo today is a clean scaffold:
   - `plans/2026-09-28-week-01-foundation.md`: this plan, from here on the tracked copy.
   - Future weeks' plans go in the same folder, e.g. `2026-10-05-week-02-models-and-polish.md`.
 - [x] Add `Product_Spec.md` to `.gitignore`, then commit `chore: keep product spec local until launch` together with the `plans/` folder.
-- [ ] Add `package.json` scripts: `typecheck: "next typegen && tsc --noEmit && tsc --noEmit -p convex"` and `dev:convex: "convex dev"`. `next typegen` is needed because `layout.tsx` uses the generated `LayoutProps` type.
+- [x] Add `package.json` scripts: `typecheck: "next typegen && tsc --noEmit && tsc --noEmit -p convex"` and `dev:convex: "convex dev"`. `next typegen` is needed because `layout.tsx` uses the generated `LayoutProps` type.
 - [ ] Create the repo **without pushing**:
 
   `gh repo create abdtriedcoding/a8-chat --public --source=. --remote=origin --description "Open-source AI workspace that gets work done across your apps"`
