@@ -9,8 +9,13 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as chat from "../chat.js";
 import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
+import type * as lib_agent from "../lib/agent.js";
+import type * as lib_models from "../lib/models.js";
+import type * as lib_text from "../lib/text.js";
+import type * as threads from "../threads.js";
 import type * as users from "../users.js";
 
 import type {
@@ -21,8 +26,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  chat: typeof chat;
   http: typeof http;
   "lib/access": typeof lib_access;
+  "lib/agent": typeof lib_agent;
+  "lib/models": typeof lib_models;
+  "lib/text": typeof lib_text;
+  threads: typeof threads;
   users: typeof users;
 }>;
 
@@ -54,4 +64,5 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
 };

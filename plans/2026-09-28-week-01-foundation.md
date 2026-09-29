@@ -173,23 +173,36 @@ The repo today is a clean scaffold:
 
 ## M3: Agent backend
 
-- [ ] Run `bun add @convex-dev/agent@~0.7.3 ai@^7 @ai-sdk/provider@^4 @ai-sdk/provider-utils@^5 @openrouter/ai-sdk-provider@^3.1.0 convex-helpers@^0.1.103 zod@^4`.
-- [ ] Set `OPENROUTER_API_KEY` and `DEFAULT_MODEL` in the Convex env. Add both as optional keys in `convex.config.ts`, along with `app.use(agent)`.
-- [ ] `convex/lib/models.ts`:
-  - `FALLBACK_MODEL_ID`
+- [x] Run `bun add @convex-dev/agent@~0.7.3 ai@^7 @ai-sdk/provider@^4 @ai-sdk/provider-utils@^5 @openrouter/ai-sdk-provider@^3.1.0 convex-helpers@^0.1.103 zod@^4`. (Resolved to agent 0.7.3, ai 7.0.122, provider 4.0.19, provider-utils 5.0.51, OpenRouter provider 3.1.0 and convex-helpers 0.1.124. `bun add` loosened the existing `zod` range to `^4`, so it was put back to `^4.6.5`.)
+- [x] Add `OPENROUTER_API_KEY` and `DEFAULT_MODEL` as optional keys in `convex.config.ts`, along with `app.use(agent)`.
+  - [ ] 👤 Set `OPENROUTER_API_KEY` in the Convex env (`bunx convex env set OPENROUTER_API_KEY=sk-or-…`). `DEFAULT_MODEL` is optional; without it, replies use the fallback below. Until the key is set, `startThread` and `sendMessage` fail with `MODEL_NOT_CONFIGURED` and save nothing.
+- [x] `convex/lib/models.ts`:
+  - `FALLBACK_MODEL_ID = "google/gemini-3.1-flash-lite"`: checked against the live OpenRouter model list on 2026-09-29. It costs $0.25 in and $1.50 out per million tokens, supports tools, and has no expiry date. `gemini-2.5-flash-lite` is cheaper, but OpenRouter retires it on 2026-10-20.
   - `resolveModelId()`, which returns `env.DEFAULT_MODEL ?? FALLBACK`
-  - `chatModel(id)`, which returns `createOpenRouter({ apiKey, headers: { "HTTP-Referer": SITE_URL, "X-Title": "a8" } }).chat(id, { usage: { include: true } })`
+  - `chatModel(id)`, which returns `createOpenRouter({ apiKey, compatibility: "strict", appUrl: SITE_URL, appName: "a8" }).chat(id, { usage: { include: true } })`.
+    - Changed from the raw `headers` in the first draft: provider 3.1's `appUrl` and `appName` options set `HTTP-Referer` and `X-OpenRouter-Title`, the current name for `X-Title`.
+    - `compatibility: "strict"` is new; see Gotchas.
   - `assertModelConfigured()`
-- [ ] `convex/lib/agent.ts`: `chatAgent = new Agent(components.agent, { name: "a8", languageModel, instructions, usageHandler })`.
+- [x] `convex/lib/agent.ts`: `chatAgent = new Agent(components.agent, { name: "a8", languageModel, instructions, usageHandler })`.
   - For now, `usageHandler` only logs usage and `providerMetadata.openrouter.usage.cost`.
-  - Don't add `"use node"`.
-- [ ] `convex/lib/text.ts`:
+  - No `"use node"`.
+- [x] `convex/lib/text.ts`:
   - `normalizePrompt`: trim, and reject empty prompts or prompts over 16k characters.
-  - `titleFromPrompt`: cut to about 60 characters at a word boundary.
-- [ ] `convex/lib/access.ts`: add `getOwnedThread` and `requireOwnedThread`.
-- [ ] `convex/chat.ts`: `startThread`, `sendMessage`, `listThreadMessages`, `streamReply` and `enqueueReply` (see Key designs).
-- [ ] `convex/threads.ts`: `list`, `get` and `remove`.
-- [ ] Run `bunx convex dev --once`, then commit `_generated`.
+  - `titleFromPrompt`: collapse whitespace, then cut to about 60 characters at a word boundary. It counts code points, so the cut never splits an emoji.
+- [x] `convex/lib/access.ts`: add `getOwnedThread` and `requireOwnedThread`.
+- [x] `convex/chat.ts`: `startThread`, `sendMessage`, `listThreadMessages`, `streamReply` and `enqueueReply` (see Key designs).
+- [x] `convex/threads.ts`: `list`, `get` and `remove`.
+- [x] Run `bunx convex dev --once`, then commit `_generated`.
+- [ ] **Check:** everything except a successful reply passed on 2026-09-29. The checks ran over HTTP against the dev deployment, with two test accounts, `m3-check-a-…` and `m3-check-b-…@example.com`.
+  - [x] `bun run typecheck` and `bun run lint` pass, and the push succeeds.
+  - [x] When signed out, `threads.list` returns an empty page and `threads.get` returns null. `startThread`, `sendMessage`, `listThreadMessages` and `remove` throw `UNAUTHENTICATED`.
+  - [x] With no key set, `startThread` throws `MODEL_NOT_CONFIGURED`, and no thread is created.
+  - [x] Blank and over-16k prompts throw `INVALID_PROMPT`. A string that isn't a thread ID gives `null` from `threads.get` and `NOT_FOUND` from `sendMessage`.
+  - [x] `startThread` creates the thread with a shortened title (`"Can you explain how Convex scheduled functions work, and…"`), and it's listed first for its owner.
+  - [x] With an invalid key (a placeholder, set for the run and then removed), OpenRouter returns 401 and the Agent marks the reply `failed`. Nothing is left pending.
+  - [x] Account B can't see account A's thread: its `threads.list` is empty, `threads.get` returns null, and `listThreadMessages`, `sendMessage` and `remove` throw `NOT_FOUND`.
+  - [x] `remove` deletes the thread for its owner, and it disappears from `threads.list`.
+  - [ ] With a real key, a reply streams in, and the Convex logs show a `usage` line with a cost. This waits for the 👤 key step above.
 
 ## M4: Chat UI
 
@@ -305,6 +318,8 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - **React Compiler lint rules reject `setState` in an effect body.** Do the 60-second guard's state update inside an interval callback instead.
 - **Turbopack dev can serve stale Tailwind CSS.** On 2026-09-29 the running `next dev` only rebuilt Tailwind when `globals.css` itself changed: classes in new or edited `.tsx` files never reached the CSS, so pages rendered without padding, gaps or widths. If a class seems to do nothing, restart `bun dev`. If it keeps happening, try `next dev --webpack`.
 - **`getToken()` in the root layout makes every route dynamic.** That's fine: the app has no static pages.
+- **The OpenRouter provider needs `compatibility: "strict"`.** `createOpenRouter` defaults to `"compatible"`, which leaves out `stream_options.include_usage`, so streamed replies can come back without usage or cost. (The default `openrouter` instance already uses strict.)
+- **OpenRouter's 401 messages are misleading.** A malformed key gets "Missing Authentication header", even though the header was sent. A well-formed but unknown key gets "User not found", and a request with no key at all gets "No cookie auth credentials found".
 - **Better Auth's built-in rate limiter is memory-only**, so it does nothing across Convex isolates. The Rate Limiter component arrives in Week 2.
 - **The repo is public but has no LICENSE yet**, so by default the code is "all rights reserved" until the final setup pass adds AGPL-3.0.
 

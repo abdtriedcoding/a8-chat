@@ -1,0 +1,41 @@
+import { Agent, type ProviderMetadata } from "@convex-dev/agent";
+import { components } from "../_generated/api";
+import { chatModel, resolveModelId } from "./models";
+
+// No "use node": the Agent and the OpenRouter provider only need fetch,
+// which the default Convex runtime has.
+export const chatAgent = new Agent(components.agent, {
+  name: "a8",
+  // The default only. streamReply passes the model on every call, so a
+  // changed DEFAULT_MODEL applies to the next reply.
+  languageModel: chatModel(resolveModelId()),
+  instructions:
+    "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
+    "If you don't know something, say so instead of guessing.",
+  usageHandler: async (
+    _ctx,
+    { userId, threadId, model, usage, providerMetadata },
+  ) => {
+    // Week 1 only logs usage. Billing and limits build on this later.
+    console.log("usage", {
+      userId,
+      threadId,
+      model,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      costUsd: openRouterCost(providerMetadata),
+    });
+  },
+});
+
+/** The request's cost in USD, as reported by OpenRouter's usage accounting. */
+function openRouterCost(
+  providerMetadata: ProviderMetadata | undefined,
+): number | undefined {
+  const usage = providerMetadata?.openrouter?.usage;
+  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
+    const cost = usage.cost;
+    if (typeof cost === "number") return cost;
+  }
+  return undefined;
+}
