@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { APP_HOME } from "@/lib/safe-redirect";
 import { GITHUB_URL } from "@/lib/site";
 import { GitHubIcon } from "./github-icon";
 
-export function SiteHeader() {
+export function SiteHeader({ signedIn }: { signedIn: boolean }) {
   return (
     <header className="sticky top-0 z-40 border-b bg-card/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -25,12 +26,20 @@ export function SiteHeader() {
               GitHub
             </a>
           </Button>
-          <Button asChild variant="ghost" size="lg">
-            <Link href="/sign-in">Sign in</Link>
-          </Button>
-          <Button asChild size="lg">
-            <Link href="/sign-up">Get started</Link>
-          </Button>
+          {signedIn ? (
+            <Button asChild size="lg">
+              <Link href={APP_HOME}>Open a8</Link>
+            </Button>
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="lg">
+                <Link href="/sign-in">Sign in</Link>
+              </Button>
+              <Button asChild size="lg">
+                <Link href="/sign-up">Get started</Link>
+              </Button>
+            </>
+          )}
         </nav>
       </div>
     </header>

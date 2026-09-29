@@ -13,7 +13,7 @@ Copy rules for the page:
 - No invented numbers: no user counts, ratings or testimonials.
 - No em dashes, and none of the usual filler ("seamless", "unlock", "supercharge").
 
-**Committed in two parts.** The design system and landing page went in first, on their own. Steps marked *(in review)* depend on the Week 1 auth work (M1 and M2), which is still uncommitted while it's reviewed. Those steps are done in the working tree, and their ticks go in with the auth commit.
+**Committed in two parts.** The design system and landing page went in first, on their own (`105123d`). The steps that depend on the Week 1 auth work (M1 and M2) went in with the auth commit after review.
 
 ## Design system
 
@@ -35,15 +35,14 @@ Copy rules for the page:
   - New `xl` size for calls to action.
 - [x] `InputGroupButton` sets `--edge:0px`, so buttons inside fields stay flat. (`cn` doesn't merge an arbitrary `shadow-[…]` with `shadow-none`, so the edge is switched off through the variable instead.)
 - [x] `Input`, `Textarea` and `InputGroup` use `bg-card`, so fields stay white on gray pages.
-- [x] Added `src/components/logo.tsx`: a two-ring "8" mark plus the wordmark.
-- [ ] *(in review)* The auth pages use the logo in place of the sparkles placeholder.
+- [x] Added `src/components/logo.tsx`: a two-ring "8" mark plus the wordmark. The auth pages use it in place of the sparkles placeholder, and their background is now the dot grid.
 
 ## Routing
 
-- [x] The landing page owns `/`, in a `(marketing)` route group whose layout holds the header and footer. It replaces the scaffold's `src/app/page.tsx`.
-- [ ] *(in review)* The app moves to `/chat`, with `APP_HOME` in `src/lib/safe-redirect.ts`. It's the default after sign-in, and `withNext` leaves `?next=` off for it. The Week 1 plan's M4 is updated to match.
-- [ ] *(in review)* `proxy.ts`: the matcher ends in `.+`, so `/` stays public while everything else is still protected by default.
-- [ ] *(in review)* The header shows "Open a8" to signed-in visitors. `isAuthenticated()` reuses the token the root layout already fetched, because it's `React.cache`d.
+- [x] The landing page owns `/`, in a `(marketing)` route group whose layout holds the header and footer.
+- [x] The app moved to `/chat`, with `APP_HOME` in `src/lib/safe-redirect.ts`. It's the default after sign-in, and `withNext` leaves `?next=` off for it. The Week 1 plan's M4 is updated to match.
+- [x] `proxy.ts`: the matcher ends in `.+`, so `/` stays public while everything else is still protected by default.
+- [x] The header shows "Open a8" to signed-in visitors. `isAuthenticated()` reuses the token the root layout already fetched, because it's `React.cache`d.
 
 ## Landing page (`src/app/(marketing)/page.tsx`, parts in `src/components/landing/`)
 
@@ -68,9 +67,9 @@ Copy rules for the page:
 
 - [x] `bun run typecheck` and `bun run lint` pass.
 - [x] The design-system commit passes typecheck and lint on its own, checked out in a separate worktree without the auth work.
-- [ ] *(in review)* Signed out: `/` returns 200. `/chat` redirects to `/sign-in`, and `/chat?x=1` and `/c/abc` redirect with `next` set.
+- [x] Signed out: `/` returns 200. `/chat` redirects to `/sign-in`, and `/chat?x=1` and `/c/abc` redirect with `next` set.
 - [x] Screenshots checked at 1440px and at 390px (in a 390px iframe, since headless Chrome won't go below about 500px wide): no sideways scroll, the pricing lists line up, and the approval card header wraps cleanly.
-- [ ] *(in review)* The sign-in and sign-up pages pick up the new look.
+- [x] The sign-in and sign-up pages pick up the new look without layout changes.
 - [ ] 👤 Check the copy reads right to you, especially anything describing v0.1 before it ships:
   - pricing and the credit limits
   - self-hosting with Docker Compose
@@ -79,16 +78,16 @@ Copy rules for the page:
 
 ## Split sign-in and sign-up pages (added 2026-09-29, on request)
 
-- [ ] *(in review)* `(auth)/layout.tsx`: two columns on large screens.
+- [x] `(auth)/layout.tsx`: two columns on large screens.
   - Left: the logo and the form, on the page background.
   - Right: `auth-showcase.tsx` on the dot grid, with "Nothing gets sent until *you say so.*", one line of copy and the landing page's approval card, static and `inert`.
   - Below `lg`, only the form shows.
-- [ ] *(in review)* The reference's testimonial is replaced by the product panel, since there are no real quotes yet.
-- [ ] *(in review)* The forms lose their `Card` wrapper for a large left-aligned `h1` and description. Submit and Google buttons are `lg`. The separator no longer needs a background override.
+- [x] The reference's testimonial is replaced by the product panel, since there are no real quotes yet.
+- [x] The forms lose their `Card` wrapper for a large left-aligned `h1` and description. Submit and Google buttons are `lg`. The separator no longer needs a background override.
   - Form logic is untouched.
   - The sign-in subtitle is now "Sign in to pick up where you left off."
 - [x] `ApprovalCard` and `UserMessage` are exported from `chat-demo.tsx` for reuse.
-- [ ] *(in review)* Checked in screenshots at 1440px (both pages) and 390px (sign-in). Typecheck and lint pass.
+- [x] Checked in screenshots at 1440px (both pages) and 390px (sign-in). Typecheck and lint pass.
 
 ## Follow-ups (not done)
 

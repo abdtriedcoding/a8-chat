@@ -46,8 +46,8 @@ The repo today is a clean scaffold:
   - Turn both on when Resend lands.
 - **Model:** one server-side `DEFAULT_MODEL` env var, with a verified cheap fallback slug in code. `resolveModelId()` is where the Week 2 per-thread model choice plugs in.
 - **Identity:**
-  - The Agent thread's `userId` is the app's `users._id` (a string). The server always sets it and never takes it from client arguments.
-  - The Better Auth user `_id` (the JWT subject) is stored as `users.authUserId`.
+  - Users live only in the Better Auth component's `user` table. The app keeps no copy (changed 2026-09-29; see M1).
+  - The Agent thread's `userId` is the Better Auth user `_id` (the JWT subject), taken from `getViewer`. The server always sets it and never takes it from client arguments.
 - **Commands:** bun throughout (`bun add`, `bunx convex …`, `bunx --bun shadcn@latest …`).
 
 ## Already done
@@ -59,7 +59,7 @@ The repo today is a clean scaffold:
 ## Steps you do yourself
 
 - [ ] 👤 Claim the a8 handles on X (and a GitHub org later, if you want one)
-- [ ] 👤 Google Cloud: create a Web OAuth client
+- [x] 👤 Google Cloud: create a Web OAuth client
   - origin `http://localhost:3000`
   - redirect URI `http://localhost:3000/api/auth/callback/google`
   - add yourself as a test user
@@ -88,20 +88,20 @@ The repo today is a clean scaffold:
 
 ## M1: Auth backend (Convex)
 
-- [ ] Run `bun add @convex-dev/better-auth@~0.12.5 better-auth@~1.6.15`.
-- [ ] **Set the env vars first.** Convex won't push a config whose required env keys are missing.
+- [x] Run `bun add @convex-dev/better-auth@~0.12.5 better-auth@~1.6.15`. (Resolved to `better-auth@1.6.33`.)
+- [x] **Set the env vars first.** Convex won't push a config whose required env keys are missing.
   - `bunx convex env set BETTER_AUTH_SECRET=<random 32 bytes, base64>`
   - `bunx convex env set SITE_URL=http://localhost:3000`
   - Always use the `NAME=VALUE` form.
-- [ ] `convex/convex.config.ts`:
+- [x] `convex/convex.config.ts`:
   - `defineApp({ env: {...} })`: `SITE_URL` and `BETTER_AUTH_SECRET` as `v.string()`, the rest as `v.optional(v.string())`.
   - Never declare `CONVEX_SITE_URL`.
   - `app.use(betterAuth)`.
-- [ ] `convex/auth.config.ts`: `{ providers: [getAuthConfigProvider()] } satisfies AuthConfig`. This file is mandatory; without it everyone is silently signed out.
-- [ ] `convex/schema.ts`: the `users` table (see Key designs).
-- [ ] `convex/auth.ts`:
+- [x] `convex/auth.config.ts`: `{ providers: [getAuthConfigProvider()] } satisfies AuthConfig`. This file is mandatory; without it everyone is silently signed out.
+- [x] `convex/schema.ts`: the `users` table (see Key designs).
+- [x] `convex/auth.ts`:
   - `createClient<DataModel>(components.betterAuth, { authFunctions, triggers })`, typing `authFunctions: AuthFunctions = internal.auth` explicitly to break the type cycle.
-  - User triggers: `onCreate` inserts a `users` row (with `image ?? undefined`), `onUpdate` patches it, and `onDelete` deletes it. Export all three from `triggersApi()`.
+  - User triggers: `onCreate` inserts a `users` row (with `image ?? undefined`), `onUpdate` patches it, and `onDelete` deletes it. Export all three from `triggersApi()`. (Removed 2026-09-29; see the scope change below.)
   - `createAuthOptions(ctx)`:
     - explicit `baseURL: env.SITE_URL` and `secret: env.BETTER_AUTH_SECRET`
     - `database: authComponent.adapter(ctx)`
@@ -112,44 +112,64 @@ The repo today is a clean scaffold:
     - `betterAuth` imported from `better-auth/minimal`
   - `createAuth`.
   - An `enabledProviders` query that returns `{ google: boolean }`.
-- [ ] `convex/http.ts`: `authComponent.registerRoutes(http, createAuth)`.
-- [ ] `convex/lib/access.ts`: `getViewer` and `requireViewer`.
-- [ ] `convex/users.ts`: a `viewer` query returning `{ _id, name, email, image } | null`. It never throws.
-- [ ] Run `bunx convex dev --once`, then **commit `convex/_generated`**.
-- [ ] **Check:**
+- [x] `convex/http.ts`: `authComponent.registerRoutes(http, createAuth)`.
+- [x] `convex/lib/access.ts`: `getViewer` and `requireViewer`.
+- [x] `convex/users.ts`: a `viewer` query returning `{ _id, name, email, image } | null`. It never throws.
+- [x] **Scope change (2026-09-29): dropped the app `users` table.** It mirrored name, email and image from the component's `user` table through triggers, so every user showed up twice in the dashboard and the two copies could drift. Its only app field, `plan`, wasn't read anywhere yet.
+  - `convex/schema.ts` is empty again. `convex/auth.ts` is `createClient<DataModel>(components.betterAuth)`, with no triggers or `authFunctions`.
+  - `getViewer` returns `authComponent.safeGetAuthUser(ctx)`, the component's user doc. `users.viewer` returns its `_id` as a string, with `image ?? undefined`.
+  - [ ] 👤 In the dashboard (dev deployment), delete the leftover `users` table: Data → `users` → ⋮ → Delete table. The schema no longer defines it, but Convex keeps its 3 old rows until it's deleted.
+- [x] Run `bunx convex dev --once`, then **commit `convex/_generated`**. (Committed on 2026-09-29 with the reviewed auth work.)
+- [x] **Check:**
   - The push succeeds.
   - `<CONVEX_SITE_URL>/api/auth/ok` returns `{"ok":true}`.
   - The `betterAuth` component shows in the dashboard.
 
 ## M2: Auth UI (Next.js)
 
-- [ ] Run `bunx --bun shadcn@latest add card field input label alert sonner separator spinner`.
-- [ ] Add `NEXT_PUBLIC_SITE_URL=http://localhost:3000` to `.env.local`.
-- [ ] `src/lib/auth-client.ts`: `createAuthClient({ plugins: [convexClient()] })`.
-- [ ] `src/lib/auth-server.ts`: `convexBetterAuthNextJs({ convexUrl, convexSiteUrl })`, exporting `handler`, `isAuthenticated`, `getToken` and `fetchAuth*`.
-- [ ] `src/app/api/auth/[...all]/route.ts`: `export const { GET, POST } = handler`.
-- [ ] `src/app/ConvexClientProvider.tsx`: swap `ConvexProvider` for `ConvexBetterAuthProvider` (`client`, `authClient`, `initialToken`).
-- [ ] `src/app/layout.tsx`:
+- [x] Run `bunx --bun shadcn@latest add card field input label alert sonner separator spinner`. (Also pulled in `sonner` and `next-themes`.)
+- [x] Add `NEXT_PUBLIC_SITE_URL=http://localhost:3000` to `.env.local`.
+- [x] `src/lib/auth-client.ts`: `createAuthClient({ plugins: [convexClient()] })`. It also passes `baseURL: NEXT_PUBLIC_SITE_URL`, because SSR has no `window.location` to fall back on.
+- [x] `src/lib/auth-server.ts`: `convexBetterAuthNextJs({ convexUrl, convexSiteUrl })`, exporting `handler`, `isAuthenticated`, `getToken` and `fetchAuth*`.
+- [x] `src/app/api/auth/[...all]/route.ts`: `export const { GET, POST } = handler`.
+- [x] `src/app/ConvexClientProvider.tsx`: swap `ConvexProvider` for `ConvexBetterAuthProvider` (`client`, `authClient`, `initialToken`). Needs a type-only cast; see Gotchas.
+- [x] `src/app/layout.tsx`:
   - `const token = await getToken()`, passed to the provider
   - add `<Toaster />`
   - replace the "Create Next App" metadata
-- [ ] `src/proxy.ts` (Next 16 renamed middleware to proxy):
+- [x] `src/proxy.ts` (Next 16 renamed middleware to proxy):
   - Only a quick cookie check: if `getSessionCookie(req)` is missing, redirect to `/sign-in?next=…`.
   - The matcher excludes `api`, `_next`, static files and the sign-in and sign-up pages.
   - Never redirect a signed-in user away from sign-in. A stale cookie would cause a redirect loop.
-- [ ] `src/lib/safe-redirect.ts`: only allow paths that start with `/` and not `//`.
-- [ ] `src/app/(auth)/layout.tsx`, `sign-in/page.tsx` and `sign-up/page.tsx`: server pages that run `if (await isAuthenticated()) redirect(safeNext)`.
-- [ ] `src/components/auth/sign-in-form.tsx`, `sign-up-form.tsx` and `google-button.tsx`:
+- [x] `src/lib/safe-redirect.ts`: only allow paths that start with `/` and not `//`. It also runs a URL-parser origin check, which catches `/\evil.com` and tab tricks, and exports `withNext()` for carrying `?next=` between pages.
+- [x] `src/app/(auth)/layout.tsx`, `sign-in/page.tsx` and `sign-up/page.tsx`: server pages that run `if (await isAuthenticated()) redirect(safeNext)`.
+- [x] `src/components/auth/sign-in-form.tsx`, `sign-up-form.tsx` and `google-button.tsx`:
   - Card and Field layout, with errors shown inline.
-  - The Google button shows only when `enabledProviders.google` is true.
+  - The Google button shows only when `enabledProviders.google` is true. The pages fetch this on the server, so the button doesn't pop in after load.
   - On success, call `router.replace(next)` and then `router.refresh()`.
-- [ ] 👤 Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the Convex env.
-- [ ] **Check:**
-  - Email sign-up creates rows in both `users` and the component's user table.
-  - `users.viewer` is not null when signed in. If it is null, `auth.config` or `SITE_URL` is wrong.
-  - A reload keeps the session.
-  - When signed out, `/` redirects to sign-in.
-  - Google sign-in completes the full round trip.
+  - OAuth failures come back as `/sign-in?error=…` and show inline; `account_not_linked` gets its own message.
+- [x] Auth UI rework (added 2026-09-29: the first pass rendered with stale CSS and looked broken; see Gotchas).
+  - Run `bun add react-hook-form zod @hookform/resolvers` and `bunx --bun shadcn@latest add input-group`.
+  - Forms follow shadcn's react-hook-form pattern: a zod schema, `zodResolver`, and a `Field` per input, with `data-invalid` on `Field`, `aria-invalid` on the control and `FieldError` for the message. Server and OAuth errors go through `setError("root")` and show in an `Alert`.
+  - Inputs use `form.register()` with no `defaultValues`, not `Controller`. Controlled inputs lose anything typed or autofilled before hydration: the box looks filled, but the form submits it as empty. With no default, `register()` reads the value that's already in the input.
+  - Layout follows shadcn's `login-03` block: muted page, brand mark, centered card.
+  - `src/components/auth/password-input.tsx`: `InputGroup` with a show/hide toggle.
+  - Both forms set `method="post"`. A submit that lands before hydration otherwise goes out as a native GET, with the password in the URL.
+  - Sign-out keeps the viewer card on screen until the redirect lands. `users.viewer` turns null as soon as the session ends, which flashed the "viewer is null" alert.
+  - `globals.css` scans only `src/` (`@import "tailwindcss" source("..")`), so the example classes in the `.agents/` and `.claude/` skill docs stop shipping as CSS.
+- [x] Temporary home page (`src/app/page.tsx` + `src/components/auth/viewer-card.tsx`): shows `users.viewer` and a sign-out button, so the checks below can be run by hand. M4 deletes both. (Moved to `src/app/chat/page.tsx` on 2026-09-29, when the landing page took `/`; see the scope change in M4.)
+- [x] 👤 Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the Convex env. (Set on the dev deployment on 2026-09-29; they're in no repo file.)
+- [ ] **Check:** everything except Google passed on 2026-09-29, over HTTP against the dev server, using a test account `m2-check-…@example.com`.
+  - [x] Email sign-up creates rows in both `users` and the component's user table.
+  - [x] `users.viewer` is not null when signed in. If it is null, `auth.config` or `SITE_URL` is wrong.
+  - [x] A reload keeps the session.
+  - [x] When signed out, `/` redirects to sign-in.
+  - [x] Sign-out takes effect immediately: the same unexpired JWT gets `null` from `users.viewer`.
+  - [ ] Google sign-in completes the full round trip. Checked automatically so far:
+    - Google accepts the client ID and redirect URI; a control run with a wrong URI gets `redirect_uri_mismatch`.
+    - The token endpoint accepts the secret; a wrong secret gets `invalid_client`.
+    - A cancelled consent comes back to `/sign-in?error=access_denied` with our message.
+    - Still needed: one real sign-in by hand in a browser.
 
 ## M3: Agent backend
 
@@ -175,14 +195,15 @@ The repo today is a clean scaffold:
 
 - [ ] Run `bunx --bun shadcn@latest add sidebar message-scroller message bubble marker empty input-group dropdown-menu avatar skeleton alert-dialog tooltip`.
 - [ ] Check the props of these new components: `bunx --bun shadcn@latest docs message-scroller message bubble sidebar input-group`.
-- [ ] Delete `src/app/page.tsx`. Create `src/app/(chat)/layout.tsx` with `SidebarProvider`, `AppSidebar` and `SidebarInset`, and no auth logic.
-- [ ] `src/app/(chat)/page.tsx`: an `isAuthenticated()` guard, then `<NewChat />`.
+- [x] **Scope change (2026-09-29): the app moved from `/` to `/chat`.** The public landing page now owns `/` (`plans/2026-09-29-landing-page-and-design-system.md`). `APP_HOME = "/chat"` in `src/lib/safe-redirect.ts` is the default after sign-in, and `proxy.ts` leaves `/` public. Threads stay at `/c/<id>`.
+- [ ] Delete `src/app/chat/page.tsx` and `src/components/auth/viewer-card.tsx` (the temporary M2 check page). Create `src/app/(chat)/layout.tsx` with `SidebarProvider`, `AppSidebar` and `SidebarInset`, and no auth logic.
+- [ ] `src/app/(chat)/chat/page.tsx` (the new-chat page at `/chat`): an `isAuthenticated()` guard, then `<NewChat />`.
 - [ ] `src/app/(chat)/c/[threadId]/page.tsx`: `const { threadId } = await props.params`, then a guard, then `<ThreadView />`. Add an `error.tsx` next to it.
 - [ ] `src/components/app-sidebar.tsx`, `thread-list.tsx` and `nav-user.tsx`:
   - The thread list uses paginated `api.threads.list`, newest first.
   - It shows the active link, a skeleton while loading, an empty state and "load more".
   - Delete sits in a dropdown menu and asks for confirmation in an alert dialog.
-  - Sign out calls `authClient.signOut()`, then `window.location.assign("/sign-in")`.
+  - Sign out calls `authClient.signOut()`, then `window.location.replace("/sign-in")`. (Changed from `assign` in M2: Next's lint flags `assign` with a relative URL, and `replace` keeps the signed-in page out of history.)
 - [ ] `src/components/chat/composer.tsx`:
   - `InputGroup`, with `InputGroupTextarea` and `InputGroupButton`.
   - Enter sends; Shift+Enter adds a new line.
@@ -208,23 +229,16 @@ The repo today is a clean scaffold:
 
 **Schema (`convex/schema.ts`)**
 
-```ts
-users: defineTable({
-  authUserId: v.string(),   // Better Auth user _id == JWT subject
-  email: v.string(),
-  name: v.string(),
-  image: v.optional(v.string()),
-  plan: v.union(v.literal("free"), v.literal("pro")),  // set now to avoid a Week 7 backfill
-}).index("by_authUserId", ["authUserId"])
-```
+Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; dropped 2026-09-29, see M1.)
 
+- **User profiles** (name, email, image) are read from the Better Auth component's `user` table via `getViewer`, never copied.
+- **App data about a user goes in app tables keyed by the Better Auth user `_id`**, each created when it's first needed. That covers Week 2's `defaultModel` and `favoriteModels`, and Week 7's `plan` (a missing row means `"free"`, so no backfill). Don't put these on the Better Auth user with `additionalFields`: that needs a local install of the component, and by default Better Auth lets users set those fields themselves through `updateUser`.
 - **No `threadMeta` table yet.** The Agent thread already stores `userId` and `title`.
 - **Week 2 adds `threadMeta`** (`{ threadId, userId, model?, activeApps? }`), created inside `startThread`, the only place threads are created. A thread with no row uses the defaults.
-- **Week 2 adds two optional fields to `users`**, `defaultModel` and `favoriteModels`, so no migration is needed.
 
 **Access helpers (`convex/lib/access.ts`)**
 - **`getViewer(ctx)`**
-  - Calls `authComponent.safeGetAuthUser(ctx)`, then looks up the `users` row by `authUserId`.
+  - Returns `authComponent.safeGetAuthUser(ctx)`: the component's user doc, or null.
   - It checks that the session is live, so a sign-out or revoked session takes effect immediately.
 - **`requireViewer(ctx)`** throws `ConvexError({ code: "UNAUTHENTICATED" })`.
 - **`getOwnedThread(ctx, threadId, viewerId)`** calls `getThreadMetadata(ctx, components.agent, { threadId })` inside a try/catch, and returns the thread only if `thread.userId === viewerId`.
@@ -285,9 +299,11 @@ users: defineTable({
 
 - **Commit `convex/_generated`** after every `convex dev` that changes the config, schema or components.
 - **A wrong `auth.config.ts` or `SITE_URL` fails silently**: every user just appears signed out. The M2 check on `users.viewer` catches this.
-- **Better Auth may send `image: null`.** Convert it with `?? undefined`. A throw inside a trigger aborts the whole sign-up.
+- **The provider's `AuthClient` type breaks from better-auth 1.6.18 on.** `@convex-dev/better-auth@0.12.5` (the latest) was typed against 1.6.15. From 1.6.18 its `AuthClient` infers `useSession().data` as `never`, so no real client type-checks. We found this by bisecting: 1.6.17 passes and 1.6.18 fails. We stay on 1.6.33 so we keep the security fixes, and `ConvexClientProvider` casts `authClient as unknown as AuthClient`; the runtime API is unchanged. Remove the cast once the component ships newer types.
+- **Better Auth stores a missing `image` as `null`.** Convert it with `?? undefined` before returning it through a `v.optional` validator.
 - **Bun without Node:** the Agent's `engines.node >=22` warning is harmless. Run shadcn as `bunx --bun`.
 - **React Compiler lint rules reject `setState` in an effect body.** Do the 60-second guard's state update inside an interval callback instead.
+- **Turbopack dev can serve stale Tailwind CSS.** On 2026-09-29 the running `next dev` only rebuilt Tailwind when `globals.css` itself changed: classes in new or edited `.tsx` files never reached the CSS, so pages rendered without padding, gaps or widths. If a class seems to do nothing, restart `bun dev`. If it keeps happening, try `next dev --webpack`.
 - **`getToken()` in the root layout makes every route dynamic.** That's fine: the app has no static pages.
 - **Better Auth's built-in rate limiter is memory-only**, so it does nothing across Convex isolates. The Rate Limiter component arrives in Week 2.
 - **The repo is public but has no LICENSE yet**, so by default the code is "all rights reserved" until the final setup pass adds AGPL-3.0.
@@ -305,14 +321,14 @@ users: defineTable({
   - shadcn instead of AI Elements
   - the better-auth 1.6 pin
   - account linking turned off
-  - `users._id` as the thread owner
+  - users only in the Better Auth component, with its user `_id` as the thread owner
   - bun
   - OpenRouter
 
 ## Verification (Week 1 is done when all of these pass)
 
 - [ ] `bun run typecheck` and `bun run lint` pass, and `main` is pushed to the public repo with no spec file.
-- [ ] Sign up, send a message from `/`, and check that:
+- [ ] Sign up, send a message from `/chat`, and check that:
   - you land on `/c/<id>`
   - the reply streams in word by word
   - the sidebar shows the shortened title at the top
