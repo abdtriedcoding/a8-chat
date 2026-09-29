@@ -15,3 +15,4 @@ Implementation plans for a8, one Markdown file per plan. Each plan is written be
 | Plan | Dates | Status |
 |---|---|---|
 | [Week 1: foundation (auth and streaming chat)](2026-09-28-week-01-foundation.md) | Sep 28 to Oct 2, 2026 | In progress |
+| [Design system and landing page](2026-09-29-landing-page-and-design-system.md) | Sep 29, 2026 | In progress |
