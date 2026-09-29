@@ -11,6 +11,7 @@
     "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p convex"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4",
     "@ai-sdk/provider": "^4",
     "@ai-sdk/provider-utils": "^5",
     "@convex-dev/agent": "~0.7.3",

@@ -14,12 +14,13 @@ export const chatAgent = new Agent(components.agent, {
     "If you don't know something, say so instead of guessing.",
   usageHandler: async (
     _ctx,
-    { userId, threadId, model, usage, providerMetadata },
+    { userId, threadId, provider, model, usage, providerMetadata },
   ) => {
     // Week 1 only logs usage. Billing and limits build on this later.
     console.log("usage", {
       userId,
       threadId,
+      provider,
       model,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -28,7 +29,10 @@ export const chatAgent = new Agent(components.agent, {
   },
 });
 
-/** The request's cost in USD, as reported by OpenRouter's usage accounting. */
+/**
+ * The request's cost in USD, from OpenRouter's usage accounting. Undefined
+ * for Anthropic, whose API reports tokens but not cost.
+ */
 function openRouterCost(
   providerMetadata: ProviderMetadata | undefined,
 ): number | undefined {
