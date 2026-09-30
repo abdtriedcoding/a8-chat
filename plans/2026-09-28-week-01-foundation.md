@@ -292,7 +292,7 @@ The repo today is a clean scaffold:
     - `listThreadMessages` passed the client's delta cursors straight to the Agent, which reads deltas by stream ID alone. Any signed-in user with another thread's stream ID could read that reply while it streamed and for 5 minutes after. Cursors are now filtered to the thread's own streams. Checked on dev with test accounts `cr-check-…@example.com`: with the old code, account B read all 39 of account A's deltas; with the fix, B gets 0, and A still gets its own deltas both while streaming and after the reply finishes.
     - A failed sign-out left the account menu disabled until a reload. It now shows a toast and re-enables. Checked in headless Chrome: a network failure and a 500 each show the toast and leave the menu enabled on `/chat`, and a real sign-out still lands on `/sign-in`.
     - Skipped: the docstring-coverage warning (15.6% against an 80% target). The code comments what's not obvious, and a docstring on every function would only restate the names.
-  - [ ] Merge the PR into `main`.
+  - [x] Merge the PR into `main` (#1, 2026-09-30).
 
 ## Key designs
 
@@ -409,7 +409,7 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 
 ## Verification (Week 1 is done when all of these pass)
 
-- [ ] `bun run typecheck` and `bun run lint` pass, and `main` is pushed to the public repo with no spec file. (Typecheck and lint pass on the branch as of 2026-09-30. This waits on the PR merge.)
+- [x] `bun run typecheck` and `bun run lint` pass, and `main` is pushed to the public repo with no spec file. (2026-09-30: merged through #1. Typecheck and lint pass, and `Product_Spec.md` isn't tracked.)
 - [x] Sign up, send a message from `/chat`, and check that (M4 check, 2026-09-29):
   - you land on `/c/<id>`
   - the reply streams in word by word
