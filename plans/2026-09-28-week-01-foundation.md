@@ -69,7 +69,7 @@ The repo today is a clean scaffold:
   - add yourself as a test user
 - [ ] 👤 Create an OpenRouter API key, and pick a cheap default model slug on openrouter.ai/models. (Deferred on 2026-09-29: Week 1 uses an Anthropic key instead; see the M3 scope change.)
 - [x] 👤 Share an Anthropic API key and model (`claude-haiku-4-5-20251001`). Set on the dev deployment on 2026-09-29; it's in no repo file.
-- [ ] 👤 Share the values, or set them yourself, for the Convex env vars (see Env below)
+- [x] 👤 Share the values, or set them yourself, for the Convex env vars (see Env below). (Checked 2026-09-30: all are set on the dev deployment except `OPENROUTER_API_KEY`, which is deferred.)
 
 ## M0: Public repo
 
@@ -123,7 +123,7 @@ The repo today is a clean scaffold:
 - [x] **Scope change (2026-09-29): dropped the app `users` table.** It mirrored name, email and image from the component's `user` table through triggers, so every user showed up twice in the dashboard and the two copies could drift. Its only app field, `plan`, wasn't read anywhere yet.
   - `convex/schema.ts` is empty again. `convex/auth.ts` is `createClient<DataModel>(components.betterAuth)`, with no triggers or `authFunctions`.
   - `getViewer` returns `authComponent.safeGetAuthUser(ctx)`, the component's user doc. `users.viewer` returns its `_id` as a string, with `image ?? undefined`.
-  - [ ] 👤 In the dashboard (dev deployment), delete the leftover `users` table: Data → `users` → ⋮ → Delete table. The schema no longer defines it, but Convex keeps its 3 old rows until it's deleted.
+  - [x] 👤 In the dashboard (dev deployment), delete the leftover `users` table: Data → `users` → ⋮ → Delete table. The schema no longer defines it, but Convex keeps its 3 old rows until it's deleted. (Checked 2026-09-30: `bunx convex data` lists no app tables.)
 - [x] Run `bunx convex dev --once`, then **commit `convex/_generated`**. (Committed on 2026-09-29 with the reviewed auth work.)
 - [x] **Check:**
   - The push succeeds.
@@ -220,37 +220,75 @@ The repo today is a clean scaffold:
 
 ## M4: Chat UI
 
-- [ ] Run `bunx --bun shadcn@latest add sidebar message-scroller message bubble marker empty input-group dropdown-menu avatar skeleton alert-dialog tooltip`.
-- [ ] Check the props of these new components: `bunx --bun shadcn@latest docs message-scroller message bubble sidebar input-group`.
+- [x] Run `bunx --bun shadcn@latest add sidebar message-scroller message bubble marker empty dropdown-menu avatar skeleton alert-dialog tooltip`. (Done 2026-09-29. `input-group` was dropped from the list: it was already installed and customized in M2. Also pulled in `sheet`, `src/hooks/use-mobile.ts` and `@shadcn/react@^0.3.1`.)
+  - The CLI overwrites `button.tsx` and `input.tsx`, the design system's customized copies. Both were restored from git right after, and `add --diff` showed that upstream only differs in styling, so the sidebar doesn't need the upstream versions.
+  - `use-mobile.ts` is rewritten with `useSyncExternalStore`: shadcn's version sets state in an effect body, which the React Compiler lint rejects. Its server snapshot is `false`, as before.
+  - `TooltipProvider` wraps the app in the root layout (the sidebar's tooltips need it).
+- [x] Check the props of these new components. (Read from the installed sources and the `@shadcn/react` types rather than `shadcn docs`. `MessageScrollerViewport` defaults to `preserveScrollOnPrepend`, and the provider to `defaultScrollPosition="end"`.)
 - [x] **Scope change (2026-09-29): the app moved from `/` to `/chat`.** The public landing page now owns `/` (`plans/2026-09-29-landing-page-and-design-system.md`). `APP_HOME = "/chat"` in `src/lib/safe-redirect.ts` is the default after sign-in, and `proxy.ts` leaves `/` public. Threads stay at `/c/<id>`.
-- [ ] Delete `src/app/chat/page.tsx` and `src/components/auth/viewer-card.tsx` (the temporary M2 check page). Create `src/app/(chat)/layout.tsx` with `SidebarProvider`, `AppSidebar` and `SidebarInset`, and no auth logic.
-- [ ] `src/app/(chat)/chat/page.tsx` (the new-chat page at `/chat`): an `isAuthenticated()` guard, then `<NewChat />`.
-- [ ] `src/app/(chat)/c/[threadId]/page.tsx`: `const { threadId } = await props.params`, then a guard, then `<ThreadView />`. Add an `error.tsx` next to it.
-- [ ] `src/components/app-sidebar.tsx`, `thread-list.tsx` and `nav-user.tsx`:
+- [x] Delete `src/app/chat/page.tsx` and `src/components/auth/viewer-card.tsx` (the temporary M2 check page). Create `src/app/(chat)/layout.tsx` with `SidebarProvider`, `AppSidebar` and `SidebarInset`, and no auth logic.
+  - The layout reads the sidebar's `sidebar_state` cookie for `defaultOpen`, so a collapsed sidebar doesn't flash open on load.
+  - The shell is `h-svh`, so only the message list scrolls.
+- [x] `src/app/(chat)/chat/page.tsx` (the new-chat page at `/chat`): an `isAuthenticated()` guard, then `<NewChat />`.
+- [x] `src/app/(chat)/c/[threadId]/page.tsx`: `const { threadId } = await props.params`, then a guard, then `<ThreadView />`. Add an `error.tsx` next to it.
+  - The guard redirects to `/sign-in?next=/c/<id>`, so a stale cookie still lands back on the thread.
+  - `ThreadView` is keyed by `threadId`, so switching threads starts from fresh state.
+  - `error.tsx` uses Next 16's `retry` prop and keeps the header, so the sidebar can still be opened on a phone.
+- [x] `src/components/app-sidebar.tsx`, `thread-list.tsx` and `nav-user.tsx`:
   - The thread list uses paginated `api.threads.list`, newest first.
   - It shows the active link, a skeleton while loading, an empty state and "load more".
   - Delete sits in a dropdown menu and asks for confirmation in an alert dialog.
   - Sign out calls `authClient.signOut()`, then `window.location.replace("/sign-in")`. (Changed from `assign` in M2: Next's lint flags `assign` with a relative URL, and `replace` keeps the signed-in page out of history.)
-- [ ] `src/components/chat/composer.tsx`:
+  - Added: deleting drops the thread from the loaded pages optimistically. The server deletes long threads in batches and removes the thread row last, so otherwise a long thread would linger. Deleting the open thread then goes to `/chat`.
+  - Added: the dialog stays open, with a spinner, until the delete lands, so a failure can show as a toast.
+  - Added: on phones, following a link in the sidebar sheet closes it (`src/hooks/use-close-sidebar-on-mobile.ts`).
+  - The skeleton uses fixed widths. `SidebarMenuSkeleton` picks random ones in `useState`, which differ between the server render and hydration.
+  - Queries wait for `useConvexAuth()` to finish loading, as the M2 viewer card did. Otherwise they can run before the token is set and come back as signed out.
+- [x] `src/components/chat/composer.tsx`:
   - `InputGroup`, with `InputGroupTextarea` and `InputGroupButton`.
-  - Enter sends; Shift+Enter adds a new line.
-  - Disabled while a send is in flight or a reply is pending or streaming.
-- [ ] `src/components/chat/new-chat.tsx`: an empty state plus the composer. Submitting calls `startThread({ prompt })`, then `router.push("/c/" + threadId)`.
-- [ ] `src/components/chat/chat-message.tsx`:
-  - The user's message: `Message align="end"` wrapping a `Bubble`.
-  - The assistant's message: `Message align="start"` with `useSmoothText(m.text, { startStreaming: m.status === "streaming" })`, rendered as plain `whitespace-pre-wrap` text.
-  - A failed reply: `Bubble variant="destructive"`.
-- [ ] `src/components/chat/message-list.tsx`:
-  - Data comes from `useUIMessages(api.chat.listThreadMessages, { threadId }, { initialNumItems: 20, stream: true })`.
+  - Enter sends; Shift+Enter adds a new line. Enter is ignored while an IME is composing.
+  - Disabled while a send is in flight or a reply is pending or streaming. Only sending is blocked: the box stays editable so the next message can be drafted, and the send button shows a spinner.
+  - The text clears as soon as it's sent. If the send fails, it comes back (unless something new was typed) and `errorMessage` shows in a toast.
+- [x] `src/components/chat/new-chat.tsx`: an empty state plus the composer. Submitting calls `startThread({ prompt })`, then `router.push("/c/" + threadId)`.
+  - The push runs inside `useTransition`, so the composer stays busy until the thread page takes over.
+- [x] `src/components/chat/chat-message.tsx`:
+  - The user's message: `Message align="end"` wrapping a `Bubble` (`variant="tinted"`, a light indigo).
+  - The assistant's message: `Message align="start"` with `useSmoothText(m.text, { startStreaming: m.status === "streaming" })`, rendered as plain `whitespace-pre-wrap` text. It has the logo as its avatar, like the landing page's demo.
+  - A failed reply: `Bubble variant="destructive"`. The Agent doesn't put the error on the `UIMessage`, so the copy is fixed: "Couldn't get a reply. Send your message again to retry."
+- [x] `src/components/chat/message-list.tsx`:
+  - Data comes from `useUIMessages(api.chat.listThreadMessages, { threadId }, { initialNumItems: 20, stream: true })`. **Changed:** the hook is called in `thread-view.tsx`, and `MessageList` just renders what it's given, because the composer's busy state needs the same messages.
   - Nesting: `MessageScrollerProvider autoScroll` › `MessageScroller` › `Viewport` › `Content` › `MessageScrollerItem` (with `messageId={m.key}`, and `scrollAnchor` on the user's messages), plus a `MessageScrollerButton`.
-  - "Load earlier" pages back through history.
+  - "Load earlier" pages back through history. It's the first `MessageScrollerItem`, and the scroller still keeps the reader's place when older messages are prepended.
   - A "Thinking…" row uses the `shimmer` utility and has a 60-second stale guard.
-- [ ] `src/components/chat/thread-view.tsx`:
+    - The row shows while the prompt is the last message. An assistant message that has started but has no text yet shows "Thinking…" in its own place.
+    - The guard's timer starts when this client first sees the prompt, not at the message's server timestamp, since the two clocks can disagree. So reopening a thread that's stuck waits 60 seconds again before giving up.
+    - The list mounts only after the first page loads, so the "end" default scroll position applies to real content.
+- [x] `src/components/chat/thread-view.tsx`:
   - `threads.get` returning `null` shows "Chat not found".
+  - Added: if the thread was showing and then disappears (deleted from the sidebar or another tab), it says "This chat was deleted" instead.
   - Otherwise it renders a header, the MessageList and the Composer.
+  - `listThreadMessages` is skipped until `threads.get` finds the thread, because it throws for threads that aren't the viewer's.
+  - While loading, a skeleton replaces the list, but the composer already renders in its final place, so focus and anything typed carry over.
   - Send uses `useMutation(api.chat.sendMessage).withOptimisticUpdate(optimisticallySendMessage(api.chat.listThreadMessages))`.
-- [ ] `src/lib/errors.ts`: `errorMessage(e)` reads `ConvexError.data.message` and falls back to a generic message.
-- [ ] Commit, then push to `main`.
+- [x] `src/lib/errors.ts`: `errorMessage(e)` reads `ConvexError.data.message` and falls back to a generic message.
+- [x] **Check:** all passed on 2026-09-29, in headless Chrome against `next dev` and the dev deployment, with test accounts `m4-check-…` and `m4-check-b-…@example.com`.
+  - [x] `bun run typecheck` and `bun run lint` pass.
+  - [x] Signed out, `/chat` redirects to `/sign-in`, and `/c/<id>` to `/sign-in?next=%2Fc%2F<id>`. Signing in there lands back on the thread.
+  - [x] Sign-up lands on `/chat`, with the empty state in the sidebar.
+  - [x] Sending from `/chat` goes to `/c/<id>` (1.6 seconds in dev once the route is compiled). "Thinking…" shows with the busy spinner, then the reply types out word by word. The sidebar lists the thread first, active, with its shortened title, and the header shows the same title.
+  - [x] A follow-up shows up at once (the optimistic message is on screen within 60 ms) and the composer clears. A reload restores the whole thread from history.
+  - [x] Reloading mid-stream resumes the reply. A second tab shows it live.
+  - [x] With more than 20 messages, "Load earlier" brings in the next 20, and the message under the reader stays put (225 px from the top before, 224 px after).
+  - [x] Sending while scrolled up brings the new message into view.
+  - [x] Delete asks first, then goes to `/chat`, and the thread leaves the sidebar. Its URL then shows "Chat not found". A thread deleted from another tab shows "This chat was deleted".
+  - [x] Account B opening account A's thread sees "Chat not found", and B's sidebar is empty.
+  - [x] With `DEFAULT_MODEL` set for the run to an OpenRouter slug (there's no OpenRouter key), sending shows the toast "Chat isn't set up yet: the server has no OpenRouter API key." On `/chat` no thread is created and the prompt returns to the box. In a thread, the optimistic message rolls back (11 back to 10) and nothing stays busy.
+  - [x] With `DEFAULT_MODEL` set for the run to a model that doesn't exist, the reply shows the destructive bubble and the composer re-enables. `DEFAULT_MODEL` was then set back to `anthropic:claude-haiku-4-5-20251001`.
+  - [x] At 390 px: no sideways scroll, the thread opens scrolled to the end, and tapping a thread in the sidebar sheet closes the sheet.
+  - [x] No console errors or warnings in any of these runs.
+  - [ ] The 60-second stale guard wasn't run live: it needs an error before the Agent saves anything, which can't be caused from outside.
+- [x] Commit on `feat/m3-agent-backend` and open a pull request to `main` (2026-09-30). (Changed from pushing to `main` directly. The PR also carries the two M3 commits, which weren't on `main` yet.)
+  - [ ] Merge the PR into `main`.
 
 ## Key designs
 
@@ -343,6 +381,9 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - **OpenRouter's 401 messages are misleading.** A malformed key gets "Missing Authentication header", even though the header was sent. A well-formed but unknown key gets "User not found", and a request with no key at all gets "No cookie auth credentials found".
 - **Better Auth's built-in rate limiter is memory-only**, so it does nothing across Convex isolates. The Rate Limiter component arrives in Week 2.
 - **The repo is public but has no LICENSE yet**, so by default the code is "all rights reserved" until the final setup pass adds AGPL-3.0.
+- **`shadcn add` overwrites the design system's customized components.** Components that depend on `button` or `input` (sidebar, for one) rewrite `button.tsx` and `input.tsx`. The CLI asks before overwriting, but stops at that prompt when run non-interactively. Run `add --dry-run` first, then restore the customized files from git after any `--overwrite`.
+- **A thread's first page of messages is a sliding window.** `useUIMessages` uses convex-helpers' `usePaginatedQuery`, whose first page stays "the newest 20" until "Load earlier" is first used, and only then is pinned. So in a long session the oldest message scrolls off the top as new ones arrive, and "Load earlier" brings it back. This is by design: it never leaves gaps or duplicates.
+- **A reply reopened mid-stream types out from the start.** `useSmoothText` starts from empty when a message mounts while streaming, then speeds up to catch up with the stream. Only replies loaded after they've finished show in full at once.
 
 ## Final setup pass (before launch; deferred at your request)
 
@@ -363,13 +404,13 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 
 ## Verification (Week 1 is done when all of these pass)
 
-- [ ] `bun run typecheck` and `bun run lint` pass, and `main` is pushed to the public repo with no spec file.
-- [ ] Sign up, send a message from `/chat`, and check that:
+- [ ] `bun run typecheck` and `bun run lint` pass, and `main` is pushed to the public repo with no spec file. (Typecheck and lint pass on the branch as of 2026-09-30. This waits on the PR merge.)
+- [x] Sign up, send a message from `/chat`, and check that (M4 check, 2026-09-29):
   - you land on `/c/<id>`
   - the reply streams in word by word
   - the sidebar shows the shortened title at the top
-- [ ] Reloading mid-stream resumes the stream, and a second tab shows it live. "Load earlier" works once a thread has more than 20 messages.
-- [ ] A second account opening the first account's `/c/<id>` sees "Chat not found", and its sidebar lists only its own threads.
-- [ ] With no key set, you get a toast and nothing gets stuck. With a bad key or model, a failed bubble shows and the composer re-enables.
-- [ ] When signed out, `/c/<id>` redirects to sign-in and then back to the thread. Google sign-in works.
-- [ ] `git grep -nE "sk-or-|sk-ant-|GOCSPX-"` finds nothing real.
+- [x] Reloading mid-stream resumes the stream, and a second tab shows it live. "Load earlier" works once a thread has more than 20 messages. (M4 check)
+- [x] A second account opening the first account's `/c/<id>` sees "Chat not found", and its sidebar lists only its own threads. (M4 check)
+- [x] With no key set, you get a toast and nothing gets stuck. With a bad key or model, a failed bubble shows and the composer re-enables. (M4 check. "No key" ran as a model whose provider key is missing, which is the same `MODEL_NOT_CONFIGURED` path.)
+- [ ] When signed out, `/c/<id>` redirects to sign-in and then back to the thread. Google sign-in works. (The redirect passed in the M4 check. Google still needs one sign-in by hand; see M2.)
+- [x] `git grep -nE "sk-or-|sk-ant-|GOCSPX-"` finds nothing real. (2026-09-29: the only hits are this plan's own placeholder `sk-or-…` and the command itself.)
