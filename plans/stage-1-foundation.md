@@ -1,12 +1,16 @@
-# a8: Week 1 implementation plan (Sep 28 to Oct 2, 2026)
+# a8: Stage 1 · Foundation
 
-> **Status:** In progress · **Started:** 2026-09-28 · **Target:** 2026-10-02
+> **Status:** Done · **Started:** 2026-09-28 · **Finished:** 2026-09-30
 >
-> **Tracking:** this file is the tracked copy of the Week 1 plan. Each box is ticked when its step is done, and the ticks are committed with the work. Legend: `[x]` done · `[ ]` to do · 👤 a step you do yourself.
+> **Renamed:** this was the "Week 1" plan until 2026-09-30, when the roadmap moved from weeks to stages. Older commits and PR #1 still call it Week 1.
+>
+> **Left open:** the unticked boxes are later setup and configuration: the X handles, the OpenRouter key and checks, and the final setup pass. Also open is a live run of the 60-second stale guard, which can't be triggered from outside. None of them block Stage 1.
+>
+> **Tracking:** this file is the tracked copy of the Stage 1 plan. Each box is ticked when its step is done, and the ticks are committed with the work. Legend: `[x]` done · `[ ]` to do · 👤 a step you do yourself.
 
 ## Context
 
-`Product_Spec.md` defines Week 1 as the foundation. You've asked for the product first, so this week covers:
+`Product_Spec.md` defines Stage 1 as the foundation. You've asked for the product first, so this stage covers:
 - **Sign-in:** email and Google, through Better Auth's Convex component.
 - **Chat:** threads with streaming replies, through the Convex Agent component and OpenRouter.
 - **The repo:** a public GitHub repo, `abdtriedcoding/a8-chat`.
@@ -18,13 +22,13 @@ The repo today is a clean scaffold:
 - **bun 1.4.2** as the package manager; Node.js is not installed
 - an empty Convex schema, and no auth or AI packages
 
-**By Friday you can:**
+**When this stage is done, you can:**
 - sign up with email or Google
 - start a chat and watch the reply stream in
 - reopen past threads from a sidebar
 - see only your own threads
 
-**Not in Week 1.** These are Week 2:
+**Not in Stage 1.** These are Stage 2:
 - the model picker, models table and cron
 - stop, regenerate and edit
 - uploads
@@ -34,9 +38,9 @@ The repo today is a clean scaffold:
 - web search
 - the rate limiter
 
-**Deferred until there's an OpenRouter key** (added 2026-09-29): multi-model support through OpenRouter. Week 1 runs on Claude Haiku 4.5 through the Anthropic API (see the M3 scope change). The model picker, models table and cron above depend on OpenRouter, so they wait for the key too. The OpenRouter code is already in place, so turning it on is an env change.
+**Deferred until there's an OpenRouter key** (added 2026-09-29): multi-model support through OpenRouter. Stage 1 runs on Claude Haiku 4.5 through the Anthropic API (see the M3 scope change). The model picker, models table and cron above depend on OpenRouter, so they wait for the key too. The OpenRouter code is already in place, so turning it on is an env change.
 
-## Decisions for this week
+## Decisions for this stage
 
 - **Chat UI:** shadcn's own chat components (`message-scroller`, `message`, `bubble`, `marker`), per the project's shadcn rule in `.agents/skills/shadcn/rules/chat.md`. We won't install Vercel AI Elements: it's typed against AI SDK v6, and the Agent needs v7.
 - **Pinned versions:**
@@ -46,7 +50,7 @@ The repo today is a clean scaffold:
   - No email verification yet, because there's no email sender until Resend.
   - **Account linking stays off** (`account.accountLinking.enabled: false`). Otherwise someone could create an unverified account with another person's email, and that person's later Google sign-in would merge into it.
   - Turn both on when Resend lands.
-- **Model:** one server-side `DEFAULT_MODEL` env var, with a verified cheap fallback slug in code. `resolveModelId()` is where the Week 2 per-thread model choice plugs in.
+- **Model:** one server-side `DEFAULT_MODEL` env var, with a verified cheap fallback slug in code. `resolveModelId()` is where the Stage 2 per-thread model choice plugs in.
   - Model IDs name their provider: `anthropic:<model>` calls Anthropic directly, and anything else is an OpenRouter slug (added 2026-09-29).
   - For now, `DEFAULT_MODEL` is `anthropic:claude-haiku-4-5-20251001`. OpenRouter comes back with its key, as an env change only.
 - **Identity:**
@@ -67,16 +71,17 @@ The repo today is a clean scaffold:
   - origin `http://localhost:3000`
   - redirect URI `http://localhost:3000/api/auth/callback/google`
   - add yourself as a test user
-- [ ] 👤 Create an OpenRouter API key, and pick a cheap default model slug on openrouter.ai/models. (Deferred on 2026-09-29: Week 1 uses an Anthropic key instead; see the M3 scope change.)
+- [ ] 👤 Create an OpenRouter API key, and pick a cheap default model slug on openrouter.ai/models. (Deferred on 2026-09-29: Stage 1 uses an Anthropic key instead; see the M3 scope change.)
 - [x] 👤 Share an Anthropic API key and model (`claude-haiku-4-5-20251001`). Set on the dev deployment on 2026-09-29; it's in no repo file.
 - [x] 👤 Share the values, or set them yourself, for the Convex env vars (see Env below). (Checked 2026-09-30: all are set on the dev deployment except `OPENROUTER_API_KEY`, which is deferred.)
 
 ## M0: Public repo
 
 - [x] Create a `plans/` folder at the repo root for long-term plan tracking. It sits outside `docs/` so it never ends up on the future Fumadocs site.
-  - `plans/README.md`: what the folder is for, the naming rule (`YYYY-MM-DD-<slug>.md`, dated to the plan's start), the checkbox legend, and an index table (plan, dates, status).
-  - `plans/2026-09-28-week-01-foundation.md`: this plan, from here on the tracked copy.
-  - Future weeks' plans go in the same folder, e.g. `2026-10-05-week-02-models-and-polish.md`.
+  - `plans/README.md`: what the folder is for, the naming rule, the checkbox legend, and an index table (stage, plan, status).
+  - `plans/stage-1-foundation.md`: this plan, from here on the tracked copy.
+  - Later plans go in the same folder, e.g. `stage-2-daily-chat.md`.
+  - (Changed 2026-09-30: plans were first named by start date, `YYYY-MM-DD-<slug>.md`. Work kept landing ahead of its dates, so plans are now named by the stage they belong to.)
 - [x] Add `Product_Spec.md` to `.gitignore`, then commit `chore: keep product spec local until launch` together with the `plans/` folder.
 - [x] Add `package.json` scripts: `typecheck: "next typegen && tsc --noEmit && tsc --noEmit -p convex"` and `dev:convex: "convex dev"`. `next typegen` is needed because `layout.tsx` uses the generated `LayoutProps` type.
 - [x] Create the repo **without pushing**:
@@ -164,23 +169,23 @@ The repo today is a clean scaffold:
   - `globals.css` scans only `src/` (`@import "tailwindcss" source("..")`), so the example classes in the `.agents/` and `.claude/` skill docs stop shipping as CSS.
 - [x] Temporary home page (`src/app/page.tsx` + `src/components/auth/viewer-card.tsx`): shows `users.viewer` and a sign-out button, so the checks below can be run by hand. M4 deletes both. (Moved to `src/app/chat/page.tsx` on 2026-09-29, when the landing page took `/`; see the scope change in M4.)
 - [x] 👤 Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the Convex env. (Set on the dev deployment on 2026-09-29; they're in no repo file.)
-- [ ] **Check:** everything except Google passed on 2026-09-29, over HTTP against the dev server, using a test account `m2-check-…@example.com`.
+- [x] **Check:** all passed. Everything except Google passed on 2026-09-29, over HTTP against the dev server, using a test account `m2-check-…@example.com`. Google passed by hand on 2026-09-30.
   - [x] Email sign-up creates rows in both `users` and the component's user table.
   - [x] `users.viewer` is not null when signed in. If it is null, `auth.config` or `SITE_URL` is wrong.
   - [x] A reload keeps the session.
   - [x] When signed out, `/` redirects to sign-in.
   - [x] Sign-out takes effect immediately: the same unexpired JWT gets `null` from `users.viewer`.
-  - [ ] Google sign-in completes the full round trip. Checked automatically so far:
+  - [x] Google sign-in completes the full round trip. Checked automatically first:
     - Google accepts the client ID and redirect URI; a control run with a wrong URI gets `redirect_uri_mismatch`.
     - The token endpoint accepts the secret; a wrong secret gets `invalid_client`.
     - A cancelled consent comes back to `/sign-in?error=access_denied` with our message.
-    - Still needed: one real sign-in by hand in a browser.
+    - 👤 A real sign-in by hand in a browser worked (2026-09-30).
 
 ## M3: Agent backend
 
 - [x] Run `bun add @convex-dev/agent@~0.7.3 ai@^7 @ai-sdk/provider@^4 @ai-sdk/provider-utils@^5 @openrouter/ai-sdk-provider@^3.1.0 convex-helpers@^0.1.103 zod@^4`. (Resolved to agent 0.7.3, ai 7.0.122, provider 4.0.19, provider-utils 5.0.51, OpenRouter provider 3.1.0 and convex-helpers 0.1.124. `bun add` loosened the existing `zod` range to `^4`, so it was put back to `^4.6.5`.)
 - [x] Add `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` and `DEFAULT_MODEL` as optional keys in `convex.config.ts`, along with `app.use(agent)`.
-- [x] **Scope change (2026-09-29): Week 1 runs on Claude Haiku 4.5 through the Anthropic API.** There's no OpenRouter key yet, but there is an Anthropic key. The OpenRouter code stays, because OpenRouter remains the long-term way to offer any model. Multi-model support through OpenRouter moves to later (see "Not in Week 1").
+- [x] **Scope change (2026-09-29): Stage 1 runs on Claude Haiku 4.5 through the Anthropic API.** There's no OpenRouter key yet, but there is an Anthropic key. The OpenRouter code stays, because OpenRouter remains the long-term way to offer any model. Multi-model support through OpenRouter moves to later (see "Not in Stage 1").
   - Run `bun add @ai-sdk/anthropic@^4`. (Resolved to 4.0.68, on the same `@ai-sdk/provider` 4.0.19 and `provider-utils` 5.0.51 as the Agent, so there are no duplicate types.) It's the AI SDK's Anthropic provider, not `@anthropic-ai/sdk`, because the Agent takes an AI SDK model.
   - Model IDs now name their provider (see Key designs). Which one runs is set by `DEFAULT_MODEL`, so switching is an env change, not a code change.
   - [x] Set `ANTHROPIC_API_KEY` and `DEFAULT_MODEL=anthropic:claude-haiku-4-5-20251001` on the dev deployment (2026-09-29). The Models API confirmed both the key and the model ID: 200K input tokens, 64K output. Haiku 4.5 costs $1 in and $5 out per million tokens.
@@ -216,7 +221,7 @@ The repo today is a clean scaffold:
   - [x] Thread history reaches the model: asked to repeat the earlier question word for word, the follow-up did, and its input tokens grew from 53 to 151.
   - [x] The Convex logs show a `usage` line for each reply, with the provider (`anthropic.messages`), the model and the token counts.
   - [x] `parseModelId` sends `anthropic:` IDs to Anthropic, and bare or `openrouter:` slugs to OpenRouter, including slugs with a `:` suffix such as `:batch`. With only the Anthropic key set, an OpenRouter model fails `assertModelConfigured` with a message naming OpenRouter.
-  - [ ] Later, with OpenRouter: the same streaming check with an OpenRouter model, including a `usage` line with a cost. This waits for an OpenRouter key and doesn't block Week 1.
+  - [ ] Later, with OpenRouter: the same streaming check with an OpenRouter model, including a `usage` line with a cost. This waits for an OpenRouter key and doesn't block Stage 1.
 
 ## M4: Chat UI
 
@@ -225,7 +230,7 @@ The repo today is a clean scaffold:
   - `use-mobile.ts` is rewritten with `useSyncExternalStore`: shadcn's version sets state in an effect body, which the React Compiler lint rejects. Its server snapshot is `false`, as before.
   - `TooltipProvider` wraps the app in the root layout (the sidebar's tooltips need it).
 - [x] Check the props of these new components. (Read from the installed sources and the `@shadcn/react` types rather than `shadcn docs`. `MessageScrollerViewport` defaults to `preserveScrollOnPrepend`, and the provider to `defaultScrollPosition="end"`.)
-- [x] **Scope change (2026-09-29): the app moved from `/` to `/chat`.** The public landing page now owns `/` (`plans/2026-09-29-landing-page-and-design-system.md`). `APP_HOME = "/chat"` in `src/lib/safe-redirect.ts` is the default after sign-in, and `proxy.ts` leaves `/` public. Threads stay at `/c/<id>`.
+- [x] **Scope change (2026-09-29): the app moved from `/` to `/chat`.** The public landing page now owns `/` (`plans/stage-8-landing-page-and-design-system.md`). `APP_HOME = "/chat"` in `src/lib/safe-redirect.ts` is the default after sign-in, and `proxy.ts` leaves `/` public. Threads stay at `/c/<id>`.
 - [x] Delete `src/app/chat/page.tsx` and `src/components/auth/viewer-card.tsx` (the temporary M2 check page). Create `src/app/(chat)/layout.tsx` with `SidebarProvider`, `AppSidebar` and `SidebarInset`, and no auth logic.
   - The layout reads the sidebar's `sidebar_state` cookie for `defaultOpen`, so a collapsed sidebar doesn't flash open on load.
   - The shell is `h-svh`, so only the message list scrolls.
@@ -298,16 +303,16 @@ The repo today is a clean scaffold:
 
 **Schema (`convex/schema.ts`)**
 
-Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; dropped 2026-09-29, see M1.)
+Empty for Stage 1. (It first had a `users` table mirroring the Better Auth user; dropped 2026-09-29, see M1.)
 
 - **User profiles** (name, email, image) are read from the Better Auth component's `user` table via `getViewer`, never copied.
-- **App data about a user goes in app tables keyed by the Better Auth user `_id`**, each created when it's first needed. That covers Week 2's `defaultModel` and `favoriteModels`, and Week 7's `plan` (a missing row means `"free"`, so no backfill). Don't put these on the Better Auth user with `additionalFields`: that needs a local install of the component, and by default Better Auth lets users set those fields themselves through `updateUser`.
+- **App data about a user goes in app tables keyed by the Better Auth user `_id`**, each created when it's first needed. That covers Stage 2's `defaultModel` and `favoriteModels`, and Stage 7's `plan` (a missing row means `"free"`, so no backfill). Don't put these on the Better Auth user with `additionalFields`: that needs a local install of the component, and by default Better Auth lets users set those fields themselves through `updateUser`.
 - **No `threadMeta` table yet.** The Agent thread already stores `userId` and `title`.
-- **Week 2 adds `threadMeta`** (`{ threadId, userId, model?, activeApps? }`), created inside `startThread`, the only place threads are created. A thread with no row uses the defaults.
+- **Stage 2 adds `threadMeta`** (`{ threadId, userId, model?, activeApps? }`), created inside `startThread`, the only place threads are created. A thread with no row uses the defaults.
 
 **Model IDs (`convex/lib/models.ts`)** (added 2026-09-29)
 - **The format is `<provider>:<model>`.** `anthropic:claude-haiku-4-5-20251001` calls the Anthropic API. A bare slug such as `google/gemini-3.1-flash-lite` is OpenRouter's, and `openrouter:<slug>` works too.
-- **Bare slugs mean OpenRouter**, so Week 2's models table can store OpenRouter's own slugs unchanged. Only a known provider name counts as a prefix, because OpenRouter slugs can contain `:` themselves (`:free`, `:batch`).
+- **Bare slugs mean OpenRouter**, so Stage 2's models table can store OpenRouter's own slugs unchanged. Only a known provider name counts as a prefix, because OpenRouter slugs can contain `:` themselves (`:free`, `:batch`).
 - **Each provider is one entry in a `providers` table:** a label, its API key and a `languageModel(model)` factory. Adding a provider means adding one entry and one optional env key.
 - **Switching models needs no code change.** Set the provider's key, then `DEFAULT_MODEL`. `assertModelConfigured` checks the key of whichever provider the model uses.
 
@@ -334,7 +339,7 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - **`enqueueReply`**
   - `chatAgent.saveMessage(ctx, { threadId, userId, prompt, skipEmbeddings: true })`.
   - Then `ctx.scheduler.runAfter(0, internal.chat.streamReply, {...})`.
-  - The Week 2 rate-limit check goes here.
+  - The Stage 2 rate-limit check goes here.
 - **`streamReply` internalAction (`{ threadId, promptMessageId, userId }`)**
   - `chatAgent.streamText(ctx, { threadId, userId }, { promptMessageId, model: chatModel(resolveModelId()) }, { saveStreamDeltas: { chunking: "word", throttleMs: 100 } })`.
   - Then **`await result.consumeStream()`**.
@@ -383,7 +388,7 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - **`getToken()` in the root layout makes every route dynamic.** That's fine: the app has no static pages.
 - **The OpenRouter provider needs `compatibility: "strict"`.** `createOpenRouter` defaults to `"compatible"`, which leaves out `stream_options.include_usage`, so streamed replies can come back without usage or cost. (The default `openrouter` instance already uses strict.)
 - **OpenRouter's 401 messages are misleading.** A malformed key gets "Missing Authentication header", even though the header was sent. A well-formed but unknown key gets "User not found", and a request with no key at all gets "No cookie auth credentials found".
-- **Better Auth's built-in rate limiter is memory-only**, so it does nothing across Convex isolates. The Rate Limiter component arrives in Week 2.
+- **Better Auth's built-in rate limiter is memory-only**, so it does nothing across Convex isolates. The Rate Limiter component arrives in Stage 2.
 - **The repo is public but has no LICENSE yet**, so by default the code is "all rights reserved" until the final setup pass adds AGPL-3.0.
 - **`shadcn add` overwrites the design system's customized components.** Components that depend on `button` or `input` (sidebar, for one) rewrite `button.tsx` and `input.tsx`. The CLI asks before overwriting, but stops at that prompt when run non-interactively. Run `add --dry-run` first, then restore the customized files from git after any `--overwrite`.
 - **A thread's first page of messages is a sliding window.** `useUIMessages` uses convex-helpers' `usePaginatedQuery`, whose first page stays "the newest 20" until "Load earlier" is first used, and only then is pinned. So in a long session the oldest message scrolls off the top as new ones arrive, and "Load earlier" brings it back. This is by design: it never leaves gaps or duplicates.
@@ -399,15 +404,15 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
   - `dependabot.yml`, grouped, and ignoring better-auth minor and major updates
   - issue and PR templates
 - [ ] README, LICENSE (AGPL-3.0), CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, and `.env.example` (plus a `!.env.example` line in `.gitignore`).
-- [ ] `docs/architecture.md`, `docs/decisions/` and `docs/devlog/`. The decision records should cover this week's choices:
+- [ ] `docs/architecture.md`, `docs/decisions/` and `docs/devlog/`. The decision records should cover this stage's choices:
   - shadcn instead of AI Elements
   - the better-auth 1.6 pin
   - account linking turned off
   - users only in the Better Auth component, with its user `_id` as the thread owner
   - bun
-  - OpenRouter, with direct Anthropic as the Week 1 stand-in, and provider-prefixed model IDs
+  - OpenRouter, with direct Anthropic as the Stage 1 stand-in, and provider-prefixed model IDs
 
-## Verification (Week 1 is done when all of these pass)
+## Verification (Stage 1 is done when all of these pass)
 
 - [x] `bun run typecheck` and `bun run lint` pass, and `main` is pushed to the public repo with no spec file. (2026-09-30: merged through #1. Typecheck and lint pass, and `Product_Spec.md` isn't tracked.)
 - [x] Sign up, send a message from `/chat`, and check that (M4 check, 2026-09-29):
@@ -417,5 +422,5 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - [x] Reloading mid-stream resumes the stream, and a second tab shows it live. "Load earlier" works once a thread has more than 20 messages. (M4 check)
 - [x] A second account opening the first account's `/c/<id>` sees "Chat not found", and its sidebar lists only its own threads. (M4 check)
 - [x] With no key set, you get a toast and nothing gets stuck. With a bad key or model, a failed bubble shows and the composer re-enables. (M4 check. "No key" ran as a model whose provider key is missing, which is the same `MODEL_NOT_CONFIGURED` path.)
-- [ ] When signed out, `/c/<id>` redirects to sign-in and then back to the thread. Google sign-in works. (The redirect passed in the M4 check. Google still needs one sign-in by hand; see M2.)
+- [x] When signed out, `/c/<id>` redirects to sign-in and then back to the thread. Google sign-in works. (The redirect passed in the M4 check, and Google by hand on 2026-09-30; see M2.)
 - [x] `git grep -nE "sk-or-|sk-ant-|GOCSPX-"` finds nothing real. (2026-09-29: the only hits are this plan's own placeholder `sk-or-…` and the command itself.)

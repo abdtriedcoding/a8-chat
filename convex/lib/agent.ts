@@ -16,7 +16,7 @@ export const chatAgent = new Agent(components.agent, {
     _ctx,
     { userId, threadId, provider, model, usage, providerMetadata },
   ) => {
-    // Week 1 only logs usage. Billing and limits build on this later.
+    // Stage 1 only logs usage. Billing and limits build on this later.
     console.log("usage", {
       userId,
       threadId,

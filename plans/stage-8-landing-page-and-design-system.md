@@ -1,19 +1,19 @@
 # a8: Design system and landing page
 
-> **Status:** In progress · **Started:** 2026-09-29 · **Target:** 2026-09-29
+> **Status:** In progress · **Started:** 2026-09-29
 >
 > **Tracking:** each box is ticked when its step is done. Legend: `[x]` done · `[ ]` to do · 👤 a step you do yourself.
 
 ## Context
 
-The spec schedules the landing page for week 8. It was pulled forward on request, together with a new look for the whole app, modeled on Contentport's screens (indigo, cool grays, rounded type, buttons with a darker bottom edge, a tilted highlight behind key words, dot-grid canvases).
+The spec puts the landing page in Stage 8 (Launch). It was pulled forward on request, together with a new look for the whole app, modeled on Contentport's screens (indigo, cool grays, rounded type, buttons with a darker bottom edge, a tilted highlight behind key words, dot-grid canvases).
 
 Copy rules for the page:
 - Plain words, second person, short sentences. Most of it comes from the spec's own lines: the "non-technical friend" pitch, the 30-second demo and the objections table.
 - No invented numbers: no user counts, ratings or testimonials.
 - No em dashes, and none of the usual filler ("seamless", "unlock", "supercharge").
 
-**Committed in two parts.** The design system and landing page went in first, on their own (`105123d`). The steps that depend on the Week 1 auth work (M1 and M2) went in with the auth commit after review.
+**Committed in two parts.** The design system and landing page went in first, on their own (`105123d`). The steps that depend on the Stage 1 auth work (M1 and M2) went in with the auth commit after review.
 
 ## Design system
 
@@ -40,7 +40,7 @@ Copy rules for the page:
 ## Routing
 
 - [x] The landing page owns `/`, in a `(marketing)` route group whose layout holds the header and footer.
-- [x] The app moved to `/chat`, with `APP_HOME` in `src/lib/safe-redirect.ts`. It's the default after sign-in, and `withNext` leaves `?next=` off for it. The Week 1 plan's M4 is updated to match.
+- [x] The app moved to `/chat`, with `APP_HOME` in `src/lib/safe-redirect.ts`. It's the default after sign-in, and `withNext` leaves `?next=` off for it. The Stage 1 plan's M4 is updated to match.
 - [x] `proxy.ts`: the matcher ends in `.+`, so `/` stays public while everything else is still protected by default.
 - [x] The header shows "Open a8" to signed-in visitors. `isAuthenticated()` reuses the token the root layout already fetched, because it's `React.cache`d.
 
@@ -92,4 +92,4 @@ Copy rules for the page:
 ## Follow-ups (not done)
 
 - [ ] Real app logos in the app strip, once there's a decision on using brand marks.
-- [ ] Privacy and Terms pages. Google verification needs them in week 5, and the footer has space for them.
+- [ ] Privacy and Terms pages. Google verification needs them in Stage 5 (Approvals), and the footer has space for them.

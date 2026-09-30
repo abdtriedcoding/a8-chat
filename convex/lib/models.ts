@@ -52,13 +52,13 @@ type ProviderName = keyof typeof providers;
 
 /**
  * Used when DEFAULT_MODEL is unset. Checked against openrouter.ai/models on
- * 2026-09-29: cheap, no expiry date, and supports tools for later weeks.
+ * 2026-09-29: cheap, no expiry date, and supports tools for later stages.
  */
 export const FALLBACK_MODEL_ID = "google/gemini-3.1-flash-lite";
 
 /** The model ID for the next reply. */
 export function resolveModelId(): string {
-  // Week 2: the thread's own model choice (threadMeta.model) goes first.
+  // Stage 2: the thread's own model choice (threadMeta.model) goes first.
   return env.DEFAULT_MODEL ?? FALLBACK_MODEL_ID;
 }
 

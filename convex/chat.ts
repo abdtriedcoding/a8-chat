@@ -30,7 +30,7 @@ export const startThread = mutation({
     const prompt = normalizePrompt(args.prompt);
     assertModelConfigured();
 
-    // The only place threads are created. Week 2's threadMeta row goes here.
+    // The only place threads are created. Stage 2's threadMeta row goes here.
     const threadId = await createThread(ctx, components.agent, {
       userId: viewer._id,
       title: titleFromPrompt(prompt),
@@ -113,7 +113,7 @@ async function enqueueReply(
   ctx: MutationCtx,
   args: { threadId: string; userId: string; prompt: string },
 ) {
-  // Week 2: the rate-limit check goes here.
+  // Stage 2: the rate-limit check goes here.
   const { messageId } = await chatAgent.saveMessage(ctx, {
     threadId: args.threadId,
     userId: args.userId,
