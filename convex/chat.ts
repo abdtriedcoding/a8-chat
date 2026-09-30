@@ -1,8 +1,10 @@
 import {
   createThread,
+  listStreams,
   listUIMessages,
   syncStreams,
   vStreamArgs,
+  type StreamArgs,
 } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
@@ -12,6 +14,7 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import { requireOwnedThread, requireViewer } from "./lib/access";
 import { chatAgent } from "./lib/agent";
@@ -71,10 +74,36 @@ export const listThreadMessages = query({
     await requireOwnedThread(ctx, args.threadId, viewer._id);
 
     const paginated = await listUIMessages(ctx, components.agent, args);
-    const streams = await syncStreams(ctx, components.agent, args);
+    const streams = await syncStreams(ctx, components.agent, {
+      threadId: args.threadId,
+      streamArgs: await threadStreamArgs(ctx, args.threadId, args.streamArgs),
+    });
     return { ...paginated, streams };
   },
 });
+
+/**
+ * Drops delta cursors for streams outside the thread. The Agent reads deltas
+ * by stream ID alone, so the thread check doesn't cover them. Cursors are
+ * dropped rather than rejected: a finished stream is deleted after 5 minutes,
+ * so the client can briefly hold a cursor for one of its own that's gone.
+ */
+async function threadStreamArgs(
+  ctx: QueryCtx,
+  threadId: string,
+  streamArgs: StreamArgs,
+): Promise<StreamArgs> {
+  if (streamArgs?.kind !== "deltas") return streamArgs;
+  const streams = await listStreams(ctx, components.agent, {
+    threadId,
+    includeStatuses: ["streaming", "finished", "aborted"],
+  });
+  const ids = new Set(streams.map((s) => s.streamId));
+  return {
+    ...streamArgs,
+    cursors: streamArgs.cursors.filter((c) => ids.has(c.streamId)),
+  };
+}
 
 /**
  * Saves the user's prompt and schedules the reply. Callers check auth,

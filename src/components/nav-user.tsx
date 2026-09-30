@@ -5,6 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 import { ChevronsUpDownIcon, LogInIcon, LogOutIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -39,7 +40,16 @@ export function NavUser() {
 
   async function signOut(current: Viewer) {
     setSigningOutAs(current);
-    await authClient.signOut();
+    try {
+      // Sign-out succeeds even without a session, so an error response is a
+      // real failure. The call rejects when the request itself fails.
+      const { error } = await authClient.signOut();
+      if (error) throw error;
+    } catch {
+      setSigningOutAs(null);
+      toast.error("Couldn't sign out. Please try again.");
+      return;
+    }
     // A full load drops all client state; replace keeps the signed-in page
     // out of history.
     window.location.replace("/sign-in");

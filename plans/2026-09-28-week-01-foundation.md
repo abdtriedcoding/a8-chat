@@ -238,7 +238,7 @@ The repo today is a clean scaffold:
   - The thread list uses paginated `api.threads.list`, newest first.
   - It shows the active link, a skeleton while loading, an empty state and "load more".
   - Delete sits in a dropdown menu and asks for confirmation in an alert dialog.
-  - Sign out calls `authClient.signOut()`, then `window.location.replace("/sign-in")`. (Changed from `assign` in M2: Next's lint flags `assign` with a relative URL, and `replace` keeps the signed-in page out of history.)
+  - Sign out calls `authClient.signOut()`, then `window.location.replace("/sign-in")`. (Changed from `assign` in M2: Next's lint flags `assign` with a relative URL, and `replace` keeps the signed-in page out of history.) If sign-out fails, a toast shows and the menu re-enables (added from PR review).
   - Added: deleting drops the thread from the loaded pages optimistically. The server deletes long threads in batches and removes the thread row last, so otherwise a long thread would linger. Deleting the open thread then goes to `/chat`.
   - Added: the dialog stays open, with a spinner, until the delete lands, so a failure can show as a toast.
   - Added: on phones, following a link in the sidebar sheet closes it (`src/hooks/use-close-sidebar-on-mobile.ts`).
@@ -288,6 +288,10 @@ The repo today is a clean scaffold:
   - [x] No console errors or warnings in any of these runs.
   - [ ] The 60-second stale guard wasn't run live: it needs an error before the Agent saves anything, which can't be caused from outside.
 - [x] Commit on `feat/m3-agent-backend` and open a pull request to `main` (2026-09-30). (Changed from pushing to `main` directly. The PR also carries the two M3 commits, which weren't on `main` yet.)
+  - [x] Handle CodeRabbit's review (2026-09-30). Both comments were valid:
+    - `listThreadMessages` passed the client's delta cursors straight to the Agent, which reads deltas by stream ID alone. Any signed-in user with another thread's stream ID could read that reply while it streamed and for 5 minutes after. Cursors are now filtered to the thread's own streams. Checked on dev with test accounts `cr-check-…@example.com`: with the old code, account B read all 39 of account A's deltas; with the fix, B gets 0, and A still gets its own deltas both while streaming and after the reply finishes.
+    - A failed sign-out left the account menu disabled until a reload. It now shows a toast and re-enables. Checked in headless Chrome: a network failure and a 500 each show the toast and leave the menu enabled on `/chat`, and a real sign-out still lands on `/sign-in`.
+    - Skipped: the docstring-coverage warning (15.6% against an 80% target). The code comments what's not obvious, and a docstring on every function would only restate the names.
   - [ ] Merge the PR into `main`.
 
 ## Key designs
@@ -326,7 +330,7 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - **`sendMessage({ threadId, prompt }) → null`**
   - The arguments must be exactly these for `optimisticallySendMessage` to work.
   - Runs `requireViewer`, `requireOwnedThread`, `assertModelConfigured`, then `enqueueReply`.
-- **`listThreadMessages({ threadId, paginationOpts, streamArgs: vStreamArgs })`** checks ownership, then returns `{ ...listUIMessages(...), streams: syncStreams(...) }`.
+- **`listThreadMessages({ threadId, paginationOpts, streamArgs: vStreamArgs })`** checks ownership, drops any delta cursor whose stream isn't in the thread, then returns `{ ...listUIMessages(...), streams: syncStreams(...) }`.
 - **`enqueueReply`**
   - `chatAgent.saveMessage(ctx, { threadId, userId, prompt, skipEmbeddings: true })`.
   - Then `ctx.scheduler.runAfter(0, internal.chat.streamReply, {...})`.
@@ -383,6 +387,7 @@ Empty for Week 1. (It first had a `users` table mirroring the Better Auth user; 
 - **The repo is public but has no LICENSE yet**, so by default the code is "all rights reserved" until the final setup pass adds AGPL-3.0.
 - **`shadcn add` overwrites the design system's customized components.** Components that depend on `button` or `input` (sidebar, for one) rewrite `button.tsx` and `input.tsx`. The CLI asks before overwriting, but stops at that prompt when run non-interactively. Run `add --dry-run` first, then restore the customized files from git after any `--overwrite`.
 - **A thread's first page of messages is a sliding window.** `useUIMessages` uses convex-helpers' `usePaginatedQuery`, whose first page stays "the newest 20" until "Load earlier" is first used, and only then is pinned. So in a long session the oldest message scrolls off the top as new ones arrive, and "Load earlier" brings it back. This is by design: it never leaves gaps or duplicates.
+- **The Agent's `listDeltas` ignores `threadId`** (0.7.3). It reads deltas by stream ID alone, so checking the thread's owner doesn't cover the stream cursors a client sends. Filter the cursors to the thread's streams (`listStreams` with every status) before `syncStreams`. Drop unknown cursors rather than throwing: finished streams are deleted after 5 minutes, so a client can briefly hold a cursor for its own stream after it's been deleted.
 - **A reply reopened mid-stream types out from the start.** `useSmoothText` starts from empty when a message mounts while streaming, then speeds up to catch up with the stream. Only replies loaded after they've finished show in full at once.
 
 ## Final setup pass (before launch; deferred at your request)
