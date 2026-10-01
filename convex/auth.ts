@@ -24,14 +24,12 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     plugins: [
       convex({
         authConfig,
-        // The default payload drops the image. `picture` becomes
-        // `identity.pictureUrl` in getCurrentUser.
         jwt: {
           definePayload: ({ user }) => ({
             name: user.name,
             email: user.email,
             emailVerified: user.emailVerified,
-            picture: user.image ?? undefined,
+            pictureUrl: user.image ?? undefined,
           }),
         },
       }),
