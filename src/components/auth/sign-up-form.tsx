@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,43 +19,42 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
-import { withNext } from "@/lib/safe-redirect";
 import { GoogleButton } from "./google-button";
 import { PasswordInput } from "./password-input";
 
-// Better Auth's default password length limits.
-const MIN_PASSWORD = 8;
-const MAX_PASSWORD = 128;
-
-const signUpSchema = z.object({
+const formSchema = z.object({
   name: z.string().trim().min(1, "Enter your name."),
   email: z.email("Enter a valid email address."),
+  // Better Auth's default password length limits.
   password: z
     .string()
-    .min(MIN_PASSWORD, `Use at least ${MIN_PASSWORD} characters.`)
-    .max(MAX_PASSWORD, `Use at most ${MAX_PASSWORD} characters.`),
+    .min(8, "Use at least 8 characters.")
+    .max(128, "Use at most 128 characters."),
 });
 
-export function SignUpForm({ next, google }: { next: string; google: boolean }) {
+export function SignUpForm() {
   const router = useRouter();
-  // Uncontrolled inputs and no defaultValues, so register() starts from what
-  // is already in each input: text typed or autofilled before hydration.
-  const form = useForm<z.infer<typeof signUpSchema>>({
-    resolver: zodResolver(signUpSchema),
-  });
-  const { errors, isSubmitting, isSubmitSuccessful } = form.formState;
-  // Stay pending through the navigation so the form can't resubmit.
-  const pending = isSubmitting || isSubmitSuccessful;
 
-  async function onSubmit(values: z.infer<typeof signUpSchema>) {
-    const { error } = await authClient.signUp.email(values);
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+    },
+  });
+  
+  const pending = form.formState.isSubmitting || form.formState.isSubmitSuccessful;
+
+  async function onSubmit(data: z.infer<typeof formSchema>) {
+    const { error } = await authClient.signUp.email(data);
     if (error) {
       form.setError("root", {
         message: error.message ?? "Couldn't create your account. Please try again.",
       });
       return;
     }
-    router.replace(next);
+    router.replace("/chat");
     router.refresh();
   }
 
@@ -69,69 +68,82 @@ export function SignUpForm({ next, google }: { next: string; google: boolean }) 
           It takes a few seconds, and it&apos;s free.
         </p>
       </div>
-      {/* POST, so a submit that lands before hydration can't put the
-          password in the URL. */}
+
       <form method="post" noValidate onSubmit={form.handleSubmit(onSubmit)}>
         <FieldGroup>
-          {errors.root && (
+          {form.formState.errors.root && (
             <Alert variant="destructive">
               <CircleAlertIcon />
-              <AlertDescription>{errors.root.message}</AlertDescription>
+              <AlertDescription>
+                {form.formState.errors.root.message}
+              </AlertDescription>
             </Alert>
           )}
-          {google && (
-            <>
-              <Field>
-                <GoogleButton
-                  next={next}
-                  disabled={pending}
-                  onError={(message) => form.setError("root", { message })}
+          <Field>
+            <GoogleButton
+              disabled={pending}
+              onError={(message) => form.setError("root", { message })}
+            />
+          </Field>
+          <FieldSeparator>Or sign up with email</FieldSeparator>
+          <Controller
+            name="name"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="sign-up-name">Name</FieldLabel>
+                <Input
+                  {...field}
+                  id="sign-up-name"
+                  aria-invalid={fieldState.invalid}
+                  placeholder="Ada Lovelace"
+                  autoComplete="name"
                 />
+                {fieldState.invalid && (
+                  <FieldError errors={[fieldState.error]} />
+                )}
               </Field>
-              <FieldSeparator>
-                Or sign up with email
-              </FieldSeparator>
-            </>
-          )}
-          <Field data-invalid={!!errors.name}>
-            <FieldLabel htmlFor="sign-up-name">Name</FieldLabel>
-            <Input
-              {...form.register("name")}
-              id="sign-up-name"
-              autoComplete="name"
-              placeholder="Ada Lovelace"
-              aria-invalid={!!errors.name}
-            />
-            <FieldError errors={[errors.name]} />
-          </Field>
-          <Field data-invalid={!!errors.email}>
-            <FieldLabel htmlFor="sign-up-email">Email</FieldLabel>
-            <Input
-              {...form.register("email")}
-              id="sign-up-email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              aria-invalid={!!errors.email}
-            />
-            <FieldError errors={[errors.email]} />
-          </Field>
-          <Field data-invalid={!!errors.password}>
-            <FieldLabel htmlFor="sign-up-password">Password</FieldLabel>
-            <PasswordInput
-              {...form.register("password")}
-              id="sign-up-password"
-              autoComplete="new-password"
-              aria-invalid={!!errors.password}
-            />
-            {errors.password ? (
-              <FieldError errors={[errors.password]} />
-            ) : (
-              <FieldDescription>
-                At least {MIN_PASSWORD} characters.
-              </FieldDescription>
             )}
-          </Field>
+          />
+          <Controller
+            name="email"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="sign-up-email">Email</FieldLabel>
+                <Input
+                  {...field}
+                  id="sign-up-email"
+                  type="email"
+                  aria-invalid={fieldState.invalid}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+                {fieldState.invalid && (
+                  <FieldError errors={[fieldState.error]} />
+                )}
+              </Field>
+            )}
+          />
+          <Controller
+            name="password"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="sign-up-password">Password</FieldLabel>
+                <PasswordInput
+                  {...field}
+                  id="sign-up-password"
+                  aria-invalid={fieldState.invalid}
+                  autoComplete="new-password"
+                />
+                <FieldDescription>At least 8 characters.</FieldDescription>
+                {fieldState.invalid && (
+                  <FieldError errors={[fieldState.error]} />
+                )}
+              </Field>
+            )}
+          />
           <Field>
             <Button type="submit" size="lg" disabled={pending}>
               {pending && <Spinner data-icon="inline-start" />}
@@ -139,7 +151,7 @@ export function SignUpForm({ next, google }: { next: string; google: boolean }) 
             </Button>
             <FieldDescription>
               Already have an account?{" "}
-              <Link href={withNext("/sign-in", next)}>Sign in</Link>
+              <Link href="/sign-in">Sign in</Link>
             </FieldDescription>
           </Field>
         </FieldGroup>

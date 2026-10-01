@@ -1,9 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// No users table: user profiles live in the Better Auth component's `user`
-// table (read them with getViewer in convex/lib/access.ts). App data about a
-// user goes in its own table, keyed by the Better Auth user _id.
 export default defineSchema({
   // One row per turn whose reply the user stopped (convex/lib/stop.ts). A
   // turn is the Agent's `order`: a prompt and its reply share it.

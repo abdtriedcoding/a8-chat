@@ -23,8 +23,6 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  // Hands the session's Convex JWT to the client so the first render is
-  // already authenticated. This makes every route dynamic, which is fine here.
   const token = await getToken();
   return (
     <html

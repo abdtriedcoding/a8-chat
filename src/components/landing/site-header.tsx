@@ -1,9 +1,8 @@
 import Link from "next/link";
+import { GitHubIcon } from "@/components/icons/github-icon";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { APP_HOME } from "@/lib/safe-redirect";
 import { GITHUB_URL } from "@/lib/site";
-import { GitHubIcon } from "./github-icon";
 
 export function SiteHeader({ signedIn }: { signedIn: boolean }) {
   return (
@@ -28,7 +27,7 @@ export function SiteHeader({ signedIn }: { signedIn: boolean }) {
           </Button>
           {signedIn ? (
             <Button asChild size="lg">
-              <Link href={APP_HOME}>Open a8</Link>
+              <Link href="/chat">Open a8</Link>
             </Button>
           ) : (
             <>

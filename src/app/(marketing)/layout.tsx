@@ -8,7 +8,6 @@ export default async function MarketingLayout({
 }: {
   children: ReactNode;
 }) {
-  // Cached: the root layout already fetched this request's token.
   const signedIn = await isAuthenticated();
   return (
     <>

@@ -3,7 +3,7 @@
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { LogoMark } from "@/components/logo";
+import { LogoMark } from "@/components/icons/logo-mark";
 import {
   Empty,
   EmptyDescription,

@@ -3,7 +3,7 @@
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { CircleAlertIcon, CircleStopIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { LogoMark } from "@/components/logo";
+import { LogoMark } from "@/components/icons/logo-mark";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {

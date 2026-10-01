@@ -26,19 +26,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 
-type Viewer = NonNullable<FunctionReturnType<typeof api.users.viewer>>;
+type CurrentUser = NonNullable<
+  FunctionReturnType<typeof api.auth.getCurrentUser>
+>;
 
 /** The signed-in user, with a menu to sign out. */
 export function NavUser() {
   const { isLoading } = useConvexAuth();
-  const viewer = useQuery(api.users.viewer, isLoading ? "skip" : {});
+  const user = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
   const { isMobile } = useSidebar();
-  // Sign-out ends the session before the page leaves, so users.viewer turns
+  // Sign-out ends the session before the page leaves, so getCurrentUser turns
   // null for a moment. Keep showing who was signed in until the redirect.
-  const [signingOutAs, setSigningOutAs] = useState<Viewer | null>(null);
-  const shown = signingOutAs ?? viewer;
+  const [signingOutAs, setSigningOutAs] = useState<CurrentUser | null>(null);
+  const shown = signingOutAs ?? user;
 
-  async function signOut(current: Viewer) {
+  async function signOut(current: CurrentUser) {
     setSigningOutAs(current);
     try {
       // Sign-out succeeds even without a session, so an error response is a
@@ -83,7 +85,7 @@ export function NavUser() {
     );
   }
 
-  const profile = <ViewerProfile viewer={shown} />;
+  const profile = <UserProfile user={shown} />;
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -121,17 +123,17 @@ export function NavUser() {
   );
 }
 
-function ViewerProfile({ viewer }: { viewer: Viewer }) {
+function UserProfile({ user }: { user: CurrentUser }) {
   return (
     <>
       <Avatar>
-        {viewer.image && <AvatarImage src={viewer.image} alt="" />}
-        <AvatarFallback>{initials(viewer)}</AvatarFallback>
+        {user.pictureUrl && <AvatarImage src={user.pictureUrl} alt="" />}
+        <AvatarFallback>{initials(user)}</AvatarFallback>
       </Avatar>
       <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-        <span className="truncate font-medium">{viewer.name}</span>
+        <span className="truncate font-medium">{user.name}</span>
         <span className="truncate text-xs text-muted-foreground">
-          {viewer.email}
+          {user.email}
         </span>
       </div>
     </>
@@ -139,7 +141,7 @@ function ViewerProfile({ viewer }: { viewer: Viewer }) {
 }
 
 /** Up to two initials from the name, or the email's first letter. */
-function initials({ name, email }: Viewer): string {
+function initials({ name = "", email = "" }: CurrentUser): string {
   const letters = name
     .trim()
     .split(/\s+/)
