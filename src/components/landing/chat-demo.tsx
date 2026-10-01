@@ -7,7 +7,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { LogoMark } from "@/components/logo";
+import { LogoMark } from "@/components/icons/logo-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

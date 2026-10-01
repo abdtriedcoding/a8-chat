@@ -20,7 +20,6 @@ import type * as lib_send from "../lib/send.js";
 import type * as lib_stop from "../lib/stop.js";
 import type * as lib_text from "../lib/text.js";
 import type * as threads from "../threads.js";
-import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -41,7 +40,6 @@ declare const fullApi: ApiFromModules<{
   "lib/stop": typeof lib_stop;
   "lib/text": typeof lib_text;
   threads: typeof threads;
-  users: typeof users;
 }>;
 
 /**

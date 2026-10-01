@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { ChatDemo } from "@/components/landing/chat-demo";
 import { Faq } from "@/components/landing/faq";
 import { Features } from "@/components/landing/features";
-import { GitHubIcon } from "@/components/landing/github-icon";
+import { GitHubIcon } from "@/components/icons/github-icon";
 import { Highlight } from "@/components/landing/highlight";
 import { Pricing } from "@/components/landing/pricing";
 import { Badge } from "@/components/ui/badge";

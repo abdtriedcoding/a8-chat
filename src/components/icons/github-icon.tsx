@@ -1,4 +1,3 @@
-// GitHub's mark, in one color so it follows the text around it.
 export function GitHubIcon(props: React.ComponentProps<"svg">) {
   return (
     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" {...props}>

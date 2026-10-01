@@ -33,8 +33,8 @@ type Env = {
   readonly ANTHROPIC_API_KEY: string | undefined;
   readonly BETTER_AUTH_SECRET: string;
   readonly DEFAULT_MODEL: string | undefined;
-  readonly GOOGLE_CLIENT_ID: string | undefined;
-  readonly GOOGLE_CLIENT_SECRET: string | undefined;
+  readonly GOOGLE_CLIENT_ID: string;
+  readonly GOOGLE_CLIENT_SECRET: string;
   readonly OPENROUTER_API_KEY: string | undefined;
   readonly SITE_URL: string;
 };

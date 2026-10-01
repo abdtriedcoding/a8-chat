@@ -18,11 +18,8 @@ if (!convexUrl) {
 
 const convex = new ConvexReactClient(convexUrl);
 
-// Type-only cast. From better-auth 1.6.18 on, the provider's AuthClient type
-// infers `useSession().data` as `never`, so no real client matches it (and
-// only a cast through unknown compiles). The runtime API it calls (useSession,
-// convex.token, getSession) is unchanged. Remove once @convex-dev/better-auth
-// ships types for newer 1.6.x releases.
+// Type-only cast: @convex-dev/better-auth 0.12.5 types reject better-auth
+// 1.6.18+ clients. Drop it once get-convex/better-auth#420 ships.
 const providerAuthClient = authClient as unknown as AuthClient;
 
 export function ConvexClientProvider({
