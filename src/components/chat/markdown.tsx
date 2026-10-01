@@ -7,6 +7,7 @@ import { cn } from "cn";
 import {
   Streamdown,
   type ControlsConfig,
+  type LinkSafetyConfig,
   type PluginConfig,
   type StreamdownProps,
   type StreamdownTranslations,
@@ -26,6 +27,10 @@ const controls: ControlsConfig = {
 const translations: Partial<StreamdownTranslations> = {
   copyCode: "Copy code",
 };
+
+// Real links that open in a new tab, rather than buttons behind a confirm
+// dialog, so they can be middle-clicked, copied and hovered for their URL.
+const linkSafety: LinkSafetyConfig = { enabled: false };
 
 // Remend closes unfinished markdown. Ours runs before its KaTeX handler (70).
 const streamingRemendOptions: StreamdownProps["remend"] = {
@@ -53,6 +58,7 @@ export function Markdown({
       plugins={plugins}
       controls={controls}
       translations={translations}
+      linkSafety={linkSafety}
       remend={streaming ? streamingRemendOptions : undefined}
       isAnimating={streaming}
       lineNumbers={false}
@@ -69,9 +75,9 @@ export function Markdown({
   );
 }
 
-const TABLE_ROW = /^\s*\|/;
 // Up to 3 spaces in; 4 or more makes an indented code line instead.
-const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const TABLE_ROW = /^ {0,3}\|/;
+const CODE_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const DELIMITER_CELL = /^\s*:?-+:?\s*$/;
 
 /**
@@ -122,11 +128,19 @@ function tableRowsAtEnd(lines: string[]): number {
 function inCodeFence(lines: string[]): boolean {
   let open: string | undefined;
   for (const line of lines) {
-    const fence = CODE_FENCE.exec(line)?.[1];
-    if (!fence) continue;
-    // Only a run of the same character, at least as long, closes a fence.
+    const match = CODE_FENCE.exec(line);
+    if (!match) continue;
+    const [, fence, rest] = match;
+    // Only a bare run of the same character, at least as long, closes a
+    // fence. A language tag after it makes the line code.
     if (open === undefined) open = fence;
-    else if (fence[0] === open[0] && fence.length >= open.length) open = undefined;
+    else if (
+      fence[0] === open[0] &&
+      fence.length >= open.length &&
+      rest.trim() === ""
+    ) {
+      open = undefined;
+    }
   }
   return open !== undefined;
 }
