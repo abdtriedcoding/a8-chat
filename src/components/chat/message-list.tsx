@@ -1,7 +1,7 @@
 "use client";
 
-import type { UIMessage } from "@convex-dev/agent/react";
 import type { PaginationStatus } from "convex/react";
+import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import {
   MessageScroller,
@@ -12,7 +12,13 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
-import { ChatMessage, PendingReply } from "./chat-message";
+import {
+  ChatMessage,
+  PendingReply,
+  StoppedReply,
+  stoppedTurns,
+  type ThreadMessage,
+} from "./chat-message";
 
 /**
  * A thread's messages, oldest first. It follows a streaming reply until the
@@ -24,12 +30,13 @@ export function MessageList({
   onLoadEarlier,
   pendingReply,
 }: {
-  messages: UIMessage[];
+  messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
   /** Set while the latest prompt has no reply yet. */
   pendingReply: { stale: boolean } | null;
 }) {
+  const stopped = stoppedTurns(messages);
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
@@ -50,14 +57,26 @@ export function MessageList({
                 </Button>
               </MessageScrollerItem>
             )}
-            {messages.map((message) => (
-              <MessageScrollerItem
-                key={message.key}
-                messageId={message.key}
-                scrollAnchor={message.role === "user"}
-              >
-                <ChatMessage message={message} />
-              </MessageScrollerItem>
+            {messages.map((message, i) => (
+              <Fragment key={message.key}>
+                <MessageScrollerItem
+                  messageId={message.key}
+                  scrollAnchor={message.role === "user"}
+                >
+                  <ChatMessage
+                    message={message}
+                    stopped={stopped.get(message.order)}
+                  />
+                </MessageScrollerItem>
+                {/* A turn stopped before its reply began has no reply to mark. */}
+                {message.role === "user" &&
+                  stopped.has(message.order) &&
+                  messages[i + 1]?.order !== message.order && (
+                    <MessageScrollerItem messageId={`${message.key}-stopped`}>
+                      <StoppedReply />
+                    </MessageScrollerItem>
+                  )}
+              </Fragment>
             ))}
             {pendingReply && (
               <MessageScrollerItem messageId="pending-reply">

@@ -47,7 +47,7 @@ export async function send(
   } else {
     threadId = input.threadId;
   }
-  const { messageId } = await chatAgent.saveMessage(ctx, {
+  const { messageId, message } = await chatAgent.saveMessage(ctx, {
     threadId,
     userId: viewer._id,
     prompt,
@@ -55,6 +55,7 @@ export async function send(
   });
   await ctx.scheduler.runAfter(0, internal.chat.streamReply, {
     threadId,
+    order: message.order,
     promptMessageId: messageId,
     userId: viewer._id,
     timeZone: resolveTimeZone(input.timeZone),

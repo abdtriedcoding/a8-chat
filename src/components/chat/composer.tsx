@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -14,16 +14,20 @@ import { errorMessage } from "@/lib/errors";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. The text clears
- * as soon as it's sent, and comes back if the send fails.
+ * as soon as it's sent, and comes back if the send fails. While a reply is
+ * on its way, Stop takes Send's place if `onStop` is given.
  */
 export function Composer({
   onSend,
+  onStop,
   busy = false,
   autoFocus = false,
   className,
 }: {
   /** Sends the prompt. A rejection shows as a toast. */
   onSend: (prompt: string) => Promise<void>;
+  /** Stops the reply on its way. A rejection shows as a toast. */
+  onStop?: () => Promise<void>;
   /** A reply is on its way, so sending waits. Typing still works. */
   busy?: boolean;
   autoFocus?: boolean;
@@ -31,8 +35,11 @@ export function Composer({
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const waiting = sending || busy;
   const canSend = text.trim() !== "" && !waiting;
+  // Not while the Send itself is in flight: there's no reply to stop yet.
+  const canStop = onStop !== undefined && busy && !sending;
 
   async function send() {
     if (!canSend) return;
@@ -47,6 +54,18 @@ export function Composer({
       toast.error(errorMessage(error));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function stop() {
+    if (!onStop) return;
+    setStopping(true);
+    try {
+      await onStop();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setStopping(false);
     }
   }
 
@@ -80,16 +99,31 @@ export function Composer({
           className="max-h-52 min-h-11 px-3 pt-3"
         />
         <InputGroupAddon align="block-end">
-          <InputGroupButton
-            type="submit"
-            variant="default"
-            size="icon-sm"
-            className="ml-auto rounded-full"
-            disabled={!canSend}
-          >
-            {waiting ? <Spinner /> : <ArrowUpIcon />}
-            <span className="sr-only">Send</span>
-          </InputGroupButton>
+          {/* One button in one place, so focus stays when Stop turns back into Send. */}
+          {canStop ? (
+            <InputGroupButton
+              type="button"
+              variant="default"
+              size="icon-sm"
+              className="ml-auto rounded-full"
+              disabled={stopping}
+              onClick={() => void stop()}
+            >
+              {stopping ? <Spinner /> : <SquareIcon className="fill-current" />}
+              <span className="sr-only">Stop</span>
+            </InputGroupButton>
+          ) : (
+            <InputGroupButton
+              type="submit"
+              variant="default"
+              size="icon-sm"
+              className="ml-auto rounded-full"
+              disabled={!canSend}
+            >
+              {waiting ? <Spinner /> : <ArrowUpIcon />}
+              <span className="sr-only">Send</span>
+            </InputGroupButton>
+          )}
         </InputGroupAddon>
       </InputGroup>
     </form>

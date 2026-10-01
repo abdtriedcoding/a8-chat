@@ -7,9 +7,11 @@ import {
 } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import {
   internalAction,
+  internalMutation,
+  internalQuery,
   mutation,
   query,
   type QueryCtx,
@@ -19,9 +21,19 @@ import { chatAgent } from "./lib/agent";
 import { chatModel, resolveModelId } from "./lib/models";
 import { replyOptions } from "./lib/reply";
 import { send } from "./lib/send";
+import {
+  isTurnStopped,
+  saveStoppedReply,
+  STOPPED,
+  stop,
+  stoppedTurns,
+} from "./lib/stop";
 
 // The browser's time zone. The Send checks it (convex/lib/send.ts).
 const vTimeZone = v.optional(v.string());
+
+// A turn: a prompt and its reply share the Agent's `order`.
+const vTurn = { threadId: v.string(), order: v.number() };
 
 /** Creates a thread from its first prompt and starts the reply. */
 export const startThread = mutation({
@@ -42,7 +54,27 @@ export const sendMessage = mutation({
   },
 });
 
-/** A page of a thread's messages, plus the deltas of replies still streaming. */
+/**
+ * Stops the thread's reply in progress. Its text so far stays, unless the
+ * user hadn't seen any (`keepText: false`, convex/lib/stop.ts).
+ */
+export const stopReply = mutation({
+  args: { threadId: v.string(), keepText: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const viewer = await requireViewer(ctx);
+    await requireOwnedThread(ctx, args.threadId, viewer._id);
+    await stop(ctx, args.threadId, args.keepText);
+    return null;
+  },
+});
+
+/**
+ * A page of a thread's messages, plus the deltas of replies still streaming.
+ * `stopped` is on every message of a turn whose reply the user stopped,
+ * with whether its text was kept, and null elsewhere. A reply rebuilt from
+ * its stream doesn't have it, but its prompt does.
+ */
 export const listThreadMessages = query({
   args: {
     threadId: v.string(),
@@ -54,11 +86,26 @@ export const listThreadMessages = query({
     await requireOwnedThread(ctx, args.threadId, viewer._id);
 
     const paginated = await listUIMessages(ctx, components.agent, args);
+    const stopped = await stoppedTurns(
+      ctx,
+      args.threadId,
+      paginated.page.map((message) => message.order),
+    );
     const streams = await syncStreams(ctx, components.agent, {
       threadId: args.threadId,
       streamArgs: await threadStreamArgs(ctx, args.threadId, args.streamArgs),
+      // Aborted ones too, so a stopped reply's text stays on screen until
+      // the Agent saves it. A saved reply shows instead of its stream.
+      includeStatuses: ["streaming", "aborted"],
     });
-    return { ...paginated, streams };
+    return {
+      ...paginated,
+      page: paginated.page.map((message) => ({
+        ...message,
+        stopped: stopped.get(message.order) ?? null,
+      })),
+      streams,
+    };
   },
 });
 
@@ -85,6 +132,25 @@ async function threadStreamArgs(
   };
 }
 
+/** Whether the user stopped the turn's reply (convex/lib/stop.ts). */
+export const isStopped = internalQuery({
+  args: vTurn,
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    return await isTurnStopped(ctx, args.threadId, args.order);
+  },
+});
+
+/** Saves a stopped reply's text as a normal reply (convex/lib/stop.ts). */
+export const saveStopped = internalMutation({
+  args: vTurn,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await saveStoppedReply(ctx, args.threadId, args.order);
+    return null;
+  },
+});
+
 /**
  * Streams the reply to a saved prompt, writing deltas to the thread as they
  * arrive. A model or provider error marks the pending reply as failed.
@@ -92,24 +158,46 @@ async function threadStreamArgs(
  */
 export const streamReply = internalAction({
   args: {
-    threadId: v.string(),
+    ...vTurn,
     promptMessageId: v.string(),
     userId: v.string(),
     timeZone: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const result = await chatAgent.streamText(
-      ctx,
-      { threadId: args.threadId, userId: args.userId },
-      {
-        promptMessageId: args.promptMessageId,
-        model: chatModel(resolveModelId()),
-        ...replyOptions({ timeZone: args.timeZone, now: new Date() }),
-      },
-      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
-    );
-    await result.consumeStream();
+    const turn = { threadId: args.threadId, order: args.order };
+    const isStopped = (): Promise<boolean> =>
+      ctx.runQuery(internal.chat.isStopped, turn);
+    // A stop pressed before the reply started means no model call at all.
+    if (await isStopped()) return null;
+
+    // A stop that lands before the reply's stream exists has no stream to
+    // abort, so look once more when the model starts answering. The stream
+    // is created on "start", well before the model's first chunk comes back.
+    const abort = new AbortController();
+    let checked = false;
+    try {
+      const result = await chatAgent.streamText(
+        ctx,
+        { threadId: args.threadId, userId: args.userId },
+        {
+          promptMessageId: args.promptMessageId,
+          model: chatModel(resolveModelId()),
+          ...replyOptions({ timeZone: args.timeZone, now: new Date() }),
+          abortSignal: abort.signal,
+          onChunk: async ({ chunk }) => {
+            if (checked || chunk.type === "start") return;
+            checked = true;
+            if (await isStopped()) abort.abort(STOPPED);
+          },
+        },
+        { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+      );
+      await result.consumeStream();
+    } finally {
+      // Does nothing unless the reply was stopped.
+      await ctx.runMutation(internal.chat.saveStopped, turn);
+    }
     return null;
   },
 });

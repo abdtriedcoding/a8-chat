@@ -1,7 +1,7 @@
 "use client";
 
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, CircleStopIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { LogoMark } from "@/components/logo";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -14,9 +14,37 @@ import {
 import { Markdown } from "./markdown";
 import { ReplyActions } from "./reply-actions";
 
-export function ChatMessage({ message }: { message: UIMessage }) {
+/** How the user stopped a turn's reply (convex/lib/stop.ts). */
+export type Stop = { keepText: boolean };
+
+/**
+ * A message as the thread lists it. `stopped` is on every message of a turn
+ * whose reply the user stopped. Messages the client makes itself, such as
+ * an optimistic prompt or a reply rebuilt from its stream, don't have it.
+ */
+export type ThreadMessage = UIMessage & { stopped?: Stop | null };
+
+/** The turns whose replies were stopped, by order (a prompt and its reply share one). */
+export function stoppedTurns(messages: ThreadMessage[]): Map<number, Stop> {
+  const turns = new Map<number, Stop>();
+  for (const { order, stopped } of messages) {
+    if (stopped) turns.set(order, stopped);
+  }
+  return turns;
+}
+
+export function ChatMessage({
+  message,
+  stopped,
+}: {
+  message: ThreadMessage;
+  /** Set when the user stopped this message's turn. */
+  stopped?: Stop;
+}) {
   if (message.role === "user") return <UserMessage text={message.text} />;
-  if (message.role === "assistant") return <AssistantMessage message={message} />;
+  if (message.role === "assistant") {
+    return <AssistantMessage message={message} stopped={stopped} />;
+  }
   return null;
 }
 
@@ -32,14 +60,24 @@ function UserMessage({ text }: { text: string }) {
   );
 }
 
-function AssistantMessage({ message }: { message: UIMessage }) {
+function AssistantMessage({
+  message,
+  stopped,
+}: {
+  message: ThreadMessage;
+  stopped?: Stop;
+}) {
+  // A reply stopped before the user saw any of it shows none of it later.
+  const source = stopped?.keepText === false ? "" : message.text;
   // Only a reply that mounts mid-stream types itself out; one loaded from
   // history shows in full at once.
-  const [text, { isStreaming: typing }] = useSmoothText(message.text, {
+  const [smoothed, { isStreaming: typing }] = useSmoothText(source, {
     startStreaming: message.status === "streaming",
   });
+  // The smoothed text never shrinks, so text that goes is cut here.
+  const text = source ? smoothed : "";
   const inProgress =
-    message.status === "pending" || message.status === "streaming";
+    !stopped && (message.status === "pending" || message.status === "streaming");
   // The smoothed text can still be catching up after the reply is done.
   const streaming = inProgress || typing;
 
@@ -54,16 +92,38 @@ function AssistantMessage({ message }: { message: UIMessage }) {
       ) : (
         inProgress && <Thinking />
       )}
-      {message.status === "failed" && (
+      {/* A stopped reply is failed until its text is saved, or for good if it went. */}
+      {message.status === "failed" && !stopped && (
         <Bubble variant="destructive">
           <BubbleContent>
             Couldn&apos;t get a reply. Send your message again to retry.
           </BubbleContent>
         </Bubble>
       )}
+      {stopped && <StoppedMarker />}
       {/* The full source, not the smoothed text, which can lag behind. */}
-      {!streaming && message.text && <ReplyActions text={message.text} />}
+      {!streaming && source && <ReplyActions text={source} />}
     </AssistantRow>
+  );
+}
+
+/** Where a reply would be, for a turn stopped before its reply began. */
+export function StoppedReply() {
+  return (
+    <AssistantRow>
+      <StoppedMarker />
+    </AssistantRow>
+  );
+}
+
+function StoppedMarker() {
+  return (
+    <Marker>
+      <MarkerIcon>
+        <CircleStopIcon />
+      </MarkerIcon>
+      <MarkerContent>Stopped</MarkerContent>
+    </Marker>
   );
 }
 

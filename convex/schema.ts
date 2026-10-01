@@ -1,6 +1,17 @@
-import { defineSchema } from "convex/server";
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
 
 // No users table: user profiles live in the Better Auth component's `user`
 // table (read them with getViewer in convex/lib/access.ts). App data about a
 // user goes in its own table, keyed by the Better Auth user _id.
-export default defineSchema({});
+export default defineSchema({
+  // One row per turn whose reply the user stopped (convex/lib/stop.ts). A
+  // turn is the Agent's `order`: a prompt and its reply share it.
+  stoppedReplies: defineTable({
+    threadId: v.string(),
+    order: v.number(),
+    // False when the user stopped before seeing any of the reply's text,
+    // which then goes too, even if some had already streamed.
+    keepText: v.boolean(),
+  }).index("by_threadId_and_order", ["threadId", "order"]),
+});

@@ -12,6 +12,7 @@ import {
   requireViewer,
 } from "./lib/access";
 import { chatAgent } from "./lib/agent";
+import { deleteStoppedReplies } from "./lib/stop";
 
 const vThreadSummary = v.object({
   _id: v.string(),
@@ -63,7 +64,10 @@ export const get = query({
   },
 });
 
-/** Deletes a thread with its messages and streams, in batches in the background. */
+/**
+ * Deletes a thread with its messages and streams, in batches in the
+ * background. Its stoppedReplies rows go at once.
+ */
 export const remove = mutation({
   args: { threadId: v.string() },
   returns: v.null(),
@@ -71,6 +75,7 @@ export const remove = mutation({
     const viewer = await requireViewer(ctx);
     await requireOwnedThread(ctx, args.threadId, viewer._id);
     await chatAgent.deleteThreadAsync(ctx, { threadId: args.threadId });
+    await deleteStoppedReplies(ctx, args.threadId);
     return null;
   },
 });
