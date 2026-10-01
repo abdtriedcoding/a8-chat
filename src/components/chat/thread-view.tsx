@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader } from "./chat-header";
+import { stoppedTurns } from "./chat-message";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
 
@@ -52,12 +53,18 @@ export function ThreadView({ threadId }: { threadId: string }) {
       }),
   );
 
+  const stopReply = useMutation(api.chat.stopReply);
+
   const last = messages.at(-1);
+  // Once stopped, the turn is over, whatever the runner is still doing.
+  const lastStopped = last !== undefined && stoppedTurns(messages).has(last.order);
   // The prompt is saved, but the Agent hasn't started the reply.
-  const awaitingKey = last?.role === "user" ? last.key : null;
+  const awaitingKey =
+    last?.role === "user" && !lastStopped ? last.key : null;
   const stale = useStaleAfter(awaitingKey, STALE_AFTER_MS);
   const replying =
     last?.role === "assistant" &&
+    !lastStopped &&
     (last.status === "pending" || last.status === "streaming");
   const busy = (awaitingKey !== null && !stale) || replying;
 
@@ -112,6 +119,11 @@ export function ThreadView({ threadId }: { threadId: string }) {
               prompt,
               timeZone: browserTimeZone(),
             });
+          }}
+          onStop={async () => {
+            // Text the user hasn't seen yet goes with the stop.
+            const keepText = last?.role === "assistant" && last.text !== "";
+            await stopReply({ threadId, keepText });
           }}
           busy={busy}
           autoFocus
