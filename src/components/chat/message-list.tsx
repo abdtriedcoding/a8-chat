@@ -29,14 +29,18 @@ export function MessageList({
   status,
   onLoadEarlier,
   pendingReply,
+  onRegenerate,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
   /** Set while the latest prompt has no reply yet. */
   pendingReply: { stale: boolean } | null;
+  /** Set while the last reply can be regenerated, which only it can. */
+  onRegenerate?: () => Promise<void>;
 }) {
   const stopped = stoppedTurns(messages);
+  const lastIndex = messages.length - 1;
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
@@ -66,6 +70,7 @@ export function MessageList({
                   <ChatMessage
                     message={message}
                     stopped={stopped.get(message.order)}
+                    onRegenerate={i === lastIndex ? onRegenerate : undefined}
                   />
                 </MessageScrollerItem>
                 {/* A turn stopped before its reply began has no reply to mark. */}
@@ -73,7 +78,9 @@ export function MessageList({
                   stopped.has(message.order) &&
                   messages[i + 1]?.order !== message.order && (
                     <MessageScrollerItem messageId={`${message.key}-stopped`}>
-                      <StoppedReply />
+                      <StoppedReply
+                        onRegenerate={i === lastIndex ? onRegenerate : undefined}
+                      />
                     </MessageScrollerItem>
                   )}
               </Fragment>

@@ -1,10 +1,17 @@
 import { abortStream, listMessages } from "@convex-dev/agent";
 import { components, internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { MAX_REPLY_STEPS } from "./reply";
 
 /** The abort reason a stopped reply's stream carries. */
 export const STOPPED = "Stopped by the user";
+
+/**
+ * How the user stopped a turn's reply. `settled` once the reply runner is
+ * done with the turn, so a new reply to its prompt can't race it.
+ */
+export type Stop = { keepText: boolean; settled: boolean };
 
 /**
  * Stops the thread's last reply while it's in progress; does nothing once
@@ -39,7 +46,12 @@ export async function stop(
 
   const { order } = latest;
   if (!(await stoppedReply(ctx, threadId, order))) {
-    await ctx.db.insert("stoppedReplies", { threadId, order, keepText });
+    await ctx.db.insert("stoppedReplies", {
+      threadId,
+      order,
+      keepText,
+      settled: false,
+    });
   }
   await abortStream(ctx, components.agent, { threadId, order, reason: STOPPED });
   if (latest.status === "pending") {
@@ -112,6 +124,23 @@ export async function saveStoppedReply(
   }
 }
 
+/**
+ * The reply runner's last step for a turn, however it ends: saves a stopped
+ * reply's text (saveStoppedReply), then settles the stop. Does nothing for
+ * a turn that wasn't stopped.
+ */
+export async function endStoppedReply(
+  ctx: MutationCtx,
+  threadId: string,
+  order: number,
+): Promise<void> {
+  await saveStoppedReply(ctx, threadId, order);
+  const stopped = await stoppedReply(ctx, threadId, order);
+  if (stopped && stopped.settled === false) {
+    await ctx.db.patch("stoppedReplies", stopped._id, { settled: true });
+  }
+}
+
 /** Whether the user stopped the reply of the thread's turn at `order`. */
 export async function isTurnStopped(
   ctx: QueryCtx,
@@ -119,6 +148,16 @@ export async function isTurnStopped(
   order: number,
 ): Promise<boolean> {
   return (await stoppedReply(ctx, threadId, order)) !== null;
+}
+
+/** How the user stopped the reply of the thread's turn at `order`, if they did. */
+export async function turnStop(
+  ctx: QueryCtx,
+  threadId: string,
+  order: number,
+): Promise<Stop | null> {
+  const row = await stoppedReply(ctx, threadId, order);
+  return row && toStop(row);
 }
 
 async function stoppedReply(ctx: QueryCtx, threadId: string, order: number) {
@@ -130,15 +169,12 @@ async function stoppedReply(ctx: QueryCtx, threadId: string, order: number) {
     .unique();
 }
 
-/**
- * The turns among `orders` whose replies were stopped, by order, each with
- * whether its text was kept.
- */
+/** The turns among `orders` whose replies were stopped, by order. */
 export async function stoppedTurns(
   ctx: QueryCtx,
   threadId: string,
   orders: number[],
-): Promise<Map<number, { keepText: boolean }>> {
+): Promise<Map<number, Stop>> {
   if (orders.length === 0) return new Map();
   const first = Math.min(...orders);
   const last = Math.max(...orders);
@@ -149,7 +185,21 @@ export async function stoppedTurns(
       q.eq("threadId", threadId).gte("order", first).lte("order", last),
     )
     .take(last - first + 1);
-  return new Map(rows.map((row) => [row.order, { keepText: row.keepText }]));
+  return new Map(rows.map((row) => [row.order, toStop(row)]));
+}
+
+function toStop(row: Doc<"stoppedReplies">): Stop {
+  return { keepText: row.keepText, settled: row.settled !== false };
+}
+
+/** Forgets that the turn's reply was stopped, for a new reply to its prompt. */
+export async function clearStop(
+  ctx: MutationCtx,
+  threadId: string,
+  order: number,
+): Promise<void> {
+  const stopped = await stoppedReply(ctx, threadId, order);
+  if (stopped) await ctx.db.delete("stoppedReplies", stopped._id);
 }
 
 /**

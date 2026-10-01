@@ -2,7 +2,7 @@
 
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { CircleAlertIcon, CircleStopIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { LogoMark } from "@/components/logo";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
@@ -12,10 +12,13 @@ import {
   MessageContent,
 } from "@/components/ui/message";
 import { Markdown } from "./markdown";
-import { ReplyActions } from "./reply-actions";
+import { RegenerateButton, ReplyActions } from "./reply-actions";
 
-/** How the user stopped a turn's reply (convex/lib/stop.ts). */
-export type Stop = { keepText: boolean };
+/**
+ * How the user stopped a turn's reply, and whether the reply runner is done
+ * with the turn (convex/lib/stop.ts).
+ */
+export type Stop = { keepText: boolean; settled: boolean };
 
 /**
  * A message as the thread lists it. `stopped` is on every message of a turn
@@ -36,14 +39,23 @@ export function stoppedTurns(messages: ThreadMessage[]): Map<number, Stop> {
 export function ChatMessage({
   message,
   stopped,
+  onRegenerate,
 }: {
   message: ThreadMessage;
   /** Set when the user stopped this message's turn. */
   stopped?: Stop;
+  /** Set on the last reply once it's done. A rejection shows as a toast. */
+  onRegenerate?: () => Promise<void>;
 }) {
   if (message.role === "user") return <UserMessage text={message.text} />;
   if (message.role === "assistant") {
-    return <AssistantMessage message={message} stopped={stopped} />;
+    return (
+      <AssistantMessage
+        message={message}
+        stopped={stopped}
+        onRegenerate={onRegenerate}
+      />
+    );
   }
   return null;
 }
@@ -63,12 +75,45 @@ function UserMessage({ text }: { text: string }) {
 function AssistantMessage({
   message,
   stopped,
+  onRegenerate,
 }: {
   message: ThreadMessage;
   stopped?: Stop;
+  onRegenerate?: () => Promise<void>;
 }) {
   // A reply stopped before the user saw any of it shows none of it later.
   const source = stopped?.keepText === false ? "" : message.text;
+  // A regenerated reply takes the old one's place, and its key. Its text
+  // starts over, which the smoothed text can't do, so the reply remounts.
+  const [restarts, setRestarts] = useState({ source, count: 0 });
+  if (source !== restarts.source) {
+    const restarted = !source.startsWith(restarts.source);
+    setRestarts({ source, count: restarts.count + (restarted ? 1 : 0) });
+  }
+  return (
+    <AssistantReply
+      key={restarts.count}
+      message={message}
+      source={source}
+      stopped={stopped}
+      onRegenerate={onRegenerate}
+    />
+  );
+}
+
+/** The reply itself, remounted by AssistantMessage when its text starts over. */
+function AssistantReply({
+  message,
+  source,
+  stopped,
+  onRegenerate,
+}: {
+  message: ThreadMessage;
+  /** The text to show. */
+  source: string;
+  stopped?: Stop;
+  onRegenerate?: () => Promise<void>;
+}) {
   // Only a reply that mounts mid-stream types itself out; one loaded from
   // history shows in full at once.
   const [smoothed, { isStreaming: typing }] = useSmoothText(source, {
@@ -80,6 +125,10 @@ function AssistantMessage({
     !stopped && (message.status === "pending" || message.status === "streaming");
   // The smoothed text can still be catching up after the reply is done.
   const streaming = inProgress || typing;
+  // A stopped reply is failed until its text is saved, or for good if it went.
+  const failed = message.status === "failed" && !stopped;
+  // A failed reply's Regenerate is in its bubble instead.
+  const actionsRegenerate = failed ? undefined : onRegenerate;
 
   return (
     <AssistantRow>
@@ -92,26 +141,36 @@ function AssistantMessage({
       ) : (
         inProgress && <Thinking />
       )}
-      {/* A stopped reply is failed until its text is saved, or for good if it went. */}
-      {message.status === "failed" && !stopped && (
+      {failed && (
         <Bubble variant="destructive">
-          <BubbleContent>
-            Couldn&apos;t get a reply. Send your message again to retry.
+          <BubbleContent className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            Couldn&apos;t get a reply.
+            {onRegenerate && (
+              <RegenerateButton onRegenerate={onRegenerate} labelled />
+            )}
           </BubbleContent>
         </Bubble>
       )}
       {stopped && <StoppedMarker />}
       {/* The full source, not the smoothed text, which can lag behind. */}
-      {!streaming && source && <ReplyActions text={source} />}
+      {!streaming && (source || actionsRegenerate) && (
+        <ReplyActions text={source} onRegenerate={actionsRegenerate} />
+      )}
     </AssistantRow>
   );
 }
 
 /** Where a reply would be, for a turn stopped before its reply began. */
-export function StoppedReply() {
+export function StoppedReply({
+  onRegenerate,
+}: {
+  /** Set on the last turn. A rejection shows as a toast. */
+  onRegenerate?: () => Promise<void>;
+}) {
   return (
     <AssistantRow>
       <StoppedMarker />
+      {onRegenerate && <ReplyActions onRegenerate={onRegenerate} />}
     </AssistantRow>
   );
 }

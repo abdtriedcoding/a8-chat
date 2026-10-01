@@ -14,6 +14,7 @@ import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_agent from "../lib/agent.js";
 import type * as lib_models from "../lib/models.js";
+import type * as lib_regenerate from "../lib/regenerate.js";
 import type * as lib_reply from "../lib/reply.js";
 import type * as lib_send from "../lib/send.js";
 import type * as lib_stop from "../lib/stop.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   "lib/access": typeof lib_access;
   "lib/agent": typeof lib_agent;
   "lib/models": typeof lib_models;
+  "lib/regenerate": typeof lib_regenerate;
   "lib/reply": typeof lib_reply;
   "lib/send": typeof lib_send;
   "lib/stop": typeof lib_stop;
