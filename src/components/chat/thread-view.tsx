@@ -54,10 +54,12 @@ export function ThreadView({ threadId }: { threadId: string }) {
   );
 
   const stopReply = useMutation(api.chat.stopReply);
+  const regenerateReply = useMutation(api.chat.regenerateReply);
 
   const last = messages.at(-1);
+  const lastStop = last && stoppedTurns(messages).get(last.order);
   // Once stopped, the turn is over, whatever the runner is still doing.
-  const lastStopped = last !== undefined && stoppedTurns(messages).has(last.order);
+  const lastStopped = lastStop !== undefined;
   // The prompt is saved, but the Agent hasn't started the reply.
   const awaitingKey =
     last?.role === "user" && !lastStopped ? last.key : null;
@@ -67,6 +69,15 @@ export function ThreadView({ threadId }: { threadId: string }) {
     !lastStopped &&
     (last.status === "pending" || last.status === "streaming");
   const busy = (awaitingKey !== null && !stale) || replying;
+  // The server's rule for a regenerate (convex/lib/regenerate.ts): nothing
+  // pending, and the reply saved, or the stop settled if the user stopped it.
+  const lastPending =
+    last?.role === "assistant" &&
+    (last.status === "pending" || last.status === "streaming");
+  const lastReplyDone =
+    last !== undefined &&
+    !lastPending &&
+    (lastStop ? lastStop.settled : last.role === "assistant");
 
   if (thread === null) {
     return (
@@ -109,6 +120,16 @@ export function ThreadView({ threadId }: { threadId: string }) {
           status={status}
           onLoadEarlier={() => loadMore(PAGE_SIZE)}
           pendingReply={awaitingKey !== null ? { stale } : null}
+          onRegenerate={
+            lastReplyDone
+              ? async () => {
+                  await regenerateReply({
+                    threadId,
+                    timeZone: browserTimeZone(),
+                  });
+                }
+              : undefined
+          }
         />
       )}
       <div className="shrink-0 px-4 pb-4">
@@ -141,6 +162,9 @@ export function ThreadView({ threadId }: { threadId: string }) {
  */
 function useStaleAfter(key: string | null, ms: number): boolean {
   const [staleKey, setStaleKey] = useState<string | null>(null);
+  // Forgotten once the wait is over, so the same key waiting again (for a
+  // regenerated reply) gets the full time.
+  if (key === null && staleKey !== null) setStaleKey(null);
   useEffect(() => {
     if (key === null) return;
     // setState in a timer callback, not the effect body (a React Compiler rule).

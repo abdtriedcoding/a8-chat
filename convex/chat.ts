@@ -22,6 +22,7 @@ import { chatModel, resolveModelId } from "./lib/models";
 import { replyOptions } from "./lib/reply";
 import { send } from "./lib/send";
 import {
+  endStoppedReply,
   isTurnStopped,
   saveStoppedReply,
   STOPPED,
@@ -55,6 +56,19 @@ export const sendMessage = mutation({
 });
 
 /**
+ * Replaces the thread's last reply with a new one to the same prompt, once
+ * it's done. Stopped and failed replies can be regenerated too.
+ */
+export const regenerateReply = mutation({
+  args: { threadId: v.string(), timeZone: vTimeZone },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await send(ctx, { kind: "regenerate", ...args });
+    return null;
+  },
+});
+
+/**
  * Stops the thread's reply in progress. Its text so far stays, unless the
  * user hadn't seen any (`keepText: false`, convex/lib/stop.ts).
  */
@@ -71,8 +85,8 @@ export const stopReply = mutation({
 
 /**
  * A page of a thread's messages, plus the deltas of replies still streaming.
- * `stopped` is on every message of a turn whose reply the user stopped,
- * with whether its text was kept, and null elsewhere. A reply rebuilt from
+ * `stopped` is on every message of a turn whose reply the user stopped
+ * (a Stop, convex/lib/stop.ts), and null elsewhere. A reply rebuilt from
  * its stream doesn't have it, but its prompt does.
  */
 export const listThreadMessages = query({
@@ -151,6 +165,16 @@ export const saveStopped = internalMutation({
   },
 });
 
+/** The reply runner's last step for a turn (convex/lib/stop.ts). */
+export const endStopped = internalMutation({
+  args: vTurn,
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await endStoppedReply(ctx, args.threadId, args.order);
+    return null;
+  },
+});
+
 /**
  * Streams the reply to a saved prompt, writing deltas to the thread as they
  * arrive. A model or provider error marks the pending reply as failed.
@@ -168,15 +192,14 @@ export const streamReply = internalAction({
     const turn = { threadId: args.threadId, order: args.order };
     const isStopped = (): Promise<boolean> =>
       ctx.runQuery(internal.chat.isStopped, turn);
-    // A stop pressed before the reply started means no model call at all.
-    if (await isStopped()) return null;
-
     // A stop that lands before the reply's stream exists has no stream to
     // abort, so look once more when the model starts answering. The stream
     // is created on "start", well before the model's first chunk comes back.
     const abort = new AbortController();
     let checked = false;
     try {
+      // A stop pressed before the reply started means no model call at all.
+      if (await isStopped()) return null;
       const result = await chatAgent.streamText(
         ctx,
         { threadId: args.threadId, userId: args.userId },
@@ -196,7 +219,7 @@ export const streamReply = internalAction({
       await result.consumeStream();
     } finally {
       // Does nothing unless the reply was stopped.
-      await ctx.runMutation(internal.chat.saveStopped, turn);
+      await ctx.runMutation(internal.chat.endStopped, turn);
     }
     return null;
   },

@@ -13,5 +13,9 @@ export default defineSchema({
     // False when the user stopped before seeing any of the reply's text,
     // which then goes too, even if some had already streamed.
     keepText: v.boolean(),
+    // False until the reply runner is done with the turn. Only then can the
+    // reply be regenerated, or the new reply would race the old runner.
+    // Rows from before this field don't have it: their runners are long gone.
+    settled: v.optional(v.boolean()),
   }).index("by_threadId_and_order", ["threadId", "order"]),
 });
