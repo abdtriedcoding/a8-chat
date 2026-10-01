@@ -11,6 +11,8 @@ import {
   MessageAvatar,
   MessageContent,
 } from "@/components/ui/message";
+import { Markdown } from "./markdown";
+import { ReplyActions } from "./reply-actions";
 
 export function ChatMessage({ message }: { message: UIMessage }) {
   if (message.role === "user") return <UserMessage text={message.text} />;
@@ -33,17 +35,21 @@ function UserMessage({ text }: { text: string }) {
 function AssistantMessage({ message }: { message: UIMessage }) {
   // Only a reply that mounts mid-stream types itself out; one loaded from
   // history shows in full at once.
-  const [text] = useSmoothText(message.text, {
+  const [text, { isStreaming: typing }] = useSmoothText(message.text, {
     startStreaming: message.status === "streaming",
   });
   const inProgress =
     message.status === "pending" || message.status === "streaming";
+  // The smoothed text can still be catching up after the reply is done.
+  const streaming = inProgress || typing;
 
   return (
     <AssistantRow>
       {text ? (
-        <Bubble variant="ghost">
-          <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
+        <Bubble variant="ghost" className="w-full">
+          <BubbleContent className="w-full">
+            <Markdown streaming={streaming}>{text}</Markdown>
+          </BubbleContent>
         </Bubble>
       ) : (
         inProgress && <Thinking />
@@ -55,6 +61,8 @@ function AssistantMessage({ message }: { message: UIMessage }) {
           </BubbleContent>
         </Bubble>
       )}
+      {/* The full source, not the smoothed text, which can lag behind. */}
+      {!streaming && message.text && <ReplyActions text={message.text} />}
     </AssistantRow>
   );
 }
@@ -84,7 +92,8 @@ export function PendingReply({ stale }: { stale: boolean }) {
 function AssistantRow({ children }: { children: ReactNode }) {
   return (
     <Message align="start">
-      <MessageAvatar className="size-8 self-start">
+      {/* Pinned to the top, so a reply's actions row mustn't lift it. */}
+      <MessageAvatar className="size-8 self-start group-has-data-[slot=message-footer]/message:translate-y-0">
         <LogoMark className="size-4 text-primary" />
       </MessageAvatar>
       <MessageContent className="pt-1">{children}</MessageContent>

@@ -7,6 +7,16 @@ const INSTRUCTIONS =
   "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
   "If you don't know something, say so instead of guessing.";
 
+// Matches what the chat renders (src/components/chat/markdown.tsx).
+const FORMATTING =
+  "Replies render as GitHub-flavored Markdown, so use headings, lists, " +
+  "tables, links and fenced code blocks with a language tag where they help. " +
+  "For math, write LaTeX between double dollar signs. Inline, within a " +
+  "sentence: $$E = mc^2$$. For a block equation, put each $$ alone on its " +
+  "own line:\n$$\nE = mc^2\n$$\n" +
+  "Single dollar signs, \\( \\) and \\[ \\] don't render as math, so a " +
+  "single $ is safe for prices.";
+
 /**
  * Everything a reply's model call gets besides its model and prompt. Built
  * fresh for each reply, so the date is never stale. Tools register here,
@@ -21,7 +31,9 @@ export function replyOptions({
   now: Date;
 }) {
   return {
-    instructions: `${INSTRUCTIONS}\n\n${dateInstruction(timeZone, now)}`,
+    instructions: [INSTRUCTIONS, FORMATTING, dateInstruction(timeZone, now)].join(
+      "\n\n",
+    ),
     stopWhen: isStepCount(MAX_REPLY_STEPS),
   };
 }
