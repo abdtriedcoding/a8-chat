@@ -65,14 +65,14 @@ export async function saveStoppedReply(
 ): Promise<void> {
   const stopped = await stoppedReply(ctx, threadId, order);
   if (!stopped) return;
-  // Newest first, and one reply's steps fit: the stopped turn is the last.
+  // Newest first, every status, and one reply's steps plus its prompt fit:
+  // the stopped turn is the last.
   const { page } = await listMessages(ctx, components.agent, {
     threadId,
-    paginationOpts: { numItems: 2 * MAX_REPLY_STEPS, cursor: null },
-    statuses: ["pending", "failed"],
+    paginationOpts: { numItems: 2 * MAX_REPLY_STEPS + 1, cursor: null },
   });
   for (const message of page) {
-    if (message.order !== order) continue;
+    if (message.order !== order || message.message?.role === "user") continue;
     if (message.status === "pending") {
       // Rebuilds the reply from its stream, which the stop ended.
       await ctx.runMutation(components.agent.messages.finalizeMessage, {
@@ -93,7 +93,16 @@ export async function saveStoppedReply(
           });
         }
       }
-    } else if (stopped.keepText && message.text?.trim()) {
+    } else if (!stopped.keepText) {
+      // The runner saves a reply that finished before it noticed the stop
+      // as a success. Its text goes all the same.
+      if (message.status === "success") {
+        await ctx.runMutation(components.agent.messages.updateMessage, {
+          messageId: message._id,
+          patch: { status: "failed", error: STOPPED },
+        });
+      }
+    } else if (message.status === "failed" && message.text?.trim()) {
       // Keeps the Agent's abort error: a patch can't remove a field.
       await ctx.runMutation(components.agent.messages.updateMessage, {
         messageId: message._id,
