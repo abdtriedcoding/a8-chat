@@ -14,6 +14,8 @@ import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_agent from "../lib/agent.js";
 import type * as lib_models from "../lib/models.js";
+import type * as lib_reply from "../lib/reply.js";
+import type * as lib_send from "../lib/send.js";
 import type * as lib_text from "../lib/text.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
@@ -31,6 +33,8 @@ declare const fullApi: ApiFromModules<{
   "lib/access": typeof lib_access;
   "lib/agent": typeof lib_agent;
   "lib/models": typeof lib_models;
+  "lib/reply": typeof lib_reply;
+  "lib/send": typeof lib_send;
   "lib/text": typeof lib_text;
   threads: typeof threads;
   users: typeof users;

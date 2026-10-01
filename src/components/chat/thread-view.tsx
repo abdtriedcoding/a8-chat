@@ -18,6 +18,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
@@ -42,7 +43,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
     { initialNumItems: PAGE_SIZE, stream: true },
   );
   const sendMessage = useMutation(api.chat.sendMessage).withOptimisticUpdate(
-    optimisticallySendMessage(api.chat.listThreadMessages),
+    // Passes only these two: the helper copies any other argument onto the
+    // optimistic message.
+    (store, { threadId, prompt }) =>
+      optimisticallySendMessage(api.chat.listThreadMessages)(store, {
+        threadId,
+        prompt,
+      }),
   );
 
   const last = messages.at(-1);
@@ -100,7 +107,11 @@ export function ThreadView({ threadId }: { threadId: string }) {
       <div className="shrink-0 px-4 pb-4">
         <Composer
           onSend={async (prompt) => {
-            await sendMessage({ threadId, prompt });
+            await sendMessage({
+              threadId,
+              prompt,
+              timeZone: browserTimeZone(),
+            });
           }}
           busy={busy}
           autoFocus
