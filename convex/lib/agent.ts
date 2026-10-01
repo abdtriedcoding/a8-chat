@@ -7,11 +7,9 @@ import { chatModel, resolveModelId } from "./models";
 export const chatAgent = new Agent(components.agent, {
   name: "a8",
   // The default only. streamReply passes the model on every call, so a
-  // changed DEFAULT_MODEL applies to the next reply.
+  // changed DEFAULT_MODEL applies to the next reply. It also passes the
+  // instructions, built fresh for each reply (convex/lib/reply.ts).
   languageModel: chatModel(resolveModelId()),
-  instructions:
-    "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
-    "If you don't know something, say so instead of guessing.",
   usageHandler: async (
     _ctx,
     { userId, threadId, provider, model, usage, providerMetadata },

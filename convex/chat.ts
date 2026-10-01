@@ -1,5 +1,4 @@
 import {
-  createThread,
   listStreams,
   listUIMessages,
   syncStreams,
@@ -8,56 +7,37 @@ import {
 } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { components } from "./_generated/api";
 import {
   internalAction,
   mutation,
   query,
-  type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import { requireOwnedThread, requireViewer } from "./lib/access";
 import { chatAgent } from "./lib/agent";
-import { assertModelConfigured, chatModel, resolveModelId } from "./lib/models";
-import { normalizePrompt, titleFromPrompt } from "./lib/text";
+import { chatModel, resolveModelId } from "./lib/models";
+import { replyOptions } from "./lib/reply";
+import { send } from "./lib/send";
+
+// The browser's time zone. The Send checks it (convex/lib/send.ts).
+const vTimeZone = v.optional(v.string());
 
 /** Creates a thread from its first prompt and starts the reply. */
 export const startThread = mutation({
-  args: { prompt: v.string() },
+  args: { prompt: v.string(), timeZone: vTimeZone },
   returns: v.object({ threadId: v.string() }),
   handler: async (ctx, args) => {
-    const viewer = await requireViewer(ctx);
-    const prompt = normalizePrompt(args.prompt);
-    assertModelConfigured();
-
-    // The only place threads are created. Stage 2's threadMeta row goes here.
-    const threadId = await createThread(ctx, components.agent, {
-      userId: viewer._id,
-      title: titleFromPrompt(prompt),
-    });
-    await enqueueReply(ctx, { threadId, userId: viewer._id, prompt });
-    return { threadId };
+    return await send(ctx, { kind: "startThread", ...args });
   },
 });
 
-/**
- * Adds a prompt to an existing thread and starts the reply. The arguments
- * must stay exactly `{ threadId, prompt }` for optimisticallySendMessage.
- */
+/** Adds a prompt to an existing thread and starts the reply. */
 export const sendMessage = mutation({
-  args: { threadId: v.string(), prompt: v.string() },
+  args: { threadId: v.string(), prompt: v.string(), timeZone: vTimeZone },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const viewer = await requireViewer(ctx);
-    await requireOwnedThread(ctx, args.threadId, viewer._id);
-    const prompt = normalizePrompt(args.prompt);
-    assertModelConfigured();
-
-    await enqueueReply(ctx, {
-      threadId: args.threadId,
-      userId: viewer._id,
-      prompt,
-    });
+    await send(ctx, { kind: "sendPrompt", ...args });
     return null;
   },
 });
@@ -106,36 +86,16 @@ async function threadStreamArgs(
 }
 
 /**
- * Saves the user's prompt and schedules the reply. Callers check auth,
- * ownership and the prompt first; the userId always comes from the viewer.
- */
-async function enqueueReply(
-  ctx: MutationCtx,
-  args: { threadId: string; userId: string; prompt: string },
-) {
-  // Stage 2: the rate-limit check goes here.
-  const { messageId } = await chatAgent.saveMessage(ctx, {
-    threadId: args.threadId,
-    userId: args.userId,
-    prompt: args.prompt,
-    skipEmbeddings: true,
-  });
-  await ctx.scheduler.runAfter(0, internal.chat.streamReply, {
-    threadId: args.threadId,
-    promptMessageId: messageId,
-    userId: args.userId,
-  });
-}
-
-/**
  * Streams the reply to a saved prompt, writing deltas to the thread as they
  * arrive. A model or provider error marks the pending reply as failed.
+ * Scheduled only by a Send (convex/lib/send.ts).
  */
 export const streamReply = internalAction({
   args: {
     threadId: v.string(),
     promptMessageId: v.string(),
     userId: v.string(),
+    timeZone: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -145,6 +105,7 @@ export const streamReply = internalAction({
       {
         promptMessageId: args.promptMessageId,
         model: chatModel(resolveModelId()),
+        ...replyOptions({ timeZone: args.timeZone, now: new Date() }),
       },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
