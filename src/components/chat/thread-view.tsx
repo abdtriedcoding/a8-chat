@@ -7,7 +7,6 @@ import {
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -18,31 +17,29 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useReplyStatus } from "@/hooks/use-reply-status";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader } from "./chat-header";
-import { stoppedTurns } from "./chat-message";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
 
 const PAGE_SIZE = 20;
-// How long "Thinking…" waits for a reply to start before giving up on it.
-const STALE_AFTER_MS = 60_000;
 
 export function ThreadView({ threadId }: { threadId: string }) {
   const { isLoading, isAuthenticated } = useConvexAuth();
   const thread = useQuery(api.threads.get, isLoading ? "skip" : { threadId });
-  // Whether this thread was ever shown here, so that one deleted while open
-  // (from the sidebar or another tab) isn't reported as "not found".
-  const [seen, setSeen] = useState(false);
-  if (thread && !seen) setSeen(true);
 
-  const { results: messages, status, loadMore } = useUIMessages(
+  const {
+    results: messages,
+    status,
+    loadMore,
+  } = useUIMessages(
     api.chat.listThreadMessages,
-    // It throws for a thread that isn't the viewer's, so wait for threads.get.
-    thread && isAuthenticated ? { threadId } : "skip",
+    isAuthenticated ? { threadId } : "skip",
     { initialNumItems: PAGE_SIZE, stream: true },
   );
+
   const sendMessage = useMutation(api.chat.sendMessage).withOptimisticUpdate(
     // Passes only these two: the helper copies any other argument onto the
     // optimistic message.
@@ -56,28 +53,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const stopReply = useMutation(api.chat.stopReply);
   const regenerateReply = useMutation(api.chat.regenerateReply);
 
+  const replyStatus = useReplyStatus(messages);
+  const replyInProgress =
+    replyStatus === "waiting" || replyStatus === "streaming";
   const last = messages.at(-1);
-  const lastStop = last && stoppedTurns(messages).get(last.order);
-  // Once stopped, the turn is over, whatever the runner is still doing.
-  const lastStopped = lastStop !== undefined;
-  // The prompt is saved, but the Agent hasn't started the reply.
-  const awaitingKey =
-    last?.role === "user" && !lastStopped ? last.key : null;
-  const stale = useStaleAfter(awaitingKey, STALE_AFTER_MS);
-  const replying =
-    last?.role === "assistant" &&
-    !lastStopped &&
-    (last.status === "pending" || last.status === "streaming");
-  const busy = (awaitingKey !== null && !stale) || replying;
-  // The server's rule for a regenerate (convex/lib/regenerate.ts): nothing
-  // pending, and the reply saved, or the stop settled if the user stopped it.
-  const lastPending =
-    last?.role === "assistant" &&
-    (last.status === "pending" || last.status === "streaming");
-  const lastReplyDone =
-    last !== undefined &&
-    !lastPending &&
-    (lastStop ? lastStop.settled : last.role === "assistant");
+  // The last turn can be regenerated while no reply is in progress. A
+  // stopped turn counts as done, and so does a reply that timed out.
+  const canRegenerate = last !== undefined && !replyInProgress;
 
   if (thread === null) {
     return (
@@ -88,13 +70,9 @@ export function ThreadView({ threadId }: { threadId: string }) {
             <EmptyMedia variant="icon">
               <MessageSquareOffIcon />
             </EmptyMedia>
-            <EmptyTitle>
-              {seen ? "This chat was deleted" : "Chat not found"}
-            </EmptyTitle>
+            <EmptyTitle>Chat not found</EmptyTitle>
             <EmptyDescription>
-              {seen
-                ? "It and its messages are gone."
-                : "It may have been deleted, or the link is wrong."}
+              It may have been deleted, or the link is wrong.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -107,11 +85,11 @@ export function ThreadView({ threadId }: { threadId: string }) {
     );
   }
 
-  // The composer renders while loading too, in the same place in the tree,
-  // so it keeps focus and anything typed once the messages arrive.
   return (
     <>
-      <ChatHeader title={thread ? thread.title || "Untitled chat" : undefined} />
+      <ChatHeader
+        title={thread ? thread.title || "Untitled chat" : undefined}
+      />
       {thread === undefined || status === "LoadingFirstPage" ? (
         <ConversationSkeleton />
       ) : (
@@ -119,9 +97,9 @@ export function ThreadView({ threadId }: { threadId: string }) {
           messages={messages}
           status={status}
           onLoadEarlier={() => loadMore(PAGE_SIZE)}
-          pendingReply={awaitingKey !== null ? { stale } : null}
+          replyStatus={replyStatus}
           onRegenerate={
-            lastReplyDone
+            canRegenerate
               ? async () => {
                   await regenerateReply({
                     threadId,
@@ -141,37 +119,24 @@ export function ThreadView({ threadId }: { threadId: string }) {
               timeZone: browserTimeZone(),
             });
           }}
-          onStop={async () => {
-            // Text the user hasn't seen yet goes with the stop.
-            const keepText = last?.role === "assistant" && last.text !== "";
-            await stopReply({ threadId, keepText });
-          }}
-          busy={busy}
+          onStop={
+            replyInProgress
+              ? async () => {
+                  // Keep the reply's text only if some is on screen. If the
+                  // user stopped during "Thinking…", the reply is hidden.
+                  const keepText =
+                    last?.role === "assistant" && last.text !== "";
+                  await stopReply({ threadId, keepText });
+                }
+              : undefined
+          }
+          disabled={replyInProgress}
           autoFocus
           className="mx-auto max-w-3xl"
         />
       </div>
     </>
   );
-}
-
-/**
- * True once `key` has stayed the same for `ms`; a new key starts over. The
- * clock starts when this client first sees the key, not at the message's
- * server timestamp, since the two clocks can disagree.
- */
-function useStaleAfter(key: string | null, ms: number): boolean {
-  const [staleKey, setStaleKey] = useState<string | null>(null);
-  // Forgotten once the wait is over, so the same key waiting again (for a
-  // regenerated reply) gets the full time.
-  if (key === null && staleKey !== null) setStaleKey(null);
-  useEffect(() => {
-    if (key === null) return;
-    // setState in a timer callback, not the effect body (a React Compiler rule).
-    const timeout = setTimeout(() => setStaleKey(key), ms);
-    return () => clearTimeout(timeout);
-  }, [key, ms]);
-  return key !== null && staleKey === key;
 }
 
 function ConversationSkeleton() {

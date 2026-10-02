@@ -2,7 +2,7 @@
 
 import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { LogoMark } from "@/components/icons/logo-mark";
 import {
   Empty,
@@ -20,16 +20,22 @@ import { Composer } from "./composer";
 export function NewChat() {
   const router = useRouter();
   const startThread = useMutation(api.chat.startThread);
-  // Covers the navigation to the new thread, so the composer stays busy
-  // until the thread page takes over.
+  // Creating the thread, then navigating to it: the composer stays off
+  // through both, until the thread page takes over.
+  const [starting, setStarting] = useState(false);
   const [navigating, startNavigation] = useTransition();
 
   async function send(prompt: string) {
-    const { threadId } = await startThread({
-      prompt,
-      timeZone: browserTimeZone(),
-    });
-    startNavigation(() => router.push(`/c/${threadId}`));
+    setStarting(true);
+    try {
+      const { threadId } = await startThread({
+        prompt,
+        timeZone: browserTimeZone(),
+      });
+      startNavigation(() => router.push(`/c/${threadId}`));
+    } finally {
+      setStarting(false);
+    }
   }
 
   return (
@@ -49,7 +55,7 @@ export function NewChat() {
         </Empty>
         <Composer
           onSend={send}
-          busy={navigating}
+          disabled={starting || navigating}
           autoFocus
           className="w-full max-w-2xl"
         />

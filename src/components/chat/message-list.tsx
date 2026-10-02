@@ -1,8 +1,12 @@
 "use client";
 
 import type { PaginationStatus } from "convex/react";
+import { CircleAlertIcon } from "lucide-react";
 import { Fragment } from "react";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
+import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -12,13 +16,14 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
+import type { ReplyStatus } from "@/hooks/use-reply-status";
+import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
 import {
-  ChatMessage,
-  PendingReply,
-  StoppedReply,
-  stoppedTurns,
-  type ThreadMessage,
-} from "./chat-message";
+  AssistantMessage,
+  StoppedMarker,
+  ThinkingMessage,
+} from "./assistant-message";
+import { RegenerateButton } from "./regenerate-button";
 
 /**
  * A thread's messages, oldest first. It follows a streaming reply until the
@@ -28,24 +33,30 @@ export function MessageList({
   messages,
   status,
   onLoadEarlier,
-  pendingReply,
+  replyStatus,
   onRegenerate,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
-  /** Set while the latest prompt has no reply yet. */
-  pendingReply: { stale: boolean } | null;
-  /** Set while the last reply can be regenerated, which only it can. */
+  replyStatus: ReplyStatus;
+  /** Set while the last turn can be regenerated. Only that turn shows it. */
   onRegenerate?: () => Promise<void>;
 }) {
   const stopped = stoppedTurns(messages);
-  const lastIndex = messages.length - 1;
+  // The id of each turn's prompt, by order.
+  const promptIds = new Map<number, string>();
+  for (const message of messages) {
+    if (message.role === "user") promptIds.set(message.order, message.id);
+  }
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
-        <MessageScrollerViewport aria-label="Messages">
-          <MessageScrollerContent className="mx-auto w-full max-w-3xl px-4 py-6">
+        <MessageScrollerViewport>
+          <MessageScrollerContent
+            aria-busy={replyStatus === "streaming"}
+            className="mx-auto w-full max-w-3xl px-4 py-6"
+          >
             {(status === "CanLoadMore" || status === "LoadingMore") && (
               <MessageScrollerItem className="flex justify-center">
                 <Button
@@ -61,33 +72,72 @@ export function MessageList({
                 </Button>
               </MessageScrollerItem>
             )}
-            {messages.map((message, i) => (
-              <Fragment key={message.key}>
-                <MessageScrollerItem
-                  messageId={message.key}
-                  scrollAnchor={message.role === "user"}
-                >
-                  <ChatMessage
-                    message={message}
-                    stopped={stopped.get(message.order)}
-                    onRegenerate={i === lastIndex ? onRegenerate : undefined}
-                  />
-                </MessageScrollerItem>
-                {/* A turn stopped before its reply began has no reply to mark. */}
-                {message.role === "user" &&
-                  stopped.has(message.order) &&
-                  messages[i + 1]?.order !== message.order && (
-                    <MessageScrollerItem messageId={`${message.key}-stopped`}>
-                      <StoppedReply
-                        onRegenerate={i === lastIndex ? onRegenerate : undefined}
-                      />
+
+            {messages.map((message, i) => {
+              const regenerate =
+                i === messages.length - 1 ? onRegenerate : undefined;
+              if (message.role === "user") {
+                return (
+                  <Fragment key={message.key}>
+                    <MessageScrollerItem messageId={message.key} scrollAnchor>
+                      <Message align="end">
+                        <MessageContent>
+                          <Bubble variant="tinted" align="end">
+                            <BubbleContent className="whitespace-pre-wrap">
+                              {message.text}
+                            </BubbleContent>
+                          </Bubble>
+                        </MessageContent>
+                      </Message>
                     </MessageScrollerItem>
-                  )}
-              </Fragment>
-            ))}
-            {pendingReply && (
+                    {/* Stopped before any reply was saved, so mark the prompt instead. */}
+                    {stopped.has(message.order) &&
+                      messages[i + 1]?.order !== message.order && (
+                        <MessageScrollerItem
+                          messageId={`${message.key}-stopped`}
+                        >
+                          <StoppedMarker onRegenerate={regenerate} />
+                        </MessageScrollerItem>
+                      )}
+                  </Fragment>
+                );
+              }
+              if (message.role === "assistant") {
+                // A regenerated reply has the same key as the reply it
+                // replaces, and useSmoothText would go on showing the old
+                // text. Regenerate saves the prompt again with a new id, so
+                // keying the reply on its prompt's id mounts a fresh one.
+                const replyKey = promptIds.get(message.order) ?? message.key;
+                return (
+                  <MessageScrollerItem key={message.key} messageId={message.key}>
+                    <AssistantMessage
+                      key={replyKey}
+                      message={message}
+                      stopped={stopped.get(message.order)}
+                      onRegenerate={regenerate}
+                    />
+                  </MessageScrollerItem>
+                );
+              }
+              return null;
+            })}
+
+            {replyStatus === "waiting" && (
               <MessageScrollerItem messageId="pending-reply">
-                <PendingReply stale={pendingReply.stale} />
+                <ThinkingMessage />
+              </MessageScrollerItem>
+            )}
+            {replyStatus === "timedOut" && (
+              <MessageScrollerItem messageId="reply-timed-out">
+                <Marker>
+                  <MarkerIcon>
+                    <CircleAlertIcon />
+                  </MarkerIcon>
+                  <MarkerContent>No reply received. Try again.</MarkerContent>
+                  {onRegenerate && (
+                    <RegenerateButton onRegenerate={onRegenerate} labelled />
+                  )}
+                </Marker>
               </MessageScrollerItem>
             )}
           </MessageScrollerContent>
