@@ -4,7 +4,6 @@ import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ChevronsUpDownIcon, LogInIcon, LogOutIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -24,6 +23,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth-client";
+import { initials } from "@/lib/initials";
 import { api } from "../../convex/_generated/api";
 
 type CurrentUser = NonNullable<
@@ -35,29 +35,19 @@ export function NavUser() {
   const { isLoading } = useConvexAuth();
   const user = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
   const { isMobile } = useSidebar();
-  // Sign-out ends the session before the page leaves, so getCurrentUser turns
-  // null for a moment. Keep showing who was signed in until the redirect.
-  const [signingOutAs, setSigningOutAs] = useState<CurrentUser | null>(null);
-  const shown = signingOutAs ?? user;
 
-  async function signOut(current: CurrentUser) {
-    setSigningOutAs(current);
-    try {
-      // Sign-out succeeds even without a session, so an error response is a
-      // real failure. The call rejects when the request itself fails.
-      const { error } = await authClient.signOut();
-      if (error) throw error;
-    } catch {
-      setSigningOutAs(null);
-      toast.error("Couldn't sign out. Please try again.");
-      return;
-    }
-    // A full load drops all client state; replace keeps the signed-in page
-    // out of history.
-    window.location.replace("/sign-in");
+  async function signOut() {
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => window.location.replace("/sign-in"),
+        onError: () => {
+          toast.error("Couldn't sign out. Please try again.");
+        },
+      },
+    });
   }
 
-  if (shown === undefined) {
+  if (user === undefined) {
     return (
       <div aria-hidden="true" className="flex h-12 items-center gap-2 px-2">
         <Skeleton className="size-8 rounded-full" />
@@ -70,7 +60,7 @@ export function NavUser() {
   }
 
   // The session ended while the page was open.
-  if (shown === null) {
+  if (user === null) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
@@ -85,7 +75,7 @@ export function NavUser() {
     );
   }
 
-  const profile = <UserProfile user={shown} />;
+  const profile = <UserProfile user={user} />;
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -93,7 +83,6 @@ export function NavUser() {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              disabled={signingOutAs !== null}
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               {profile}
@@ -111,7 +100,7 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => void signOut(shown)}>
+              <DropdownMenuItem onSelect={() => void signOut()}>
                 <LogOutIcon />
                 Sign out
               </DropdownMenuItem>
@@ -138,16 +127,4 @@ function UserProfile({ user }: { user: CurrentUser }) {
       </div>
     </>
   );
-}
-
-/** Up to two initials from the name, or the email's first letter. */
-function initials({ name = "", email = "" }: CurrentUser): string {
-  const letters = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => Array.from(word)[0])
-    .join("");
-  return (letters || Array.from(email)[0] || "?").toUpperCase();
 }
