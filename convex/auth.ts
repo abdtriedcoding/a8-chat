@@ -1,9 +1,15 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
+import { ConvexError } from "convex/values";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { env, query } from "./_generated/server";
+import {
+  env,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import authConfig from "./auth.config";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
@@ -46,3 +52,14 @@ export const getCurrentUser = query({
     return identity;
   },
 });
+
+export async function requireUser(ctx: QueryCtx | MutationCtx) {
+  const user = await authComponent.safeGetAuthUser(ctx);
+  if (!user) {
+    throw new ConvexError({
+      code: "UNAUTHENTICATED",
+      message: "Please sign in to continue.",
+    });
+  }
+  return user;
+}
