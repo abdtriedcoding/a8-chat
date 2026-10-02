@@ -1,10 +1,9 @@
 import { ConvexError } from "convex/values";
 
-export const MAX_PROMPT_LENGTH = 16_000;
+const MAX_PROMPT_LENGTH = 16_000;
 const MAX_TITLE_LENGTH = 60;
 
-/** The trimmed prompt. Throws when it's empty or too long. */
-export function normalizePrompt(prompt: string): string {
+export function checkPrompt(prompt: string): string {
   const text = prompt.trim();
   if (!text) {
     throw new ConvexError({

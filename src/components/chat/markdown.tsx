@@ -16,7 +16,7 @@ import {
 // Module constants, since Streamdown re-renders when these change identity.
 // Shiki uses github-light and github-dark. No Mermaid plugin, so Mermaid
 // blocks render as plain code. Math takes $$ only, so a single $ stays a
-// dollar sign; the reply instructions say so (convex/lib/reply.ts).
+// dollar sign; the reply instructions say so (convex/lib/instructions.ts).
 const plugins: PluginConfig = { code, math };
 
 const controls: ControlsConfig = {
