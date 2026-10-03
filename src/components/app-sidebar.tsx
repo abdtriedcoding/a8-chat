@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { NavUser } from "@/components/nav-user";
 import { ThreadList } from "@/components/thread-list";
+import { ThreadSearchButton } from "@/components/thread-search";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -28,12 +29,15 @@ export function AppSidebar() {
         >
           <Logo className="text-lg" />
         </Link>
-        <Button variant="outline" className="justify-start" asChild>
-          <Link href="/chat" onClick={closeOnMobile}>
-            <SquarePenIcon data-icon="inline-start" />
-            New chat
-          </Link>
-        </Button>
+        <div className="flex flex-col gap-1">
+          <Button variant="outline" className="justify-start" asChild>
+            <Link href="/chat" onClick={closeOnMobile}>
+              <SquarePenIcon data-icon="inline-start" />
+              New chat
+            </Link>
+          </Button>
+          <ThreadSearchButton />
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <ThreadList />

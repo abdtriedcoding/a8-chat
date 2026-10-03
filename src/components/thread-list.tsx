@@ -226,6 +226,6 @@ function DeleteThreadDialog({
   );
 }
 
-function threadTitle(thread: Thread): string {
+export function threadTitle(thread: { title?: string }): string {
   return thread.title || "Untitled chat";
 }

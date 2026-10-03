@@ -13,6 +13,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { authComponent, requireUser } from "./auth";
+import { snippetAround } from "./lib/snippet";
 
 const vThreadSummary = v.object({
   _id: v.string(),
@@ -52,6 +53,71 @@ export const get = query({
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
     return thread ? { _id: thread._id, title: thread.title } : null;
+  },
+});
+
+const MAX_SEARCH_RESULTS = 20;
+// A thread can match on many messages, so read more messages than results.
+const MAX_MESSAGE_MATCHES = 50;
+
+const vSearchResult = v.object({
+  threadId: v.string(),
+  title: v.optional(v.string()),
+  // From the thread's best-matching message. Missing when only the title
+  // matched.
+  snippet: v.optional(v.string()),
+});
+
+/**
+ * The user's threads that match `query` in their title or in a message's
+ * text, one result per thread. Title matches come first, then threads that
+ * only matched in a message, each group in order of relevance. Empty when
+ * signed out.
+ */
+export const search = query({
+  args: { query: v.string() },
+  returns: v.array(vSearchResult),
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    const text = args.query.trim();
+    if (!user || !text) return [];
+
+    // Always pass a real userId: without one, both searches cover every
+    // user's threads.
+    const [titleMatches, messageMatches] = await Promise.all([
+      ctx.runQuery(components.agent.threads.searchThreadTitles, {
+        userId: user._id,
+        query: text,
+        limit: MAX_SEARCH_RESULTS,
+      }),
+      ctx.runQuery(components.agent.messages.textSearch, {
+        searchAllMessagesForUserId: user._id,
+        text,
+        limit: MAX_MESSAGE_MATCHES,
+      }),
+    ]);
+
+    // The first match in each thread is its most relevant one.
+    const snippets = new Map<string, string>();
+    for (const message of messageMatches) {
+      if (message.text && !snippets.has(message.threadId)) {
+        snippets.set(message.threadId, snippetAround(message.text, text));
+      }
+    }
+
+    const results = titleMatches.map((thread) => ({
+      threadId: thread._id,
+      title: thread.title,
+      snippet: snippets.get(thread._id),
+    }));
+    const seen = new Set(results.map((result) => result.threadId));
+    for (const [threadId, snippet] of snippets) {
+      if (results.length >= MAX_SEARCH_RESULTS) break;
+      if (seen.has(threadId)) continue;
+      const thread = await findOwnThread(ctx, user._id, threadId);
+      if (thread) results.push({ threadId, title: thread.title, snippet });
+    }
+    return results;
   },
 });
 
