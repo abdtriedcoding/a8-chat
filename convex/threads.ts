@@ -59,6 +59,9 @@ export const get = query({
 const MAX_SEARCH_RESULTS = 20;
 // A thread can match on many messages, so read more messages than results.
 const MAX_MESSAGE_MATCHES = 100;
+// Convex search takes up to 16 terms. Its docs don't say what happens past
+// that, so the query is cut to 16.
+const MAX_SEARCH_TERMS = 16;
 
 const vSearchResult = v.object({
   threadId: v.string(),
@@ -79,7 +82,13 @@ export const search = query({
   returns: v.array(vSearchResult),
   handler: async (ctx, args) => {
     const user = await authComponent.safeGetAuthUser(ctx);
-    const terms = args.query.trim();
+    // Convex splits a query into terms at spaces and punctuation, so count
+    // them the same way.
+    const terms = args.query
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean)
+      .slice(0, MAX_SEARCH_TERMS)
+      .join(" ");
     if (!user || !terms) return [];
 
     // Always pass a real userId. Without one, the title search covers every

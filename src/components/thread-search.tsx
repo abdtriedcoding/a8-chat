@@ -29,6 +29,9 @@ import { api } from "../../convex/_generated/api";
 type SearchResult = FunctionReturnType<typeof api.threads.search>[number];
 
 const DEBOUNCE_MS = 250;
+// One shared empty list. ThreadSearch compares lists by reference, so a new
+// [] on each render would loop.
+const NO_RESULTS: SearchResult[] = [];
 
 const OpenSearchContext = createContext<(() => void) | null>(null);
 
@@ -110,19 +113,22 @@ function ThreadSearch({ onSelect }: { onSelect: (threadId: string) => void }) {
   // What the server searches for. Clearing the box clears the results at
   // once, without the debounce.
   const serverQuery = query ? debounced : "";
-  const { isLoading } = useConvexAuth();
+  const { isLoading, isAuthenticated } = useConvexAuth();
   const results = useQuery(
     api.threads.search,
     // Wait for auth. Until then the server sees no user and returns nothing.
     serverQuery && !isLoading ? { query: serverQuery } : "skip",
   );
+  // Signed out, there's nothing to show, and the last results are dropped so
+  // they can't come back after the session changes.
+  const current = isAuthenticated ? results : NO_RESULTS;
   // Keep showing the last results while the next ones load, so the list
   // doesn't blank out on every keystroke.
-  const [lastResults, setLastResults] = useState<SearchResult[]>([]);
-  if (results !== undefined && results !== lastResults) {
-    setLastResults(results);
+  const [lastResults, setLastResults] = useState<SearchResult[]>(NO_RESULTS);
+  if (current !== undefined && current !== lastResults) {
+    setLastResults(current);
   }
-  const shown = serverQuery ? (results ?? lastResults) : [];
+  const shown = serverQuery ? (current ?? lastResults) : NO_RESULTS;
   const settled = results !== undefined && debounced === query;
 
   return (
