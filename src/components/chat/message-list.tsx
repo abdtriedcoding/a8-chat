@@ -3,10 +3,8 @@
 import type { PaginationStatus } from "convex/react";
 import { CircleAlertIcon } from "lucide-react";
 import { Fragment } from "react";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
-import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -24,6 +22,7 @@ import {
   ThinkingMessage,
 } from "./assistant-message";
 import { RegenerateButton } from "./regenerate-button";
+import { UserMessage } from "./user-message";
 
 /**
  * A thread's messages, oldest first. It follows a streaming reply until the
@@ -35,6 +34,7 @@ export function MessageList({
   onLoadEarlier,
   replyStatus,
   onRegenerate,
+  onEdit,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
@@ -42,8 +42,13 @@ export function MessageList({
   replyStatus: ReplyStatus;
   /** Set while the last turn can be regenerated. Only that turn shows it. */
   onRegenerate?: () => Promise<void>;
+  /** Set while the last prompt can be edited. Only that prompt shows it. */
+  onEdit?: (prompt: string) => Promise<void>;
 }) {
   const stopped = stoppedTurns(messages);
+  const lastPromptIndex = messages.findLastIndex(
+    (message) => message.role === "user",
+  );
   // The id of each turn's prompt, by order.
   const promptIds = new Map<number, string>();
   for (const message of messages) {
@@ -80,15 +85,10 @@ export function MessageList({
                 return (
                   <Fragment key={message.key}>
                     <MessageScrollerItem messageId={message.key} scrollAnchor>
-                      <Message align="end">
-                        <MessageContent>
-                          <Bubble variant="tinted" align="end">
-                            <BubbleContent className="whitespace-pre-wrap">
-                              {message.text}
-                            </BubbleContent>
-                          </Bubble>
-                        </MessageContent>
-                      </Message>
+                      <UserMessage
+                        text={message.text}
+                        onEdit={i === lastPromptIndex ? onEdit : undefined}
+                      />
                     </MessageScrollerItem>
                     {/* Stopped before any reply was saved, so mark the prompt instead. */}
                     {stopped.has(message.order) &&

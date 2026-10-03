@@ -52,14 +52,16 @@ export function ThreadView({ threadId }: { threadId: string }) {
 
   const stopReply = useMutation(api.chat.stopReply);
   const regenerateReply = useMutation(api.chat.regenerateReply);
+  const editPrompt = useMutation(api.chat.editPrompt);
 
   const replyStatus = useReplyStatus(messages);
   const replyInProgress =
     replyStatus === "waiting" || replyStatus === "streaming";
   const last = messages.at(-1);
-  // The last turn can be regenerated while no reply is in progress. A
-  // stopped turn counts as done, and so does a reply that timed out.
-  const canRegenerate = last !== undefined && !replyInProgress;
+  // The last turn can be regenerated or edited while no reply is in
+  // progress. A stopped turn counts as done, and so does a reply that timed
+  // out.
+  const canRedoLastTurn = last !== undefined && !replyInProgress;
 
   if (thread === null) {
     return (
@@ -99,10 +101,21 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onLoadEarlier={() => loadMore(PAGE_SIZE)}
           replyStatus={replyStatus}
           onRegenerate={
-            canRegenerate
+            canRedoLastTurn
               ? async () => {
                   await regenerateReply({
                     threadId,
+                    timeZone: browserTimeZone(),
+                  });
+                }
+              : undefined
+          }
+          onEdit={
+            canRedoLastTurn
+              ? async (prompt) => {
+                  await editPrompt({
+                    threadId,
+                    prompt,
                     timeZone: browserTimeZone(),
                   });
                 }
