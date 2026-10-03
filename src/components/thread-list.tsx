@@ -38,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { errorMessage } from "@/lib/errors";
+import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
 
 type Thread = FunctionReturnType<typeof api.threads.list>["page"][number];
@@ -224,8 +225,4 @@ function DeleteThreadDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
-}
-
-export function threadTitle(thread: { title?: string }): string {
-  return thread.title || "Untitled chat";
 }

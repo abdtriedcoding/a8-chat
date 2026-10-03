@@ -11,7 +11,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { threadTitle } from "@/components/thread-list";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -24,6 +23,7 @@ import {
 } from "@/components/ui/command";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
 
 type SearchResult = FunctionReturnType<typeof api.threads.search>[number];
@@ -44,8 +44,9 @@ export function ThreadSearchProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // No toLowerCase(): Chrome sends autofill keydowns with no key.
       if (
-        event.key.toLowerCase() === "k" &&
+        (event.key === "k" || event.key === "K") &&
         (event.metaKey || event.ctrlKey) &&
         !event.shiftKey &&
         !event.altKey &&
@@ -82,7 +83,7 @@ export function ThreadSearchProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Opens the search dialog. For phones, where there's no Cmd/Ctrl+K. */
+/** The sidebar's button for the search dialog. Phones have no Cmd/Ctrl+K. */
 export function ThreadSearchButton() {
   const openSearch = useContext(OpenSearchContext);
   if (!openSearch) {
@@ -106,13 +107,14 @@ function ThreadSearch({ onSelect }: { onSelect: (threadId: string) => void }) {
   const [input, setInput] = useState("");
   const query = input.trim();
   const debounced = useDebouncedValue(query, DEBOUNCE_MS);
-  // Clearing the box clears the results at once, without the debounce.
-  const search = query ? debounced : "";
+  // What the server searches for. Clearing the box clears the results at
+  // once, without the debounce.
+  const serverQuery = query ? debounced : "";
   const { isLoading } = useConvexAuth();
   const results = useQuery(
     api.threads.search,
-    // Wait for auth, or the results would come back empty (signed out).
-    search && !isLoading ? { query: search } : "skip",
+    // Wait for auth. Until then the server sees no user and returns nothing.
+    serverQuery && !isLoading ? { query: serverQuery } : "skip",
   );
   // Keep showing the last results while the next ones load, so the list
   // doesn't blank out on every keystroke.
@@ -120,7 +122,7 @@ function ThreadSearch({ onSelect }: { onSelect: (threadId: string) => void }) {
   if (results !== undefined && results !== lastResults) {
     setLastResults(results);
   }
-  const shown = search ? (results ?? lastResults) : [];
+  const shown = serverQuery ? (results ?? lastResults) : [];
   const settled = results !== undefined && debounced === query;
 
   return (

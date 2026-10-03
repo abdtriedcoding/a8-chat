@@ -58,13 +58,13 @@ export const get = query({
 
 const MAX_SEARCH_RESULTS = 20;
 // A thread can match on many messages, so read more messages than results.
-const MAX_MESSAGE_MATCHES = 50;
+const MAX_MESSAGE_MATCHES = 100;
 
 const vSearchResult = v.object({
   threadId: v.string(),
   title: v.optional(v.string()),
-  // From the thread's best-matching message. Missing when only the title
-  // matched.
+  // From the thread's best-matching message, or from its first prompt when
+  // only the title matched. Missing when that prompt has no text.
   snippet: v.optional(v.string()),
 });
 
@@ -79,20 +79,20 @@ export const search = query({
   returns: v.array(vSearchResult),
   handler: async (ctx, args) => {
     const user = await authComponent.safeGetAuthUser(ctx);
-    const text = args.query.trim();
-    if (!user || !text) return [];
+    const terms = args.query.trim();
+    if (!user || !terms) return [];
 
-    // Always pass a real userId: without one, both searches cover every
+    // Always pass a real userId. Without one, the title search covers every
     // user's threads.
     const [titleMatches, messageMatches] = await Promise.all([
       ctx.runQuery(components.agent.threads.searchThreadTitles, {
         userId: user._id,
-        query: text,
+        query: terms,
         limit: MAX_SEARCH_RESULTS,
       }),
       ctx.runQuery(components.agent.messages.textSearch, {
         searchAllMessagesForUserId: user._id,
-        text,
+        text: terms,
         limit: MAX_MESSAGE_MATCHES,
       }),
     ]);
@@ -101,25 +101,49 @@ export const search = query({
     const snippets = new Map<string, string>();
     for (const message of messageMatches) {
       if (message.text && !snippets.has(message.threadId)) {
-        snippets.set(message.threadId, snippetAround(message.text, text));
+        snippets.set(message.threadId, snippetAround(message.text, terms));
       }
     }
 
-    const results = titleMatches.map((thread) => ({
-      threadId: thread._id,
-      title: thread.title,
-      snippet: snippets.get(thread._id),
-    }));
-    const seen = new Set(results.map((result) => result.threadId));
-    for (const [threadId, snippet] of snippets) {
-      if (results.length >= MAX_SEARCH_RESULTS) break;
-      if (seen.has(threadId)) continue;
-      const thread = await findOwnThread(ctx, user._id, threadId);
-      if (thread) results.push({ threadId, title: thread.title, snippet });
-    }
-    return results;
+    const titled = await Promise.all(
+      titleMatches.map(async (thread) => ({
+        threadId: thread._id,
+        title: thread.title,
+        snippet:
+          snippets.get(thread._id) ??
+          (await firstPromptSnippet(ctx, thread._id, terms)),
+      })),
+    );
+    const titleIds = new Set(titleMatches.map((thread) => thread._id));
+    const messageOnly = await Promise.all(
+      [...snippets]
+        .filter(([threadId]) => !titleIds.has(threadId))
+        .slice(0, MAX_SEARCH_RESULTS - titled.length)
+        .map(async ([threadId, snippet]) => {
+          const thread = await findOwnThread(ctx, user._id, threadId);
+          return thread ? { threadId, title: thread.title, snippet } : null;
+        }),
+    );
+    return [...titled, ...messageOnly.filter((result) => result !== null)];
   },
 });
+
+/** A snippet of the thread's first prompt, or undefined if it has no text. */
+async function firstPromptSnippet(
+  ctx: QueryCtx,
+  threadId: string,
+  terms: string,
+) {
+  const {
+    page: [first],
+  } = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+    threadId,
+    order: "asc",
+    excludeToolMessages: true,
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  return first?.text ? snippetAround(first.text, terms) : undefined;
+}
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
