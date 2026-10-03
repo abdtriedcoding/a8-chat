@@ -37,14 +37,20 @@ export function NavUser() {
   const { isMobile } = useSidebar();
 
   async function signOut() {
-    await authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => window.location.replace("/sign-in"),
-        onError: () => {
-          toast.error("Couldn't sign out. Please try again.");
+    const failed = () => {
+      toast.error("Couldn't sign out. Please try again.");
+    };
+    try {
+      await authClient.signOut({
+        fetchOptions: {
+          onSuccess: () => window.location.replace("/sign-in"),
+          onError: failed,
         },
-      },
-    });
+      });
+    } catch {
+      // onError only sees error responses. A failed request rejects.
+      failed();
+    }
   }
 
   if (user === undefined) {
