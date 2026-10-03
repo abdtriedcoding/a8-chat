@@ -47,7 +47,7 @@ const PAGE_SIZE = 30;
 // the server render and hydration.
 const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
 
-/** The viewer's threads, newest first. */
+/** The signed-in user's threads, newest first. */
 export function ThreadList() {
   const { isLoading } = useConvexAuth();
   const { results, status, loadMore } = usePaginatedQuery(
@@ -69,7 +69,10 @@ export function ThreadList() {
         {status === "LoadingFirstPage" ? (
           <SidebarMenu aria-hidden="true">
             {SKELETON_WIDTHS.map((width) => (
-              <SidebarMenuItem key={width} className="flex h-8 items-center px-2">
+              <SidebarMenuItem
+                key={width}
+                className="flex h-8 items-center px-2"
+              >
                 <Skeleton className="h-4" style={{ width }} />
               </SidebarMenuItem>
             ))}

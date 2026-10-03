@@ -13,59 +13,43 @@ import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/errors";
 
 /**
- * The message box. Enter sends and Shift+Enter adds a line. The text clears
- * as soon as it's sent, and comes back if the send fails. While a reply is
- * on its way, Stop takes Send's place if `onStop` is given.
+ * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
+ * is set, a Stop button shows in place of Send.
  */
 export function Composer({
   onSend,
   onStop,
-  busy = false,
+  disabled = false,
   autoFocus = false,
   className,
 }: {
-  /** Sends the prompt. A rejection shows as a toast. */
   onSend: (prompt: string) => Promise<void>;
-  /** Stops the reply on its way. A rejection shows as a toast. */
   onStop?: () => Promise<void>;
-  /** A reply is on its way, so sending waits. Typing still works. */
-  busy?: boolean;
+  disabled?: boolean;
   autoFocus?: boolean;
   className?: string;
 }) {
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const waiting = sending || busy;
-  const canSend = text.trim() !== "" && !waiting;
-  // Not while the Send itself is in flight: there's no reply to stop yet.
-  const canStop = onStop !== undefined && busy && !sending;
+  const canSend = text.trim() !== "" && !disabled;
 
   async function send() {
     if (!canSend) return;
     const prompt = text;
     setText("");
-    setSending(true);
     try {
       await onSend(prompt);
     } catch (error) {
       // Put the prompt back, unless something new was typed meanwhile.
       setText((current) => (current === "" ? prompt : current));
       toast.error(errorMessage(error));
-    } finally {
-      setSending(false);
     }
   }
 
   async function stop() {
-    if (!onStop) return;
-    setStopping(true);
     try {
-      await onStop();
+      await onStop?.();
     } catch (error) {
       toast.error(errorMessage(error));
-    } finally {
-      setStopping(false);
     }
   }
 
@@ -99,17 +83,16 @@ export function Composer({
           className="max-h-52 min-h-11 px-3 pt-3"
         />
         <InputGroupAddon align="block-end">
-          {/* One button in one place, so focus stays when Stop turns back into Send. */}
-          {canStop ? (
+          {/* Stop and Send share this spot, so keyboard focus stays put when one replaces the other. */}
+          {onStop ? (
             <InputGroupButton
               type="button"
               variant="default"
               size="icon-sm"
               className="ml-auto rounded-full"
-              disabled={stopping}
               onClick={() => void stop()}
             >
-              {stopping ? <Spinner /> : <SquareIcon className="fill-current" />}
+              <SquareIcon className="fill-current" />
               <span className="sr-only">Stop</span>
             </InputGroupButton>
           ) : (
@@ -120,7 +103,7 @@ export function Composer({
               className="ml-auto rounded-full"
               disabled={!canSend}
             >
-              {waiting ? <Spinner /> : <ArrowUpIcon />}
+              {disabled ? <Spinner /> : <ArrowUpIcon />}
               <span className="sr-only">Send</span>
             </InputGroupButton>
           )}

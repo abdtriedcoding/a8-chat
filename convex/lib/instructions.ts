@@ -1,8 +1,3 @@
-import { isStepCount } from "ai";
-
-/** The most model calls one reply makes. Each tool round trip adds one. */
-export const MAX_REPLY_STEPS = 5;
-
 const INSTRUCTIONS =
   "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
   "If you don't know something, say so instead of guessing.";
@@ -18,24 +13,15 @@ const FORMATTING =
   "single $ is safe for prices.";
 
 /**
- * Everything a reply's model call gets besides its model and prompt. Built
- * fresh for each reply, so the date is never stale. Tools register here,
- * and only once they're set up (web search is the first).
+ * A reply's instructions, which override the Agent's. Built fresh for each
+ * reply, so the date is never stale.
+ *
+ * @param timeZone A time zone already checked by resolveTimeZone.
  */
-export function replyOptions({
-  timeZone,
-  now,
-}: {
-  /** A time zone the Send has already checked. */
-  timeZone: string;
-  now: Date;
-}) {
-  return {
-    instructions: [INSTRUCTIONS, FORMATTING, dateInstruction(timeZone, now)].join(
-      "\n\n",
-    ),
-    stopWhen: isStepCount(MAX_REPLY_STEPS),
-  };
+export function replyInstructions(timeZone: string, now: Date): string {
+  return [INSTRUCTIONS, FORMATTING, dateInstruction(timeZone, now)].join(
+    "\n\n",
+  );
 }
 
 /**

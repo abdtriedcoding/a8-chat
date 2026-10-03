@@ -30,7 +30,7 @@ Sending a chat message costs a model call, so only send one when the check needs
 
 - Call `browser_take_screenshot` with `filename: ".playwright-mcp/<name>.png"` (gitignored), and `fullPage: true` for the whole page. A bare file name saves to the repo root.
 - The tool returns the image. Look at it, and only call it proof once it shows the change.
-- Give the user the file paths. GitHub has no API for putting images in a PR description, so don't claim you attached them. Say they need dragging into the PR.
+- Attach them to the PR yourself with `gh`'s `--attach` flag, written as `<file>#<alt text>`. It works on `gh pr create`, `gh pr edit <n>` and `gh pr comment <n>`, and you can repeat it up to 50 times per command. If the body references a file as `![alt](./.playwright-mcp/x.png)`, gh rewrites that reference to the uploaded image; files the body doesn't reference get added to the end. Don't ask the user to drag them in.
 
 ## If the tools aren't there
 
