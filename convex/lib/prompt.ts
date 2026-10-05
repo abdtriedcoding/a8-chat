@@ -2,6 +2,8 @@ import { ConvexError } from "convex/values";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_TITLE_LENGTH = 60;
+// Longer than a generated title, so a rename has room.
+const MAX_RENAME_LENGTH = 80;
 
 export function checkPrompt(prompt: string): string {
   const text = prompt.trim();
@@ -15,6 +17,28 @@ export function checkPrompt(prompt: string): string {
     throw new ConvexError({
       code: "INVALID_PROMPT",
       message: `Messages can be at most ${MAX_PROMPT_LENGTH.toLocaleString("en-US")} characters.`,
+    });
+  }
+  return text;
+}
+
+/**
+ * A title the user typed, with whitespace collapsed to single spaces. Throws
+ * unless it has 1 to 80 characters.
+ */
+export function checkTitle(title: string): string {
+  const text = title.replace(/\s+/g, " ").trim();
+  if (!text) {
+    throw new ConvexError({
+      code: "INVALID_TITLE",
+      message: "Type a title first.",
+    });
+  }
+  // Count code points, like titleFromPrompt.
+  if (Array.from(text).length > MAX_RENAME_LENGTH) {
+    throw new ConvexError({
+      code: "INVALID_TITLE",
+      message: `Titles can be at most ${MAX_RENAME_LENGTH} characters.`,
     });
   }
   return text;

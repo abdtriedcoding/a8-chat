@@ -2,11 +2,12 @@
 
 import { useConvexAuth, useMutation, usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { MoreHorizontalIcon, Trash2Icon } from "lucide-react";
+import { MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { ThreadTitleInput } from "@/components/thread-title-input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
+import { useRenameThread } from "@/hooks/use-rename-thread";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
@@ -59,6 +61,10 @@ export function ThreadList() {
   );
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
+  const renameThread = useRenameThread();
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  // Set when Enter or Esc closes a rename, so that row's link takes focus.
+  const refocusId = useRef<string | null>(null);
   // Kept after the dialog closes, so its text doesn't blank mid-animation.
   const [target, setTarget] = useState<Thread | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -88,10 +94,33 @@ export function ThreadList() {
           <SidebarMenu>
             {results.map((thread) => {
               const active = thread._id === activeId;
+              if (thread._id === renamingId) {
+                return (
+                  <SidebarMenuItem key={thread._id}>
+                    <ThreadTitleInput
+                      title={thread.title}
+                      onSave={(title) =>
+                        renameThread({ threadId: thread._id, title })
+                      }
+                      onClose={(byKey) => {
+                        refocusId.current = byKey ? thread._id : null;
+                        setRenamingId(null);
+                      }}
+                      className="bg-background shadow-none"
+                    />
+                  </SidebarMenuItem>
+                );
+              }
               return (
                 <SidebarMenuItem key={thread._id}>
                   <SidebarMenuButton asChild isActive={active}>
                     <Link
+                      ref={(link) => {
+                        if (link && refocusId.current === thread._id) {
+                          refocusId.current = null;
+                          link.focus();
+                        }
+                      }}
                       href={`/c/${thread._id}`}
                       aria-current={active ? "page" : undefined}
                       onClick={closeOnMobile}
@@ -110,6 +139,12 @@ export function ThreadList() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" align="start">
                       <DropdownMenuGroup>
+                        <DropdownMenuItem
+                          onSelect={() => setRenamingId(thread._id)}
+                        >
+                          <PencilIcon />
+                          Rename
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
                           onSelect={() => {

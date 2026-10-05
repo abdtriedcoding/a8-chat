@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
-import { ChatHeader } from "./chat-header";
+import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
 
@@ -89,9 +89,9 @@ export function ThreadView({ threadId }: { threadId: string }) {
 
   return (
     <>
-      <ChatHeader
-        title={thread ? thread.title || "Untitled chat" : undefined}
-      />
+      <ChatHeader>
+        {thread && <ThreadHeading threadId={threadId} title={thread.title} />}
+      </ChatHeader>
       {thread === undefined || status === "LoadingFirstPage" ? (
         <ConversationSkeleton />
       ) : (
