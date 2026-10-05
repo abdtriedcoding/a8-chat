@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/threads
-import { getThreadMetadata } from "@convex-dev/agent";
+import { getThreadMetadata, updateThreadMetadata } from "@convex-dev/agent";
 import {
   paginationOptsValidator,
   paginationResultValidator,
@@ -13,6 +13,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { authComponent, requireUser } from "./auth";
+import { checkTitle } from "./lib/prompt";
 import { snippetAround } from "./lib/snippet";
 
 const vThreadSummary = v.object({
@@ -153,6 +154,23 @@ async function firstPromptSnippet(
   });
   return first?.text ? snippetAround(first.text, terms) : undefined;
 }
+
+/**
+ * Renames a thread (checkTitle). A generated title that lands later doesn't
+ * replace it, since saveTitle only replaces the placeholder.
+ */
+export const rename = mutation({
+  args: { threadId: v.string(), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, title }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    await updateThreadMetadata(ctx, components.agent, {
+      threadId,
+      patch: { title: checkTitle(title) },
+    });
+    return null;
+  },
+});
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
