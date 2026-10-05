@@ -17,6 +17,7 @@ import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_snippet from "../lib/snippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as threads from "../threads.js";
+import type * as titles from "../titles.js";
 
 import type {
   ApiFromModules,
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   "lib/snippet": typeof lib_snippet;
   "lib/timeZone": typeof lib_timeZone;
   threads: typeof threads;
+  titles: typeof titles;
 }>;
 
 /**
