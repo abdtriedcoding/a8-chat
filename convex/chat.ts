@@ -28,6 +28,7 @@ import { requireUser } from "./auth";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { resolveTimeZone } from "./lib/timeZone";
+import { limitSend, vRateLimited } from "./rateLimits";
 import { authorizeThreadAccess, getOwnThread } from "./threads";
 
 // The browser's time zone, unchecked. Each Send checks it (resolveTimeZone).
@@ -46,11 +47,19 @@ const STOPPED = "Stopped by the user";
  */
 export type MessageMetadata = { stopped: { keepText: boolean } };
 
+// startThread, sendMessage, regenerateReply and editPrompt are the Sends.
+// Each checks the rate limits (limitSend) before it saves anything. A Send
+// over a limit returns the refusal instead of throwing it, because the
+// Convex client logs every thrown error to the browser console.
+
 export const startThread = mutation({
   args: { prompt: v.string(), timeZone: vTimeZone },
+  returns: v.union(v.object({ threadId: v.string() }), vRateLimited),
   handler: async (ctx, { prompt, timeZone }) => {
     const user = await requireUser(ctx);
     const text = checkPrompt(prompt);
+    const refused = await limitSend(ctx, user._id);
+    if (refused) return refused;
     // Shown until the generated title replaces it, and kept if that fails.
     const placeholder = titleFromPrompt(text);
     const threadId = await createThread(ctx, components.agent, {
@@ -71,9 +80,14 @@ export const startThread = mutation({
 
 export const sendMessage = mutation({
   args: { prompt: v.string(), threadId: v.string(), timeZone: vTimeZone },
+  returns: v.union(v.null(), vRateLimited),
   handler: async (ctx, { prompt, threadId, timeZone }) => {
-    await authorizeThreadAccess(ctx, threadId);
-    await sendPrompt(ctx, { threadId, prompt: checkPrompt(prompt), timeZone });
+    const user = await authorizeThreadAccess(ctx, threadId);
+    const text = checkPrompt(prompt);
+    const refused = await limitSend(ctx, user._id);
+    if (refused) return refused;
+    await sendPrompt(ctx, { threadId, prompt: text, timeZone });
+    return null;
   },
 });
 
@@ -83,9 +97,11 @@ export const sendMessage = mutation({
  */
 export const regenerateReply = mutation({
   args: { threadId: v.string(), timeZone: vTimeZone },
-  returns: v.null(),
+  returns: v.union(v.null(), vRateLimited),
   handler: async (ctx, { threadId, timeZone }) => {
-    await authorizeThreadAccess(ctx, threadId);
+    const user = await authorizeThreadAccess(ctx, threadId);
+    const refused = await limitSend(ctx, user._id);
+    if (refused) return refused;
     await redoLastTurn(ctx, { threadId, timeZone });
     return null;
   },
@@ -98,10 +114,12 @@ export const regenerateReply = mutation({
  */
 export const editPrompt = mutation({
   args: { threadId: v.string(), prompt: v.string(), timeZone: vTimeZone },
-  returns: v.null(),
+  returns: v.union(v.null(), vRateLimited),
   handler: async (ctx, { threadId, prompt, timeZone }) => {
-    await authorizeThreadAccess(ctx, threadId);
+    const user = await authorizeThreadAccess(ctx, threadId);
     const text = checkPrompt(prompt);
+    const refused = await limitSend(ctx, user._id);
+    if (refused) return refused;
     await redoLastTurn(ctx, { threadId, timeZone, text });
     return null;
   },

@@ -16,6 +16,7 @@ import type * as lib_instructions from "../lib/instructions.js";
 import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_snippet from "../lib/snippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
+import type * as rateLimits from "../rateLimits.js";
 import type * as threads from "../threads.js";
 import type * as titles from "../titles.js";
 
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   "lib/prompt": typeof lib_prompt;
   "lib/snippet": typeof lib_snippet;
   "lib/timeZone": typeof lib_timeZone;
+  rateLimits: typeof rateLimits;
   threads: typeof threads;
   titles: typeof titles;
 }>;
@@ -67,4 +69,5 @@ export declare const internal: FilterApi<
 export declare const components: {
   betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };

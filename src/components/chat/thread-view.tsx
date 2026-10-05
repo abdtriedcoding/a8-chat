@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReplyStatus } from "@/hooks/use-reply-status";
+import { throwIfRateLimited } from "@/lib/errors";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader, ThreadHeading } from "./chat-header";
@@ -103,21 +104,25 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onRegenerate={
             canRedoLastTurn
               ? async () => {
-                  await regenerateReply({
-                    threadId,
-                    timeZone: browserTimeZone(),
-                  });
+                  throwIfRateLimited(
+                    await regenerateReply({
+                      threadId,
+                      timeZone: browserTimeZone(),
+                    }),
+                  );
                 }
               : undefined
           }
           onEdit={
             canRedoLastTurn
               ? async (prompt) => {
-                  await editPrompt({
-                    threadId,
-                    prompt,
-                    timeZone: browserTimeZone(),
-                  });
+                  throwIfRateLimited(
+                    await editPrompt({
+                      threadId,
+                      prompt,
+                      timeZone: browserTimeZone(),
+                    }),
+                  );
                 }
               : undefined
           }
@@ -126,11 +131,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
       <div className="shrink-0 px-4 pb-4">
         <Composer
           onSend={async (prompt) => {
-            await sendMessage({
-              threadId,
-              prompt,
-              timeZone: browserTimeZone(),
-            });
+            throwIfRateLimited(
+              await sendMessage({
+                threadId,
+                prompt,
+                timeZone: browserTimeZone(),
+              }),
+            );
           }}
           onStop={
             replyInProgress

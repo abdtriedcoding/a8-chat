@@ -16,6 +16,7 @@
     "@ai-sdk/provider-utils": "^5",
     "@convex-dev/agent": "~0.7.3",
     "@convex-dev/better-auth": "~0.12.5",
+    "@convex-dev/rate-limiter": "~0.4.0",
     "@hookform/resolvers": "^5.9.1",
     "@shadcn/react": "^0.3.1",
     "@streamdown/code": "^2",
