@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import type { RateLimited } from "../../convex/rateLimits";
 
 const GENERIC_MESSAGE = "Something went wrong. Please try again.";
 
@@ -20,4 +21,24 @@ export function errorMessage(error: unknown): string {
     }
   }
   return GENERIC_MESSAGE;
+}
+
+/**
+ * Returns a Send's result, or throws a ConvexError if a rate limit refused
+ * the Send. The Send mutations return the refusal instead of throwing it
+ * (limitSend). Throwing it here lets callers handle it like any other
+ * error, and errorMessage shows its message.
+ */
+export function throwIfRateLimited<T>(result: T | RateLimited): T {
+  if (isRateLimited(result)) throw new ConvexError(result);
+  return result;
+}
+
+function isRateLimited(value: unknown): value is RateLimited {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    value.code === "RATE_LIMITED"
+  );
 }

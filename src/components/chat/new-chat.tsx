@@ -11,6 +11,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { throwIfRateLimited } from "@/lib/errors";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader } from "./chat-header";
@@ -28,10 +29,9 @@ export function NewChat() {
   async function send(prompt: string) {
     setStarting(true);
     try {
-      const { threadId } = await startThread({
-        prompt,
-        timeZone: browserTimeZone(),
-      });
+      const { threadId } = throwIfRateLimited(
+        await startThread({ prompt, timeZone: browserTimeZone() }),
+      );
       startNavigation(() => router.push(`/c/${threadId}`));
     } finally {
       setStarting(false);

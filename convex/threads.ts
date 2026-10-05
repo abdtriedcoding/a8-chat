@@ -207,15 +207,19 @@ export async function getOwnThread(ctx: QueryCtx, threadId: string) {
   return findOwnThread(ctx, user._id, threadId);
 }
 
-/** Throws unless the signed-in user owns the thread. For mutations. */
+/**
+ * Throws unless the signed-in user owns the thread, and returns the user.
+ * For mutations.
+ */
 export async function authorizeThreadAccess(
   ctx: MutationCtx,
   threadId: string,
-): Promise<void> {
+) {
   const user = await requireUser(ctx);
   if (!(await findOwnThread(ctx, user._id, threadId))) {
     throw new ConvexError({ code: "NOT_FOUND", message: "Chat not found." });
   }
+  return user;
 }
 
 async function findOwnThread(ctx: QueryCtx, userId: string, threadId: string) {
