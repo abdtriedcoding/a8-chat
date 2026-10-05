@@ -41,3 +41,22 @@ export function titleFromPrompt(prompt: string): string {
       : chars.slice(0, MAX_TITLE_LENGTH).join("");
   return `${cut.trimEnd()}…`;
 }
+
+// Marks a model may put around a title, such as quotes or bold.
+const LEADING_MARKS = /^[\s"'`*_#“”‘’«»「」]+/u;
+// The same marks, plus punctuation the title shouldn't end with.
+const TRAILING_MARKS = /[\s"'`*_“”‘’«»「」.,;:!?…。！？]+$/u;
+
+/**
+ * A title the model wrote, cleaned up. It keeps the first line, drops a
+ * "Title:" label, the marks around the title and any trailing punctuation,
+ * then cuts it like titleFromPrompt. Empty when nothing is left.
+ */
+export function cleanTitle(text: string): string {
+  const line = text.trim().split("\n")[0];
+  const title = line
+    .replace(/^\W*title\s*:/i, "")
+    .replace(LEADING_MARKS, "")
+    .replace(TRAILING_MARKS, "");
+  return titleFromPrompt(title);
+}

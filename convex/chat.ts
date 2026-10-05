@@ -51,11 +51,20 @@ export const startThread = mutation({
   handler: async (ctx, { prompt, timeZone }) => {
     const user = await requireUser(ctx);
     const text = checkPrompt(prompt);
+    // Shown until the generated title replaces it, and kept if that fails.
+    const placeholder = titleFromPrompt(text);
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
-      title: titleFromPrompt(text),
+      title: placeholder,
     });
     await sendPrompt(ctx, { threadId, prompt: text, timeZone });
+    // Runs next to the first reply. Later prompts don't get a title.
+    await ctx.scheduler.runAfter(0, internal.titles.generateTitle, {
+      threadId,
+      userId: user._id,
+      prompt: text,
+      placeholder,
+    });
     return { threadId };
   },
 });
