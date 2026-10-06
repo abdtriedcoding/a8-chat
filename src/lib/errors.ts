@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import type { AttachmentNotFound } from "../../convex/attachments";
 import type { RateLimited } from "../../convex/rateLimits";
 
 const GENERIC_MESSAGE = "Something went wrong. Please try again.";
@@ -23,22 +24,25 @@ export function errorMessage(error: unknown): string {
   return GENERIC_MESSAGE;
 }
 
+/** Why a Send was refused: a rate limit, or an attachment that's gone. */
+type SendRefused = RateLimited | AttachmentNotFound;
+
 /**
- * Returns a Send's result, or throws a ConvexError if a rate limit refused
- * the Send. The Send mutations return the refusal instead of throwing it
- * (limitSend). Throwing it here lets callers handle it like any other
+ * Returns a Send's result, or throws a ConvexError if the Send was refused.
+ * The Send mutations return the refusal instead of throwing it (see
+ * convex/chat.ts). Throwing it here lets callers handle it like any other
  * error, and errorMessage shows its message.
  */
-export function throwIfRateLimited<T>(result: T | RateLimited): T {
-  if (isRateLimited(result)) throw new ConvexError(result);
+export function throwIfRefused<T>(result: T | SendRefused): T {
+  if (isSendRefused(result)) throw new ConvexError(result);
   return result;
 }
 
-function isRateLimited(value: unknown): value is RateLimited {
+function isSendRefused(value: unknown): value is SendRefused {
   return (
     typeof value === "object" &&
     value !== null &&
     "code" in value &&
-    value.code === "RATE_LIMITED"
+    (value.code === "RATE_LIMITED" || value.code === "NOT_FOUND")
   );
 }

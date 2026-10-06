@@ -12,7 +12,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
-import { throwIfRateLimited } from "@/lib/errors";
+import { throwIfRefused } from "@/lib/errors";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader } from "./chat-header";
@@ -30,7 +30,7 @@ export function NewChat() {
   async function send(prompt: string, attachments: UploadedAttachment[]) {
     setStarting(true);
     try {
-      const { threadId } = throwIfRateLimited(
+      const { threadId } = throwIfRefused(
         await startThread({
           prompt,
           attachmentFileIds: attachments.map(({ fileId }) => fileId),

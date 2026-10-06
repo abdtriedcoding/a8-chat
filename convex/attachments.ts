@@ -38,8 +38,19 @@ const vUploadRejected = v.object({
   message: v.string(),
 });
 
+/**
+ * Why a Send refused an attachment: the user didn't upload it, or
+ * cleanUpUnsentUploads deleted it. The Send mutations return it instead of
+ * throwing, like a rate limit.
+ */
+export const vAttachmentNotFound = v.object({
+  code: v.literal("NOT_FOUND"),
+  message: v.string(),
+});
+
 type RegisteredUpload = Infer<typeof vRegisteredUpload>;
 type UploadRejected = Infer<typeof vUploadRejected>;
+export type AttachmentNotFound = Infer<typeof vAttachmentNotFound>;
 
 /**
  * The media types the current model accepts as attachments. The composer
@@ -222,11 +233,106 @@ export const saveUpload = internalMutation({
   },
 });
 
+/** How long an upload can go unsent before cleanUpUnsentUploads deletes it. */
+const UNSENT_UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** How many attachments rows one cleanup transaction checks. */
+const CLEANUP_BATCH_SIZE = 100;
+
+/**
+ * Deletes uploads that were never sent: files no message references, and
+ * that nothing has touched for `maxAgeMs` (24 hours by default). For each
+ * file it deletes the Agent's row, the storage object (the Agent's delete
+ * leaves it), and the file's attachments rows.
+ *
+ * Deleting a thread drops its prompts' references to their files, which
+ * touches the files. The first run `maxAgeMs` or more later deletes them.
+ *
+ * Runs daily (convex/crons.ts). To test it by hand, pass a shorter
+ * `maxAgeMs`. The Agent's getFilesToDelete can't be used here, since its 24
+ * hours are fixed.
+ */
+export const cleanUpUnsentUploads = internalMutation({
+  args: { maxAgeMs: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, { maxAgeMs = UNSENT_UPLOAD_MAX_AGE_MS }) => {
+    await cleanUpUploadsBatch(ctx, Date.now() - maxAgeMs, null);
+    return null;
+  },
+});
+
+/** Checks the next batch for cleanUpUnsentUploads, with the same cutoff. */
+export const continueUploadCleanUp = internalMutation({
+  args: { cutoff: v.number(), cursor: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { cutoff, cursor }) => {
+    await cleanUpUploadsBatch(ctx, cutoff, cursor);
+    return null;
+  },
+});
+
+/**
+ * Deletes the unsent uploads among one batch of attachments rows, then
+ * schedules the next batch. `cutoff` is the latest last-touched time a file
+ * can have and still be deleted.
+ */
+async function cleanUpUploadsBatch(
+  ctx: MutationCtx,
+  cutoff: number,
+  cursor: string | null,
+) {
+  // Registering a file touches it, so a file untouched since the cutoff only
+  // has rows created before it.
+  const { page, isDone, continueCursor } = await ctx.db
+    .query("attachments")
+    .withIndex("by_creation_time", (q) => q.lte("_creationTime", cutoff))
+    .paginate({ numItems: CLEANUP_BATCH_SIZE, cursor });
+
+  const storageIds = new Map(page.map((row) => [row.fileId, row.storageId]));
+  for (const [fileId, storageId] of storageIds) {
+    const agentFile = await ctx.runQuery(components.agent.files.get, {
+      fileId,
+    });
+    if (
+      !agentFile ||
+      agentFile.refcount > 0 ||
+      agentFile.lastTouchedAt > cutoff
+    ) {
+      continue;
+    }
+    // This transaction just saw the file unreferenced, so `force` only skips
+    // the Agent's own 24-hour check, which a shorter maxAgeMs needs.
+    await ctx.runMutation(components.agent.files.deleteFiles, {
+      fileIds: [fileId],
+      force: true,
+    });
+    if (await ctx.db.system.get("_storage", storageId)) {
+      await ctx.storage.delete(storageId);
+    }
+    const rows = ctx.db
+      .query("attachments")
+      .withIndex("by_fileId", (q) => q.eq("fileId", fileId));
+    for await (const row of rows) {
+      await ctx.db.delete("attachments", row._id);
+    }
+  }
+
+  if (!isDone) {
+    await ctx.scheduler.runAfter(0, internal.attachments.continueUploadCleanUp, {
+      cutoff,
+      cursor: continueCursor,
+    });
+  }
+}
+
 /**
  * Loads the files a Send attaches to its prompt, with a message part for
- * each: an image part for an image, and a file part for a PDF. Throws unless
- * the user registered every file, there are at most
- * MAX_ATTACHMENTS_PER_PROMPT, and the model accepts each one.
+ * each: an image part for an image, and a file part for a PDF. Returns
+ * AttachmentNotFound if the user didn't register a file, or it's been
+ * deleted.
+ *
+ * Throws if there are more than MAX_ATTACHMENTS_PER_PROMPT files, or the
+ * model doesn't accept one. The browser checks both before uploading, so only
+ * a call that skips it gets these.
  *
  * The parts carry the files' storage URLs. The model's provider fetches the
  * files from there, so the reply runner never loads them.
@@ -240,7 +346,7 @@ export async function loadPromptAttachments(
   checkAttachmentCount(uniqueFileIds.length);
   const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
 
-  const attachments = await Promise.all(
+  const loadedAttachments = await Promise.all(
     uniqueFileIds.map(async (fileId) => {
       const userAttachment = await ctx.db
         .query("attachments")
@@ -253,12 +359,7 @@ export async function loadPromptAttachments(
         (await ctx.runQuery(components.agent.files.get, { fileId }));
       const fileUrl =
         agentFile && (await ctx.storage.getUrl(userAttachment.storageId));
-      if (!agentFile || !fileUrl) {
-        throw new ConvexError({
-          code: "NOT_FOUND",
-          message: "Attachment not found. Attach it again.",
-        });
-      }
+      if (!agentFile || !fileUrl) return null;
 
       const mediaType = agentFile.mediaType ?? "";
       if (!acceptedMediaTypes.includes(mediaType)) {
@@ -275,6 +376,16 @@ export async function loadPromptAttachments(
       return { fileId, filename, part };
     }),
   );
+  const attachments = loadedAttachments.filter(
+    (attachment) => attachment !== null,
+  );
+  if (attachments.length < loadedAttachments.length) {
+    const notFound: AttachmentNotFound = {
+      code: "NOT_FOUND",
+      message: "Attachment not found. Attach it again.",
+    };
+    return notFound;
+  }
 
   return {
     fileIds: attachments.map((attachment) => attachment.fileId),
