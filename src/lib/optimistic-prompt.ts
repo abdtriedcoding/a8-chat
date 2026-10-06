@@ -43,10 +43,11 @@ export function optimisticallySendPrompt(
       role: "user",
       text: trimmedText,
       parts: [
-        ...attachments.map(({ fileUrl, mediaType }) => ({
+        ...attachments.map(({ fileUrl, mediaType, filename }) => ({
           type: "file" as const,
           url: fileUrl,
           mediaType,
+          filename,
         })),
         ...(trimmedText ? [{ type: "text" as const, text: trimmedText }] : []),
       ],

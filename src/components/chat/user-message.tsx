@@ -20,8 +20,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { errorMessage } from "@/lib/errors";
+import { getAttachmentKind } from "../../../convex/lib/attachments";
 import { checkPrompt } from "../../../convex/lib/prompt";
-import { SentImageThumbnail } from "./attachments";
+import { SentImageThumbnail, SentPdfChip } from "./attachments";
 
 /**
  * A prompt's bubble, with its attachments above it. With `onEdit`, a pencil
@@ -47,12 +48,20 @@ export function UserMessage({
       <MessageContent>
         {attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
-            {attachments.map((attachment, index) => (
-              <SentImageThumbnail
-                key={`${index}-${attachment.url}`}
-                imageUrl={attachment.url}
-              />
-            ))}
+            {attachments.map((attachment, index) =>
+              getAttachmentKind(attachment.mediaType) === "image" ? (
+                <SentImageThumbnail
+                  key={`${index}-${attachment.url}`}
+                  imageUrl={attachment.url}
+                />
+              ) : (
+                <SentPdfChip
+                  key={`${index}-${attachment.url}`}
+                  fileUrl={attachment.url}
+                  filename={attachment.filename ?? "PDF"}
+                />
+              ),
+            )}
           </div>
         )}
         {editing && onEdit ? (

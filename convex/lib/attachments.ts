@@ -19,6 +19,7 @@ const SUPPORTED_FILE_TYPES: Record<
   "image/jpeg": { kind: "image", label: "JPEG", maxSizeInBytes: 10 * BYTES_PER_MB },
   "image/gif": { kind: "image", label: "GIF", maxSizeInBytes: 10 * BYTES_PER_MB },
   "image/webp": { kind: "image", label: "WebP", maxSizeInBytes: 10 * BYTES_PER_MB },
+  "application/pdf": { kind: "pdf", label: "PDF", maxSizeInBytes: 32 * BYTES_PER_MB },
 };
 
 /**
@@ -40,6 +41,11 @@ export function getAcceptedMediaTypes(providerId: string): string[] {
   return Object.entries(SUPPORTED_FILE_TYPES)
     .filter(([, fileType]) => acceptedKinds.includes(fileType.kind))
     .map(([mediaType]) => mediaType);
+}
+
+/** Whether a8 takes a media type as an image or a PDF. Null for neither. */
+export function getAttachmentKind(mediaType: string): AttachmentKind | null {
+  return SUPPORTED_FILE_TYPES[mediaType]?.kind ?? null;
 }
 
 /**
@@ -91,6 +97,8 @@ export function detectMediaType(firstBytes: Uint8Array): string | null {
   ) {
     return "image/webp";
   }
+  // "%PDF-"
+  if (hasBytesAt(0, [0x25, 0x50, 0x44, 0x46, 0x2d])) return "application/pdf";
   return null;
 }
 
@@ -106,9 +114,12 @@ export function checkAttachmentCount(attachmentCount: number) {
 
 const MAX_FILENAME_LENGTH = 255;
 
+/** The name a file gets when it has none. */
+export const UNNAMED_FILE = "attachment";
+
 /**
  * A file name from the browser, with whitespace collapsed and cut to 255
- * characters. "image" when nothing is left.
+ * characters. UNNAMED_FILE when nothing is left.
  */
 export function cleanFilename(filename: string): string {
   const collapsedFilename = filename.replace(/\s+/g, " ").trim();
@@ -116,7 +127,7 @@ export function cleanFilename(filename: string): string {
   const cutFilename = Array.from(collapsedFilename)
     .slice(0, MAX_FILENAME_LENGTH)
     .join("");
-  return cutFilename || "image";
+  return cutFilename || UNNAMED_FILE;
 }
 
 /** "a", "a or b", "a, b or c". */

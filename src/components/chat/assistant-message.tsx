@@ -67,7 +67,11 @@ export function AssistantMessage({
         {failed && (
           <Bubble variant="destructive">
             <BubbleContent className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              Couldn&apos;t get a reply.
+              <span>
+                Couldn&apos;t get a reply.
+                {message.metadata?.failureReason &&
+                  ` ${message.metadata.failureReason}`}
+              </span>
               {onRegenerate && (
                 <RegenerateButton onRegenerate={onRegenerate} labelled />
               )}
