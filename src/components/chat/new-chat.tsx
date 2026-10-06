@@ -11,6 +11,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
 import { throwIfRateLimited } from "@/lib/errors";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
@@ -26,11 +27,15 @@ export function NewChat() {
   const [starting, setStarting] = useState(false);
   const [navigating, startNavigation] = useTransition();
 
-  async function send(prompt: string) {
+  async function send(prompt: string, attachments: UploadedAttachment[]) {
     setStarting(true);
     try {
       const { threadId } = throwIfRateLimited(
-        await startThread({ prompt, timeZone: browserTimeZone() }),
+        await startThread({
+          prompt,
+          attachmentFileIds: attachments.map(({ fileId }) => fileId),
+          timeZone: browserTimeZone(),
+        }),
       );
       startNavigation(() => router.push(`/c/${threadId}`));
     } finally {

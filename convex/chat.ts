@@ -11,6 +11,7 @@ import {
   type StreamArgs,
   type SyncStreamsReturnValue,
 } from "@convex-dev/agent";
+import type { ImagePart, ModelMessage } from "ai";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { components, internal } from "./_generated/api";
@@ -24,6 +25,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { chatAgent, MAX_REPLY_STEPS } from "./agents/chat";
+import { loadPromptAttachments } from "./attachments";
 import { requireUser } from "./auth";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
@@ -33,6 +35,10 @@ import { authorizeThreadAccess, getOwnThread } from "./threads";
 
 // The browser's time zone, unchecked. Each Send checks it (resolveTimeZone).
 const vTimeZone = v.optional(v.string());
+
+// File IDs from registerUpload (convex/attachments.ts). Each Send checks
+// them (loadPromptAttachments).
+const vAttachmentFileIds = v.optional(v.array(v.string()));
 
 /**
  * The reason we give when the user presses Stop. It's passed to abortStream,
@@ -53,25 +59,41 @@ export type MessageMetadata = { stopped: { keepText: boolean } };
 // Convex client logs every thrown error to the browser console.
 
 export const startThread = mutation({
-  args: { prompt: v.string(), timeZone: vTimeZone },
+  args: {
+    prompt: v.string(),
+    attachmentFileIds: vAttachmentFileIds,
+    timeZone: vTimeZone,
+  },
   returns: v.union(v.object({ threadId: v.string() }), vRateLimited),
-  handler: async (ctx, { prompt, timeZone }) => {
+  handler: async (ctx, { prompt, attachmentFileIds = [], timeZone }) => {
     const user = await requireUser(ctx);
-    const text = checkPrompt(prompt);
+    const text = checkPrompt(prompt, attachmentFileIds.length);
     const refused = await limitSend(ctx, user._id);
     if (refused) return refused;
+    const attachments = await loadPromptAttachments(
+      ctx,
+      user._id,
+      attachmentFileIds,
+    );
     // Shown until the generated title replaces it, and kept if that fails.
-    const placeholder = titleFromPrompt(text);
+    // A prompt with no text is titled after its first attachment.
+    const placeholder = titleFromPrompt(text || attachments.filenames[0]);
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
       title: placeholder,
     });
-    await sendPrompt(ctx, { threadId, prompt: text, timeZone });
+    await sendPrompt(ctx, {
+      threadId,
+      message: buildPromptMessage(text, attachments.imageParts),
+      attachmentFileIds: attachments.fileIds,
+      timeZone,
+    });
     // Runs next to the first reply. Later prompts don't get a title.
     await ctx.scheduler.runAfter(0, internal.titles.generateTitle, {
       threadId,
       userId: user._id,
       prompt: text,
+      attachmentFilenames: attachments.filenames,
       placeholder,
     });
     return { threadId };
@@ -79,17 +101,50 @@ export const startThread = mutation({
 });
 
 export const sendMessage = mutation({
-  args: { prompt: v.string(), threadId: v.string(), timeZone: vTimeZone },
+  args: {
+    prompt: v.string(),
+    attachmentFileIds: vAttachmentFileIds,
+    threadId: v.string(),
+    timeZone: vTimeZone,
+  },
   returns: v.union(v.null(), vRateLimited),
-  handler: async (ctx, { prompt, threadId, timeZone }) => {
+  handler: async (
+    ctx,
+    { prompt, attachmentFileIds = [], threadId, timeZone },
+  ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    const text = checkPrompt(prompt);
+    const text = checkPrompt(prompt, attachmentFileIds.length);
     const refused = await limitSend(ctx, user._id);
     if (refused) return refused;
-    await sendPrompt(ctx, { threadId, prompt: text, timeZone });
+    const attachments = await loadPromptAttachments(
+      ctx,
+      user._id,
+      attachmentFileIds,
+    );
+    await sendPrompt(ctx, {
+      threadId,
+      message: buildPromptMessage(text, attachments.imageParts),
+      attachmentFileIds: attachments.fileIds,
+      timeZone,
+    });
     return null;
   },
 });
+
+/**
+ * A new prompt's message: its images first, then its text. With no images,
+ * just the text.
+ */
+function buildPromptMessage(
+  text: string,
+  imageParts: ImagePart[],
+): ModelMessage {
+  if (imageParts.length === 0) return { role: "user", content: text };
+  return {
+    role: "user",
+    content: text ? [...imageParts, { type: "text", text }] : imageParts,
+  };
+}
 
 /**
  * Replaces the thread's last reply with a new reply to the same prompt. The
@@ -117,18 +172,20 @@ export const editPrompt = mutation({
   returns: v.union(v.null(), vRateLimited),
   handler: async (ctx, { threadId, prompt, timeZone }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    const text = checkPrompt(prompt);
     const refused = await limitSend(ctx, user._id);
     if (refused) return refused;
-    await redoLastTurn(ctx, { threadId, timeZone, text });
+    // redoLastTurn checks the new text, since it loads the prompt, and a
+    // prompt with attachments can have no text.
+    await redoLastTurn(ctx, { threadId, timeZone, newText: prompt });
     return null;
   },
 });
 
 /**
  * Deletes the thread's last turn, the prompt and its reply, and then sends
- * the prompt again for a new reply. With `text`, the new prompt has that
- * text in place of the old one. regenerateReply and editPrompt call this.
+ * the prompt again for a new reply. With `newText`, the new prompt has that
+ * text in place of the old one, and keeps its attachments. regenerateReply
+ * and editPrompt call this.
  *
  * The new prompt gets the same order back, and a new id. Asking the model
  * again with the old prompt's id wouldn't start over. The Agent would
@@ -147,8 +204,8 @@ async function redoLastTurn(
   {
     threadId,
     timeZone,
-    text,
-  }: { threadId: string; timeZone: string | undefined; text?: string },
+    newText,
+  }: { threadId: string; timeZone: string | undefined; newText?: string },
 ) {
   // Newest first, with every status. A reply ends after MAX_REPLY_STEPS
   // steps, and each step saves at most two messages. Those are the model's
@@ -204,44 +261,67 @@ async function redoLastTurn(
   if (stopped) await ctx.db.delete("stoppedReplies", stopped._id);
 
   // This sends the saved message rather than its text, so nothing else in
-  // the prompt is lost.
-  const message =
-    text === undefined ? prompt.message : withText(prompt.message, text);
-  await sendPrompt(ctx, { threadId, message, timeZone });
+  // the prompt is lost. Its attachments go with it. Deleting the old prompt
+  // released them, and saving the new one claims them again.
+  const newPrompt =
+    newText === undefined
+      ? prompt.message
+      : replacePromptText(prompt.message, newText);
+  await sendPrompt(ctx, {
+    threadId,
+    message: newPrompt,
+    attachmentFileIds: prompt.fileIds ?? [],
+    timeZone,
+  });
 }
 
 type UserMessage = Extract<Message, { role: "user" }>;
 
 /**
- * The prompt with its text replaced by `text`. Image and file parts stay,
- * and the new text goes after them.
+ * The prompt with its text replaced by `newText`. Image and file parts stay,
+ * and the new text goes after them. Throws if the new text is blank and the
+ * prompt has no attachments (checkPrompt).
  */
-function withText(message: UserMessage, text: string): UserMessage {
-  if (typeof message.content === "string") return { ...message, content: text };
-  const attachments = message.content.filter((part) => part.type !== "text");
-  return { ...message, content: [...attachments, { type: "text", text }] };
+function replacePromptText(prompt: UserMessage, newText: string): UserMessage {
+  if (typeof prompt.content === "string") {
+    return { ...prompt, content: checkPrompt(newText, 0) };
+  }
+  const attachmentParts = prompt.content.filter((part) => part.type !== "text");
+  const checkedText = checkPrompt(newText, attachmentParts.length);
+  return {
+    ...prompt,
+    content: checkedText
+      ? [...attachmentParts, { type: "text", text: checkedText }]
+      : attachmentParts,
+  };
 }
 
 /**
  * Saves a prompt and schedules the reply to it (streamReply). startThread,
  * sendMessage and redoLastTurn all send through here.
  *
- * Pass `prompt` for text the user just wrote, or `message` to send a saved
- * prompt again.
+ * `attachmentFileIds` are the files the prompt attaches. Saving them with
+ * the prompt keeps the Agent from counting them as unused.
  */
 async function sendPrompt(
   ctx: MutationCtx,
   {
     threadId,
+    message,
+    attachmentFileIds,
     timeZone,
-    ...content
-  }: { threadId: string; timeZone: string | undefined } & (
-    { prompt: string } | { message: Message }
-  ),
+  }: {
+    threadId: string;
+    message: Message | ModelMessage;
+    attachmentFileIds: string[];
+    timeZone: string | undefined;
+  },
 ) {
-  const { messageId, message } = await chatAgent.saveMessage(ctx, {
+  const { messageId, message: savedPrompt } = await chatAgent.saveMessage(ctx, {
     threadId,
-    ...content,
+    message,
+    metadata:
+      attachmentFileIds.length > 0 ? { fileIds: attachmentFileIds } : undefined,
     // we're in a mutation, so skip embeddings for now. They'll be generated
     // lazily when streaming text.
     skipEmbeddings: true,
@@ -249,7 +329,7 @@ async function sendPrompt(
   await ctx.scheduler.runAfter(0, internal.chat.streamReply, {
     threadId,
     promptMessageId: messageId,
-    order: message.order,
+    order: savedPrompt.order,
     timeZone: resolveTimeZone(timeZone),
   });
 }

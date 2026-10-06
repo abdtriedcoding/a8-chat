@@ -5,9 +5,13 @@ const MAX_TITLE_LENGTH = 60;
 // Longer than a generated title, so a rename has room.
 const MAX_RENAME_LENGTH = 80;
 
-export function checkPrompt(prompt: string): string {
+/**
+ * A prompt's text, trimmed. Throws if it's too long, or blank when the
+ * prompt has no attachments. With attachments, it can be empty.
+ */
+export function checkPrompt(prompt: string, attachmentCount: number): string {
   const text = prompt.trim();
-  if (!text) {
+  if (!text && attachmentCount === 0) {
     throw new ConvexError({
       code: "INVALID_PROMPT",
       message: "Type a message first.",
