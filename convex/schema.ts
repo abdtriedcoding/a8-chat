@@ -13,10 +13,13 @@ export default defineSchema({
     keepText: v.boolean(),
   }).index("by_threadId_and_order", ["threadId", "order"]),
   // Who uploaded each file in the Agent's files table (convex/attachments.ts).
-  // A Send only takes files the user has a row for here.
+  // A Send only takes files the user has a row for here. Users who upload the
+  // same file share its Agent row, so a file can have a row per user.
   attachments: defineTable({
     userId: v.string(),
     fileId: v.string(),
     storageId: v.id("_storage"),
-  }).index("by_userId_and_fileId", ["userId", "fileId"]),
+  })
+    .index("by_userId_and_fileId", ["userId", "fileId"])
+    .index("by_fileId", ["fileId"]),
 });

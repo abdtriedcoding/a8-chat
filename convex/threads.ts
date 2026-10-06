@@ -174,7 +174,8 @@ export const rename = mutation({
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
- * the background. This deletes its stoppedReplies rows right away.
+ * the background. This deletes its stoppedReplies rows right away. Its
+ * attachments are left unreferenced, and cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
   args: { threadId: v.string() },

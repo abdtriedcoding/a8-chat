@@ -12,6 +12,7 @@ import type * as agents_chat from "../agents/chat.js";
 import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lib_attachments from "../lib/attachments.js";
 import type * as lib_instructions from "../lib/instructions.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   attachments: typeof attachments;
   auth: typeof auth;
   chat: typeof chat;
+  crons: typeof crons;
   http: typeof http;
   "lib/attachments": typeof lib_attachments;
   "lib/instructions": typeof lib_instructions;

@@ -25,7 +25,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { chatAgent, MAX_REPLY_STEPS } from "./agents/chat";
-import { loadPromptAttachments } from "./attachments";
+import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
 import { requireUser } from "./auth";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
@@ -62,8 +62,12 @@ export type MessageMetadata = {
 
 // startThread, sendMessage, regenerateReply and editPrompt are the Sends.
 // Each checks the rate limits (limitSend) before it saves anything. A Send
-// over a limit returns the refusal instead of throwing it, because the
-// Convex client logs every thrown error to the browser console.
+// over a limit, or with an attachment that's gone, returns the refusal
+// instead of throwing it, because the Convex client logs every thrown error
+// to the browser console.
+//
+// startThread and sendMessage load their attachments before the rate limits.
+// limitSend counts the Send, so a refusal after it would still be counted.
 
 export const startThread = mutation({
   args: {
@@ -71,17 +75,22 @@ export const startThread = mutation({
     attachmentFileIds: vAttachmentFileIds,
     timeZone: vTimeZone,
   },
-  returns: v.union(v.object({ threadId: v.string() }), vRateLimited),
+  returns: v.union(
+    v.object({ threadId: v.string() }),
+    vRateLimited,
+    vAttachmentNotFound,
+  ),
   handler: async (ctx, { prompt, attachmentFileIds = [], timeZone }) => {
     const user = await requireUser(ctx);
     const text = checkPrompt(prompt, attachmentFileIds.length);
-    const refused = await limitSend(ctx, user._id);
-    if (refused) return refused;
     const attachments = await loadPromptAttachments(
       ctx,
       user._id,
       attachmentFileIds,
     );
+    if ("code" in attachments) return attachments;
+    const refused = await limitSend(ctx, user._id);
+    if (refused) return refused;
     // Shown until the generated title replaces it, and kept if that fails.
     // A prompt with no text is titled after its first attachment.
     const placeholder = titleFromPrompt(text || attachments.filenames[0]);
@@ -114,20 +123,21 @@ export const sendMessage = mutation({
     threadId: v.string(),
     timeZone: vTimeZone,
   },
-  returns: v.union(v.null(), vRateLimited),
+  returns: v.union(v.null(), vRateLimited, vAttachmentNotFound),
   handler: async (
     ctx,
     { prompt, attachmentFileIds = [], threadId, timeZone },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
     const text = checkPrompt(prompt, attachmentFileIds.length);
-    const refused = await limitSend(ctx, user._id);
-    if (refused) return refused;
     const attachments = await loadPromptAttachments(
       ctx,
       user._id,
       attachmentFileIds,
     );
+    if ("code" in attachments) return attachments;
+    const refused = await limitSend(ctx, user._id);
+    if (refused) return refused;
     await sendPrompt(ctx, {
       threadId,
       message: buildPromptMessage(text, attachments.parts),

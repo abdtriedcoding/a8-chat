@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReplyStatus } from "@/hooks/use-reply-status";
-import { throwIfRateLimited } from "@/lib/errors";
+import { throwIfRefused } from "@/lib/errors";
 import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
@@ -94,7 +94,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onRegenerate={
             canRedoLastTurn
               ? async () => {
-                  throwIfRateLimited(
+                  throwIfRefused(
                     await regenerateReply({
                       threadId,
                       timeZone: browserTimeZone(),
@@ -106,7 +106,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onEdit={
             canRedoLastTurn
               ? async (prompt) => {
-                  throwIfRateLimited(
+                  throwIfRefused(
                     await editPrompt({
                       threadId,
                       prompt,
@@ -131,7 +131,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
                   attachments,
                 }),
               );
-            throwIfRateLimited(
+            throwIfRefused(
               await sendMessageWithOptimisticPrompt({
                 threadId,
                 prompt,
