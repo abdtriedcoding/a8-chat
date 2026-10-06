@@ -1,14 +1,24 @@
 // See the docs at https://docs.convex.dev/agents/files
 import type { ImagePart } from "ai";
-import { ConvexError, v } from "convex/values";
-import { components } from "./_generated/api";
+import { ConvexError, v, type Infer } from "convex/values";
+import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type ActionCtx,
+  type MutationCtx,
+} from "./_generated/server";
 import { chatModel } from "./agents/chat";
 import { requireUser } from "./auth";
 import {
   checkAttachmentCount,
   cleanFilename,
+  detectMediaType,
+  FILE_SIGNATURE_LENGTH,
   getAcceptedMediaTypes,
   getAttachmentRejectionReason,
 } from "./lib/attachments";
@@ -18,11 +28,16 @@ import {
 // registers it (registerUpload). It goes straight to storage because HTTP
 // actions cap request bodies at 20 MB.
 
+const vRegisteredUpload = v.object({ fileId: v.string(), fileUrl: v.string() });
+
 /** Why registerUpload refused a file. It returns this instead of throwing. */
 const vUploadRejected = v.object({
   code: v.literal("INVALID_ATTACHMENT"),
   message: v.string(),
 });
+
+type RegisteredUpload = Infer<typeof vRegisteredUpload>;
+type UploadRejected = Infer<typeof vUploadRejected>;
 
 /**
  * The media types the current model accepts as attachments. The composer
@@ -46,43 +61,137 @@ export const generateUploadUrl = mutation({
 });
 
 /**
- * Registers a file the user uploaded, so a Send can attach it. It checks the
- * file's type and size from the storage metadata, since the browser's checks
- * can be skipped. It then adds the file to the Agent's files table, and
- * records that the user uploaded it.
+ * Registers a file the user uploaded, so a Send can attach it. The browser's
+ * checks can be skipped, so it checks the file again:
+ * - the type the upload declared, and the size, from the storage metadata
+ * - the type the file's first bytes show, which is the type it's saved with
+ *
+ * It's an action because only actions can read a stored file. saveUpload
+ * then adds the file to the Agent's files table, and records that the user
+ * uploaded it.
  *
  * A file it refuses is deleted from storage. It returns the refusal instead
- * of throwing it, because throwing would undo the delete.
+ * of throwing it, because the Convex client logs every thrown error to the
+ * browser console.
  */
-export const registerUpload = mutation({
+export const registerUpload = action({
   args: { storageId: v.id("_storage"), filename: v.string() },
-  returns: v.union(
-    v.object({ fileId: v.string(), fileUrl: v.string() }),
-    vUploadRejected,
-  ),
-  handler: async (ctx, { storageId: uploadedStorageId, filename }) => {
-    const user = await requireUser(ctx);
-    const storageMetadata = await ctx.db.system.get("_storage", uploadedStorageId);
+  returns: v.union(vRegisteredUpload, vUploadRejected),
+  handler: async (
+    ctx,
+    { storageId, filename },
+  ): Promise<RegisteredUpload | UploadRejected> => {
+    if (!(await ctx.auth.getUserIdentity())) {
+      throw new ConvexError({
+        code: "UNAUTHENTICATED",
+        message: "Please sign in to continue.",
+      });
+    }
+    const storageMetadata = await ctx.runQuery(
+      internal.attachments.getStorageMetadata,
+      { storageId },
+    );
     if (!storageMetadata) {
       throw new ConvexError({ code: "NOT_FOUND", message: "Upload not found." });
     }
     const safeFilename = cleanFilename(filename);
-    const mediaType = storageMetadata.contentType ?? "";
-    const rejectionReason = getAttachmentRejectionReason(
-      { name: safeFilename, type: mediaType, size: storageMetadata.size },
-      getAcceptedMediaTypes(chatModel.provider),
+    const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
+
+    // The declared type is checked first, so an upload over its type's size
+    // limit is refused without being read.
+    const declaredTypeRejection = getAttachmentRejectionReason(
+      {
+        name: safeFilename,
+        type: storageMetadata.contentType ?? "",
+        size: storageMetadata.size,
+      },
+      acceptedMediaTypes,
     );
-    if (rejectionReason) {
-      await ctx.storage.delete(uploadedStorageId);
-      return { code: "INVALID_ATTACHMENT" as const, message: rejectionReason };
+    if (declaredTypeRejection) {
+      return await rejectUpload(ctx, storageId, declaredTypeRejection);
     }
+
+    // An empty type, for bytes that match no type a8 takes, is refused here.
+    const detectedMediaType = (await readMediaType(ctx, storageId)) ?? "";
+    const detectedTypeRejection = getAttachmentRejectionReason(
+      { name: safeFilename, type: detectedMediaType, size: storageMetadata.size },
+      acceptedMediaTypes,
+    );
+    if (detectedTypeRejection) {
+      return await rejectUpload(ctx, storageId, detectedTypeRejection);
+    }
+
+    return await ctx.runMutation(internal.attachments.saveUpload, {
+      storageId,
+      filename: safeFilename,
+      mediaType: detectedMediaType,
+      sha256: storageMetadata.sha256,
+    });
+  },
+});
+
+/** The media type the stored file's first bytes show (detectMediaType). */
+async function readMediaType(ctx: ActionCtx, storageId: Id<"_storage">) {
+  const storedFile = await ctx.storage.get(storageId);
+  if (!storedFile) return null;
+  const firstBytes = await storedFile
+    .slice(0, FILE_SIGNATURE_LENGTH)
+    .arrayBuffer();
+  return detectMediaType(new Uint8Array(firstBytes));
+}
+
+/** Deletes a refused upload from storage, and returns the refusal. */
+async function rejectUpload(
+  ctx: ActionCtx,
+  storageId: Id<"_storage">,
+  rejectionReason: string,
+): Promise<UploadRejected> {
+  await ctx.storage.delete(storageId);
+  return { code: "INVALID_ATTACHMENT", message: rejectionReason };
+}
+
+export const getStorageMetadata = internalQuery({
+  args: { storageId: v.id("_storage") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      size: v.number(),
+      contentType: v.optional(v.string()),
+      sha256: v.string(),
+    }),
+  ),
+  handler: async (ctx, { storageId }) => {
+    const storageMetadata = await ctx.db.system.get("_storage", storageId);
+    if (!storageMetadata) return null;
+    const { size, contentType, sha256 } = storageMetadata;
+    return { size, contentType, sha256 };
+  },
+});
+
+/**
+ * Saves an upload registerUpload checked: adds it to the Agent's files
+ * table, and records that the user uploaded it. Returns its file ID and URL.
+ */
+export const saveUpload = internalMutation({
+  args: {
+    storageId: v.id("_storage"),
+    filename: v.string(),
+    mediaType: v.string(),
+    sha256: v.string(),
+  },
+  returns: vRegisteredUpload,
+  handler: async (
+    ctx,
+    { storageId: uploadedStorageId, filename, mediaType, sha256 },
+  ) => {
+    const user = await requireUser(ctx);
 
     // The Agent reuses its row for a file with the same hash and name. That
     // row keeps its own storage object, so this upload isn't needed.
     const agentFile = await ctx.runMutation(components.agent.files.addFile, {
       storageId: uploadedStorageId,
-      hash: storageMetadata.sha256,
-      filename: safeFilename,
+      hash: sha256,
+      filename,
       mediaType,
     });
     const savedStorageId = agentFile.storageId as Id<"_storage">;

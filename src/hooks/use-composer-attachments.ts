@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -44,8 +44,20 @@ export function useComposerAttachments() {
   const capabilities = useQuery(api.attachments.capabilities);
   const acceptedMediaTypes = capabilities?.acceptedMediaTypes ?? [];
   const generateUploadUrl = useMutation(api.attachments.generateUploadUrl);
-  const registerUpload = useMutation(api.attachments.registerUpload);
+  const registerUpload = useAction(api.attachments.registerUpload);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+
+  // The attachments as of the last change, ahead of the next render. Two
+  // picks can land before React re-renders, so addFiles counts free slots
+  // from this rather than from `attachments`. Every change goes through
+  // changeAttachments, which keeps the two in step.
+  const latestAttachments = useRef<ComposerAttachment[]>([]);
+  function changeAttachments(
+    change: (currentAttachments: ComposerAttachment[]) => ComposerAttachment[],
+  ) {
+    latestAttachments.current = change(latestAttachments.current);
+    setAttachments(latestAttachments.current);
+  }
 
   // Every preview URL not freed yet, so they're all freed on unmount.
   const previewUrlsInUse = useRef(new Set<string>());
@@ -61,7 +73,7 @@ export function useComposerAttachments() {
     attachmentId: string,
     changes: Partial<ComposerAttachment>,
   ) {
-    setAttachments((currentAttachments) =>
+    changeAttachments((currentAttachments) =>
       currentAttachments.map((attachment) =>
         attachment.id === attachmentId
           ? { ...attachment, ...changes }
@@ -106,7 +118,8 @@ export function useComposerAttachments() {
    * refused with a toast, before any upload.
    */
   function addFiles(files: File[]) {
-    const freeSlots = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
+    const freeSlots =
+      MAX_ATTACHMENTS_PER_PROMPT - latestAttachments.current.length;
     const newAttachments: ComposerAttachment[] = [];
     for (const file of files) {
       const rejectionReason = getAttachmentRejectionReason(
@@ -136,7 +149,7 @@ export function useComposerAttachments() {
       });
       void uploadFile(attachmentId, file);
     }
-    setAttachments((currentAttachments) => [
+    changeAttachments((currentAttachments) => [
       ...currentAttachments,
       ...newAttachments,
     ]);
@@ -151,7 +164,7 @@ export function useComposerAttachments() {
   }
 
   function removeAttachment(attachmentToRemove: ComposerAttachment) {
-    setAttachments((currentAttachments) =>
+    changeAttachments((currentAttachments) =>
       currentAttachments.filter(
         (attachment) => attachment.id !== attachmentToRemove.id,
       ),
@@ -161,12 +174,12 @@ export function useComposerAttachments() {
 
   /** Empties the composer but keeps the previews, so a failed Send can restore them. */
   function clearAttachments() {
-    setAttachments([]);
+    changeAttachments(() => []);
   }
 
   /** Puts attachments back in front of any added since they were cleared. */
   function restoreAttachments(attachmentsToRestore: ComposerAttachment[]) {
-    setAttachments((currentAttachments) => [
+    changeAttachments((currentAttachments) => [
       ...attachmentsToRestore,
       ...currentAttachments,
     ]);

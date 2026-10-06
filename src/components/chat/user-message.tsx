@@ -47,9 +47,9 @@ export function UserMessage({
       <MessageContent>
         {attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
-            {attachments.map((attachment) => (
+            {attachments.map((attachment, index) => (
               <SentImageThumbnail
-                key={attachment.url}
+                key={`${index}-${attachment.url}`}
                 imageUrl={attachment.url}
               />
             ))}

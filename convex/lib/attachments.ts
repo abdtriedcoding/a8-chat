@@ -66,6 +66,34 @@ export function getAttachmentRejectionReason(
   return null;
 }
 
+/** How many bytes from the start of a file detectMediaType needs. */
+export const FILE_SIGNATURE_LENGTH = 12;
+
+/**
+ * The media type a file's first bytes show, or null if they don't match a
+ * type a8 takes. The browser sets an upload's Content-Type from the file
+ * name, so only the bytes can be trusted.
+ */
+export function detectMediaType(firstBytes: Uint8Array): string | null {
+  const hasBytesAt = (offset: number, signature: number[]) =>
+    signature.every((byte, i) => firstBytes[offset + i] === byte);
+
+  if (hasBytesAt(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    return "image/png";
+  }
+  if (hasBytesAt(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  // "GIF8"
+  if (hasBytesAt(0, [0x47, 0x49, 0x46, 0x38])) return "image/gif";
+  // "RIFF", then the chunk size, then "WEBP"
+  if (
+    hasBytesAt(0, [0x52, 0x49, 0x46, 0x46]) &&
+    hasBytesAt(8, [0x57, 0x45, 0x42, 0x50])
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 /** Throws unless `attachmentCount` attachments fit on one prompt. */
 export function checkAttachmentCount(attachmentCount: number) {
   if (attachmentCount > MAX_ATTACHMENTS_PER_PROMPT) {
