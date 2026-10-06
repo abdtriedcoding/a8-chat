@@ -21,13 +21,16 @@ import {
 } from "@/hooks/use-composer-attachments";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
+import { FileDropZone } from "./file-drop-zone";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
  * is set, a Stop button shows in place of Send.
  *
- * The attach button shows when the current model accepts files. A prompt
- * can be just attachments, and Send waits for every upload to finish.
+ * When the current model accepts files, they can be attached with the
+ * attach button, by pasting them into the box, or by dropping them on the
+ * page. A prompt can be just attachments, and Send waits for every upload to
+ * finish.
  */
 export function Composer({
   onSend,
@@ -55,8 +58,8 @@ export function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadedAttachments: UploadedAttachment[] = attachments.flatMap(
-    ({ fileId, fileUrl, mediaType }) =>
-      fileId && fileUrl ? [{ fileId, fileUrl, mediaType }] : [],
+    ({ fileId, fileUrl, mediaType, filename }) =>
+      fileId && fileUrl ? [{ fileId, fileUrl, mediaType, filename }] : [],
   );
   // A failed upload counts as not done, so the user has to remove it first
   // and it isn't left out unnoticed.
@@ -111,6 +114,10 @@ export function Composer({
           event.target.value = "";
         }}
       />
+      <FileDropZone
+        onDrop={addFiles}
+        disabled={acceptedMediaTypes.length === 0}
+      />
       <InputGroup>
         {attachments.length > 0 && (
           <InputGroupAddon align="block-start" className="flex-wrap px-2 pt-2">
@@ -126,6 +133,20 @@ export function Composer({
         <InputGroupTextarea
           value={text}
           onChange={(event) => setText(event.target.value)}
+          onPaste={(event) => {
+            // A screenshot pastes as a file with no text. Text copied from
+            // some apps, such as spreadsheets, comes with a picture of it
+            // too, so a paste that has text pastes the text.
+            const pastedFiles = Array.from(event.clipboardData.files);
+            if (
+              pastedFiles.length === 0 ||
+              event.clipboardData.getData("text/plain")
+            ) {
+              return;
+            }
+            event.preventDefault();
+            addFiles(pastedFiles);
+          }}
           onKeyDown={(event) => {
             // Skip while an IME is composing: its Enter confirms a word.
             if (

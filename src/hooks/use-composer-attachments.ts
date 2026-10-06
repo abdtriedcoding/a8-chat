@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
 import {
+  getAttachmentKind,
   getAttachmentRejectionReason,
   MAX_ATTACHMENTS_PER_PROMPT,
 } from "../../convex/lib/attachments";
@@ -16,8 +17,11 @@ export type ComposerAttachment = {
   filename: string;
   sizeInBytes: number;
   mediaType: string;
-  /** A blob URL for the file, so the chip shows it during the upload. */
-  previewUrl: string;
+  /**
+   * A blob URL for an image, so the chip shows it during the upload. PDFs
+   * don't get one, since their chip shows an icon.
+   */
+  previewUrl?: string;
   uploadStatus: "uploading" | "done" | "error";
   /** Set once the upload is done. */
   fileId?: string;
@@ -32,11 +36,13 @@ export type UploadedAttachment = {
   fileId: string;
   fileUrl: string;
   mediaType: string;
+  filename: string;
 };
 
 /**
  * The composer's attachments. `addFiles` checks each file, then uploads it
- * to Convex storage and registers it (convex/attachments.ts).
+ * to Convex storage and registers it (convex/attachments.ts). The attach
+ * button, paste and drag-drop all add files through it.
  * `acceptedMediaTypes` lists the media types the current model takes, and
  * is empty while it loads.
  */
@@ -136,8 +142,11 @@ export function useComposerAttachments() {
         );
         break;
       }
-      const previewUrl = URL.createObjectURL(file);
-      previewUrlsInUse.current.add(previewUrl);
+      let previewUrl: string | undefined;
+      if (getAttachmentKind(file.type) === "image") {
+        previewUrl = URL.createObjectURL(file);
+        previewUrlsInUse.current.add(previewUrl);
+      }
       const attachmentId = crypto.randomUUID();
       newAttachments.push({
         id: attachmentId,
@@ -158,6 +167,7 @@ export function useComposerAttachments() {
   /** Frees the attachments' preview URLs. Call it once they're gone for good. */
   function freePreviews(attachmentsToFree: ComposerAttachment[]) {
     for (const { previewUrl } of attachmentsToFree) {
+      if (!previewUrl) continue;
       URL.revokeObjectURL(previewUrl);
       previewUrlsInUse.current.delete(previewUrl);
     }

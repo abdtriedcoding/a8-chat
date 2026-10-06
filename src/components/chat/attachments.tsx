@@ -4,7 +4,7 @@
    files, served from Convex storage or previewed from a local blob URL.
    next/image would only add an optimizer copy and dev warnings. */
 
-import { CircleAlertIcon, XIcon } from "lucide-react";
+import { CircleAlertIcon, FileTextIcon, XIcon } from "lucide-react";
 import {
   Attachment,
   AttachmentAction,
@@ -39,9 +39,13 @@ export function ComposerAttachmentChip({
         <AttachmentMedia>
           <CircleAlertIcon />
         </AttachmentMedia>
-      ) : (
+      ) : previewUrl ? (
         <AttachmentMedia variant="image">
           <img src={previewUrl} alt="" />
+        </AttachmentMedia>
+      ) : (
+        <AttachmentMedia>
+          <FileTextIcon />
         </AttachmentMedia>
       )}
       <AttachmentContent>
@@ -92,6 +96,32 @@ export function SentImageThumbnail({ imageUrl }: { imageUrl: string }) {
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** A PDF sent with a prompt. Clicking it opens the PDF in a new tab. */
+export function SentPdfChip({
+  fileUrl,
+  filename,
+}: {
+  fileUrl: string;
+  filename: string;
+}) {
+  return (
+    <Attachment className="max-w-60">
+      <AttachmentMedia>
+        <FileTextIcon />
+      </AttachmentMedia>
+      <AttachmentContent>
+        <AttachmentTitle>{filename}</AttachmentTitle>
+        <AttachmentDescription>PDF</AttachmentDescription>
+      </AttachmentContent>
+      <AttachmentTrigger asChild>
+        <a href={fileUrl} target="_blank" rel="noreferrer">
+          <span className="sr-only">Open {filename}</span>
+        </a>
+      </AttachmentTrigger>
+    </Attachment>
   );
 }
 

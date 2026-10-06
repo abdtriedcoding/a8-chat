@@ -5,7 +5,7 @@ import type { MessageMetadata } from "../../convex/chat";
 export type ThreadMessage = UIMessage<MessageMetadata>;
 
 /** What a stopped turn carries: whether to keep showing the reply's text. */
-export type Stop = MessageMetadata["stopped"];
+export type Stop = NonNullable<MessageMetadata["stopped"]>;
 
 /**
  * The turns the user stopped, keyed by order. A prompt and its reply have
@@ -15,7 +15,7 @@ export type Stop = MessageMetadata["stopped"];
 export function stoppedTurns(messages: ThreadMessage[]): Map<number, Stop> {
   const turns = new Map<number, Stop>();
   for (const { order, metadata } of messages) {
-    if (metadata) turns.set(order, metadata.stopped);
+    if (metadata?.stopped) turns.set(order, metadata.stopped);
   }
   return turns;
 }

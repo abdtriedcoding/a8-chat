@@ -16,6 +16,7 @@ import type * as http from "../http.js";
 import type * as lib_attachments from "../lib/attachments.js";
 import type * as lib_instructions from "../lib/instructions.js";
 import type * as lib_prompt from "../lib/prompt.js";
+import type * as lib_replyFailure from "../lib/replyFailure.js";
 import type * as lib_snippet from "../lib/snippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as rateLimits from "../rateLimits.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   "lib/attachments": typeof lib_attachments;
   "lib/instructions": typeof lib_instructions;
   "lib/prompt": typeof lib_prompt;
+  "lib/replyFailure": typeof lib_replyFailure;
   "lib/snippet": typeof lib_snippet;
   "lib/timeZone": typeof lib_timeZone;
   rateLimits: typeof rateLimits;

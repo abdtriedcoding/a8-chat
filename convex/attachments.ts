@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/files
-import type { ImagePart } from "ai";
+import type { FilePart, ImagePart } from "ai";
 import { ConvexError, v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -20,7 +20,9 @@ import {
   detectMediaType,
   FILE_SIGNATURE_LENGTH,
   getAcceptedMediaTypes,
+  getAttachmentKind,
   getAttachmentRejectionReason,
+  UNNAMED_FILE,
 } from "./lib/attachments";
 
 // Attaching a file takes three steps. The browser gets an upload URL
@@ -221,9 +223,13 @@ export const saveUpload = internalMutation({
 });
 
 /**
- * Loads the files a Send attaches to its prompt, with an image part for
- * each. Throws unless the user registered every file, there are at most
+ * Loads the files a Send attaches to its prompt, with a message part for
+ * each: an image part for an image, and a file part for a PDF. Throws unless
+ * the user registered every file, there are at most
  * MAX_ATTACHMENTS_PER_PROMPT, and the model accepts each one.
+ *
+ * The parts carry the files' storage URLs. The model's provider fetches the
+ * files from there, so the reply runner never loads them.
  */
 export async function loadPromptAttachments(
   ctx: MutationCtx,
@@ -261,18 +267,18 @@ export async function loadPromptAttachments(
           message: "This model can't read this kind of file.",
         });
       }
-      const imagePart: ImagePart = {
-        type: "image",
-        image: new URL(fileUrl),
-        mediaType,
-      };
-      return { fileId, filename: agentFile.filename ?? "image", imagePart };
+      const filename = agentFile.filename ?? UNNAMED_FILE;
+      const part: ImagePart | FilePart =
+        getAttachmentKind(mediaType) === "image"
+          ? { type: "image", image: new URL(fileUrl), mediaType }
+          : { type: "file", data: new URL(fileUrl), mediaType, filename };
+      return { fileId, filename, part };
     }),
   );
 
   return {
     fileIds: attachments.map((attachment) => attachment.fileId),
     filenames: attachments.map((attachment) => attachment.filename),
-    imageParts: attachments.map((attachment) => attachment.imagePart),
+    parts: attachments.map((attachment) => attachment.part),
   };
 }

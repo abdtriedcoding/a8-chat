@@ -11,7 +11,7 @@ import {
   type StreamArgs,
   type SyncStreamsReturnValue,
 } from "@convex-dev/agent";
-import type { ImagePart, ModelMessage } from "ai";
+import type { FilePart, ImagePart, ModelMessage } from "ai";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { components, internal } from "./_generated/api";
@@ -29,6 +29,7 @@ import { loadPromptAttachments } from "./attachments";
 import { requireUser } from "./auth";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
+import { replyFailureReason } from "./lib/replyFailure";
 import { resolveTimeZone } from "./lib/timeZone";
 import { limitSend, vRateLimited } from "./rateLimits";
 import { authorizeThreadAccess, getOwnThread } from "./threads";
@@ -47,11 +48,17 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 const STOPPED = "Stopped by the user";
 
 /**
- * Extra data listThreadMessages adds to messages. If the user stopped a
- * turn's reply, every message in that turn gets `stopped`. `keepText` says
- * whether the reply's text should still be shown. Other messages get none.
+ * Extra data listThreadMessages adds to every message in a turn. Messages
+ * in other turns get none.
+ * - `stopped`: the user stopped the turn's reply. `keepText` says whether
+ *   the reply's text should still be shown.
+ * - `failureReason`: the reply failed for a reason we know, and this says
+ *   what it is, such as attachments too large for the model.
  */
-export type MessageMetadata = { stopped: { keepText: boolean } };
+export type MessageMetadata = {
+  stopped?: { keepText: boolean };
+  failureReason?: string;
+};
 
 // startThread, sendMessage, regenerateReply and editPrompt are the Sends.
 // Each checks the rate limits (limitSend) before it saves anything. A Send
@@ -84,7 +91,7 @@ export const startThread = mutation({
     });
     await sendPrompt(ctx, {
       threadId,
-      message: buildPromptMessage(text, attachments.imageParts),
+      message: buildPromptMessage(text, attachments.parts),
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
@@ -123,7 +130,7 @@ export const sendMessage = mutation({
     );
     await sendPrompt(ctx, {
       threadId,
-      message: buildPromptMessage(text, attachments.imageParts),
+      message: buildPromptMessage(text, attachments.parts),
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
@@ -132,17 +139,19 @@ export const sendMessage = mutation({
 });
 
 /**
- * A new prompt's message: its images first, then its text. With no images,
- * just the text.
+ * A new prompt's message: its attachments first, then its text. With no
+ * attachments, just the text.
  */
 function buildPromptMessage(
   text: string,
-  imageParts: ImagePart[],
+  attachmentParts: Array<ImagePart | FilePart>,
 ): ModelMessage {
-  if (imageParts.length === 0) return { role: "user", content: text };
+  if (attachmentParts.length === 0) return { role: "user", content: text };
   return {
     role: "user",
-    content: text ? [...imageParts, { type: "text", text }] : imageParts,
+    content: text
+      ? [...attachmentParts, { type: "text", text }]
+      : attachmentParts,
   };
 }
 
@@ -572,11 +581,14 @@ export const listThreadMessages = query({
 
     const paginated = await listMessages(ctx, components.agent, args);
 
-    // Finds the stopped turns on this page with one index scan, and adds
-    // `stopped` to each of their messages (MessageMetadata). The client
-    // reads it from the prompt, because a reply that's still streaming
-    // doesn't come from this list. A turn has at most one row.
-    const stopped = new Map<number, MessageMetadata>();
+    // Each turn's metadata, by order. It goes on every message in the turn,
+    // because the client reads `stopped` from the prompt (a reply that's
+    // still streaming doesn't come from this list), and the Agent combines
+    // a reply's messages into one, keeping only the first one's metadata.
+    const turnMetadata = new Map<number, MessageMetadata>();
+
+    // Finds the stopped turns on this page with one index scan. A turn has
+    // at most one row.
     const orders = paginated.page.map((message) => message.order);
     if (orders.length > 0) {
       const first = Math.min(...orders);
@@ -588,7 +600,17 @@ export const listThreadMessages = query({
         )
         .take(last - first + 1);
       for (const row of rows) {
-        stopped.set(row.order, { stopped: { keepText: row.keepText } });
+        turnMetadata.set(row.order, { stopped: { keepText: row.keepText } });
+      }
+    }
+    for (const message of paginated.page) {
+      if (message.status !== "failed") continue;
+      const failureReason = replyFailureReason(message.error);
+      if (failureReason) {
+        turnMetadata.set(message.order, {
+          ...turnMetadata.get(message.order),
+          failureReason,
+        });
       }
     }
 
@@ -597,7 +619,7 @@ export const listThreadMessages = query({
       page: toUIMessages<MessageMetadata>(
         paginated.page.map((message) => ({
           ...message,
-          metadata: stopped.get(message.order),
+          metadata: turnMetadata.get(message.order),
         })),
       ),
       streams,
