@@ -237,6 +237,12 @@ export const saveUpload = internalMutation({
 const UNSENT_UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** How many attachments rows one cleanup transaction checks. */
 const CLEANUP_BATCH_SIZE = 100;
+/**
+ * How many of one file's attachments rows a cleanup transaction deletes. A
+ * transaction can delete up to CLEANUP_BATCH_SIZE files, so this keeps its
+ * writes to about 1,300.
+ */
+const ROW_DELETE_BATCH_SIZE = 10;
 
 /**
  * Deletes uploads that were never sent: files no message references, and
@@ -308,12 +314,7 @@ async function cleanUpUploadsBatch(
     if (await ctx.db.system.get("_storage", storageId)) {
       await ctx.storage.delete(storageId);
     }
-    const rows = ctx.db
-      .query("attachments")
-      .withIndex("by_fileId", (q) => q.eq("fileId", fileId));
-    for await (const row of rows) {
-      await ctx.db.delete("attachments", row._id);
-    }
+    await deleteAttachmentRows(ctx, fileId);
   }
 
   if (!isDone) {
@@ -321,6 +322,39 @@ async function cleanUpUploadsBatch(
       cutoff,
       cursor: continueCursor,
     });
+  }
+}
+
+/** Deletes the next batch of a deleted file's attachments rows. */
+export const continueAttachmentRowDeletion = internalMutation({
+  args: { fileId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { fileId }) => {
+    await deleteAttachmentRows(ctx, fileId);
+    return null;
+  },
+});
+
+/**
+ * Deletes up to ROW_DELETE_BATCH_SIZE of a file's attachments rows, and
+ * schedules the rest. A file has a row per user who uploaded it, so it can
+ * have more rows than one transaction should delete. Call it after deleting
+ * the file's Agent row. Until the rest are deleted, a Send refuses them.
+ */
+async function deleteAttachmentRows(ctx: MutationCtx, fileId: string) {
+  const rows = await ctx.db
+    .query("attachments")
+    .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+    .take(ROW_DELETE_BATCH_SIZE + 1);
+  for (const row of rows.slice(0, ROW_DELETE_BATCH_SIZE)) {
+    await ctx.db.delete("attachments", row._id);
+  }
+  if (rows.length > ROW_DELETE_BATCH_SIZE) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.attachments.continueAttachmentRowDeletion,
+      { fileId },
+    );
   }
 }
 
