@@ -1,5 +1,6 @@
 "use client";
 
+import type { FileUIPart } from "ai";
 import { PencilIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -20,16 +21,19 @@ import {
 } from "@/components/ui/tooltip";
 import { errorMessage } from "@/lib/errors";
 import { checkPrompt } from "../../../convex/lib/prompt";
+import { SentImageThumbnail } from "./attachments";
 
 /**
- * A prompt's bubble. With `onEdit`, a pencil next to it opens an editor in
- * its place.
+ * A prompt's bubble, with its attachments above it. With `onEdit`, a pencil
+ * next to it opens an editor in its place. Editing changes only the text.
  */
 export function UserMessage({
   text,
+  attachments,
   onEdit,
 }: {
   text: string;
+  attachments: FileUIPart[];
   /** Set on the last prompt while it can be edited. */
   onEdit?: (prompt: string) => Promise<void>;
 }) {
@@ -41,9 +45,20 @@ export function UserMessage({
   return (
     <Message align="end">
       <MessageContent>
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {attachments.map((attachment, index) => (
+              <SentImageThumbnail
+                key={`${index}-${attachment.url}`}
+                imageUrl={attachment.url}
+              />
+            ))}
+          </div>
+        )}
         {editing && onEdit ? (
           <PromptEditor
             text={text}
+            attachmentCount={attachments.length}
             onSave={async (prompt) => {
               await onEdit(prompt);
               setEditing(false);
@@ -68,9 +83,14 @@ export function UserMessage({
                 <TooltipContent>Edit</TooltipContent>
               </Tooltip>
             )}
-            <Bubble variant="tinted" align="end">
-              <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
-            </Bubble>
+            {/* A prompt can be just attachments. */}
+            {text && (
+              <Bubble variant="tinted" align="end">
+                <BubbleContent className="whitespace-pre-wrap">
+                  {text}
+                </BubbleContent>
+              </Bubble>
+            )}
           </div>
         )}
       </MessageContent>
@@ -85,10 +105,12 @@ export function UserMessage({
  */
 function PromptEditor({
   text,
+  attachmentCount,
   onSave,
   onCancel,
 }: {
   text: string;
+  attachmentCount: number;
   onSave: (prompt: string) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -111,7 +133,7 @@ function PromptEditor({
       // The server runs the same check. Running it here first refuses a
       // blank edit without a failed call, which the Convex client would log
       // as a console error.
-      const prompt = checkPrompt(draft);
+      const prompt = checkPrompt(draft, attachmentCount);
       if (prompt === text) onCancel();
       else await onSave(prompt);
     } catch (error) {

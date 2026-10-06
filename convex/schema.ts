@@ -12,4 +12,11 @@ export default defineSchema({
     // reply is then hidden, even if some of its text had been saved.
     keepText: v.boolean(),
   }).index("by_threadId_and_order", ["threadId", "order"]),
+  // Who uploaded each file in the Agent's files table (convex/attachments.ts).
+  // A Send only takes files the user has a row for here.
+  attachments: defineTable({
+    userId: v.string(),
+    fileId: v.string(),
+    storageId: v.id("_storage"),
+  }).index("by_userId_and_fileId", ["userId", "fileId"]),
 });

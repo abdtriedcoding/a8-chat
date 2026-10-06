@@ -87,6 +87,9 @@ export function MessageList({
                     <MessageScrollerItem messageId={message.key} scrollAnchor>
                       <UserMessage
                         text={message.text}
+                        attachments={message.parts.filter(
+                          (part) => part.type === "file",
+                        )}
                         onEdit={i === lastPromptIndex ? onEdit : undefined}
                       />
                     </MessageScrollerItem>

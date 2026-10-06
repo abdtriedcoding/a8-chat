@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  optimisticallySendMessage,
-  useUIMessages,
-} from "@convex-dev/agent/react";
+import { useUIMessages } from "@convex-dev/agent/react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
@@ -19,6 +16,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { throwIfRateLimited } from "@/lib/errors";
+import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader, ThreadHeading } from "./chat-header";
@@ -41,15 +39,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
     { initialNumItems: PAGE_SIZE, stream: true },
   );
 
-  const sendMessage = useMutation(api.chat.sendMessage).withOptimisticUpdate(
-    // Passes only these two: the helper copies any other argument onto the
-    // optimistic message.
-    (store, { threadId, prompt }) =>
-      optimisticallySendMessage(api.chat.listThreadMessages)(store, {
-        threadId,
-        prompt,
-      }),
-  );
+  const sendMessage = useMutation(api.chat.sendMessage);
 
   const stopReply = useMutation(api.chat.stopReply);
   const regenerateReply = useMutation(api.chat.regenerateReply);
@@ -130,11 +120,22 @@ export function ThreadView({ threadId }: { threadId: string }) {
       )}
       <div className="shrink-0 px-4 pb-4">
         <Composer
-          onSend={async (prompt) => {
+          onSend={async (prompt, attachments) => {
+            // Set up for each Send, since the optimistic prompt shows the
+            // attachments' URLs, and the mutation only takes their IDs.
+            const sendMessageWithOptimisticPrompt =
+              sendMessage.withOptimisticUpdate((localStore) =>
+                optimisticallySendPrompt(localStore, {
+                  threadId,
+                  prompt,
+                  attachments,
+                }),
+              );
             throwIfRateLimited(
-              await sendMessage({
+              await sendMessageWithOptimisticPrompt({
                 threadId,
                 prompt,
+                attachmentFileIds: attachments.map(({ fileId }) => fileId),
                 timeZone: browserTimeZone(),
               }),
             );

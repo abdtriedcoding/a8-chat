@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowUpIcon, SquareIcon } from "lucide-react";
-import { useState } from "react";
+import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   InputGroup,
@@ -10,11 +10,24 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  useComposerAttachments,
+  type UploadedAttachment,
+} from "@/hooks/use-composer-attachments";
 import { errorMessage } from "@/lib/errors";
+import { ComposerAttachmentChip } from "./attachments";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
  * is set, a Stop button shows in place of Send.
+ *
+ * The attach button shows when the current model accepts files. A prompt
+ * can be just attachments, and Send waits for every upload to finish.
  */
 export function Composer({
   onSend,
@@ -23,24 +36,49 @@ export function Composer({
   autoFocus = false,
   className,
 }: {
-  onSend: (prompt: string) => Promise<void>;
+  onSend: (prompt: string, attachments: UploadedAttachment[]) => Promise<void>;
   onStop?: () => Promise<void>;
   disabled?: boolean;
   autoFocus?: boolean;
   className?: string;
 }) {
   const [text, setText] = useState("");
-  const canSend = text.trim() !== "" && !disabled;
+  const {
+    acceptedMediaTypes,
+    attachments,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
+    restoreAttachments,
+    freePreviews,
+  } = useComposerAttachments();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadedAttachments: UploadedAttachment[] = attachments.flatMap(
+    ({ fileId, fileUrl, mediaType }) =>
+      fileId && fileUrl ? [{ fileId, fileUrl, mediaType }] : [],
+  );
+  // A failed upload counts as not done, so the user has to remove it first
+  // and it isn't left out unnoticed.
+  const allUploadsDone = uploadedAttachments.length === attachments.length;
+  const canSend =
+    !disabled &&
+    allUploadsDone &&
+    (text.trim() !== "" || attachments.length > 0);
 
   async function send() {
     if (!canSend) return;
     const prompt = text;
+    const attachmentsToSend = attachments;
     setText("");
+    clearAttachments();
     try {
-      await onSend(prompt);
+      await onSend(prompt, uploadedAttachments);
+      freePreviews(attachmentsToSend);
     } catch (error) {
       // Put the prompt back, unless something new was typed meanwhile.
       setText((current) => (current === "" ? prompt : current));
+      restoreAttachments(attachmentsToSend);
       toast.error(errorMessage(error));
     }
   }
@@ -61,7 +99,30 @@ export function Composer({
         void send();
       }}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={acceptedMediaTypes.join(",")}
+        multiple
+        hidden
+        onChange={(event) => {
+          addFiles(Array.from(event.target.files ?? []));
+          // Lets the same file be picked again after it's removed.
+          event.target.value = "";
+        }}
+      />
       <InputGroup>
+        {attachments.length > 0 && (
+          <InputGroupAddon align="block-start" className="flex-wrap px-2 pt-2">
+            {attachments.map((attachment) => (
+              <ComposerAttachmentChip
+                key={attachment.id}
+                attachment={attachment}
+                onRemove={() => removeAttachment(attachment)}
+              />
+            ))}
+          </InputGroupAddon>
+        )}
         <InputGroupTextarea
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -83,6 +144,22 @@ export function Composer({
           className="max-h-52 min-h-11 px-3 pt-3"
         />
         <InputGroupAddon align="block-end">
+          {acceptedMediaTypes.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <InputGroupButton
+                  type="button"
+                  size="icon-sm"
+                  className="rounded-full"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <PaperclipIcon />
+                  <span className="sr-only">Attach files</span>
+                </InputGroupButton>
+              </TooltipTrigger>
+              <TooltipContent>Attach files</TooltipContent>
+            </Tooltip>
+          )}
           {/* Stop and Send share this spot, so keyboard focus stays put when one replaces the other. */}
           {onStop ? (
             <InputGroupButton
