@@ -30,6 +30,7 @@ import { requireUser } from "./auth";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";
+import { canSearchWeb } from "./lib/searchWeb";
 import { resolveTimeZone } from "./lib/timeZone";
 import { limitSend, vRateLimited } from "./rateLimits";
 import { authorizeThreadAccess, getOwnThread } from "./threads";
@@ -428,7 +429,12 @@ export const streamReply = internalAction({
         { threadId },
         {
           promptMessageId,
-          instructions: replyInstructions(timeZone, new Date()),
+          instructions: replyInstructions(timeZone, new Date(), canSearchWeb),
+          // The last step can't call tools, so a reply that hits the step
+          // cap still ends with text. "none" keeps the tools defined, which
+          // Anthropic needs when earlier steps called them.
+          prepareStep: ({ stepNumber }) =>
+            stepNumber === MAX_REPLY_STEPS - 1 ? { toolChoice: "none" } : {},
         },
         // more custom delta options (`true` uses defaults)
         { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },

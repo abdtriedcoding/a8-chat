@@ -15,6 +15,13 @@ import type { Stop, ThreadMessage } from "@/lib/stopped-turns";
 import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
 import { RegenerateButton } from "./regenerate-button";
+import {
+  isSearching,
+  searchSources,
+  SearchingMarker,
+  SourcesRow,
+  webSearchParts,
+} from "./web-search";
 
 export function AssistantMessage({
   message,
@@ -44,7 +51,13 @@ export function AssistantMessage({
   if (stopped && (!stopped.keepText || !message.text)) {
     return <StoppedMarker onRegenerate={onRegenerate} />;
   }
-  if (!visibleText && streaming) return <ThinkingMessage />;
+
+  const searches = webSearchParts(message);
+  // A stopped reply's search can stay unfinished, so only a streaming reply
+  // shows one as running.
+  const runningSearch = streaming ? searches.find(isSearching) : undefined;
+  const sources = searchSources(searches);
+  if (!visibleText && streaming && !runningSearch) return <ThinkingMessage />;
 
   const failed = message.status === "failed" && !stopped;
   // A failed reply has Regenerate in its error bubble, so the row under it
@@ -64,6 +77,10 @@ export function AssistantMessage({
             </BubbleContent>
           </Bubble>
         )}
+        {runningSearch && (
+          <SearchingMarker query={runningSearch.input?.query} />
+        )}
+        {sources.length > 0 && <SourcesRow sources={sources} />}
         {failed && (
           <Bubble variant="destructive">
             <BubbleContent className="flex flex-wrap items-center gap-x-3 gap-y-2">
