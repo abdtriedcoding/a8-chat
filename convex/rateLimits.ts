@@ -1,5 +1,6 @@
 // See the docs at https://www.convex.dev/components/rate-limiter
 import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
+import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import { v, type Infer } from "convex/values";
 import { components } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
@@ -13,6 +14,9 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // count from `start`, and 0 is midnight UTC, so each day's window opens at
   // 00:00 UTC. Without `start`, the component picks a random time of day.
   dailySends: { kind: "fixed window", rate: 500, period: DAY, start: 0 },
+  // Everyone's web searches together. 30 a day stays inside Tavily's free
+  // tier of 1,000 a month. Windows open at 00:00 UTC, like dailySends.
+  dailyWebSearches: { kind: "fixed window", rate: 30, period: DAY, start: 0 },
 });
 
 /** Why a Send was refused. The Send mutations return it instead of throwing. */
@@ -54,6 +58,17 @@ export async function limitSend(
   await rateLimiter.limit(ctx, "userSends", { key: userId, throws: true });
   await rateLimiter.limit(ctx, "dailySends", { throws: true });
   return null;
+}
+
+/**
+ * Counts one web search against the daily cap. Returns false, and counts
+ * nothing, once the cap is hit.
+ */
+export async function limitWebSearch(
+  ctx: GenericActionCtx<GenericDataModel>,
+): Promise<boolean> {
+  const { ok } = await rateLimiter.limit(ctx, "dailyWebSearches");
+  return ok;
 }
 
 function rateLimited(message: string, retryAfter: number): RateLimited {

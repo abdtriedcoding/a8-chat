@@ -11,6 +11,8 @@ const app = defineApp({
     GOOGLE_CLIENT_ID: v.string(),
     GOOGLE_CLIENT_SECRET: v.string(),
     ANTHROPIC_API_KEY: v.string(),
+    // Optional. Without it, the model gets no web search tool.
+    TAVILY_API_KEY: v.optional(v.string()),
   },
 });
 

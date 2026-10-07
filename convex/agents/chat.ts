@@ -3,6 +3,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { Agent, stepCountIs, type UsageHandler } from "@convex-dev/agent";
 import { components } from "../_generated/api";
 import { env } from "../_generated/server";
+import { canSearchWeb } from "../lib/searchWeb";
+import { webSearch } from "./webSearch";
 
 /** The most model calls one reply makes. Each tool round trip adds one. */
 export const MAX_REPLY_STEPS = 5;
@@ -29,10 +31,11 @@ export const logUsage: UsageHandler = async (
 };
 
 // Instructions are set for each reply (streamReply), since they carry the
-// user's date. Tools go here once they're set up.
+// user's date. A tool is registered only when it's set up.
 export const chatAgent = new Agent(components.agent, {
   name: "a8",
   languageModel: chatModel,
+  tools: canSearchWeb ? { webSearch } : {},
   stopWhen: stepCountIs(MAX_REPLY_STEPS),
   usageHandler: logUsage,
 });

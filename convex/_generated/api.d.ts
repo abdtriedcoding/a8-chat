@@ -9,6 +9,7 @@
  */
 
 import type * as agents_chat from "../agents/chat.js";
+import type * as agents_webSearch from "../agents/webSearch.js";
 import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
@@ -18,6 +19,7 @@ import type * as lib_attachments from "../lib/attachments.js";
 import type * as lib_instructions from "../lib/instructions.js";
 import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_replyFailure from "../lib/replyFailure.js";
+import type * as lib_searchWeb from "../lib/searchWeb.js";
 import type * as lib_snippet from "../lib/snippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as rateLimits from "../rateLimits.js";
@@ -32,6 +34,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "agents/chat": typeof agents_chat;
+  "agents/webSearch": typeof agents_webSearch;
   attachments: typeof attachments;
   auth: typeof auth;
   chat: typeof chat;
@@ -41,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   "lib/instructions": typeof lib_instructions;
   "lib/prompt": typeof lib_prompt;
   "lib/replyFailure": typeof lib_replyFailure;
+  "lib/searchWeb": typeof lib_searchWeb;
   "lib/snippet": typeof lib_snippet;
   "lib/timeZone": typeof lib_timeZone;
   rateLimits: typeof rateLimits;
