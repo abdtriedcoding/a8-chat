@@ -180,8 +180,8 @@ export function Composer({
               <TooltipTrigger asChild>
                 <InputGroupButton
                   type="button"
+                  variant="outline"
                   size="icon-sm"
-                  className="rounded-full"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <PaperclipIcon />
@@ -197,7 +197,7 @@ export function Composer({
               type="button"
               variant="default"
               size="icon-sm"
-              className="ml-auto rounded-full"
+              className="ml-auto"
               onClick={() => void stop()}
             >
               <SquareIcon className="fill-current" />
@@ -208,7 +208,7 @@ export function Composer({
               type="submit"
               variant="default"
               size="icon-sm"
-              className="ml-auto rounded-full"
+              className="ml-auto"
               disabled={!canSend}
             >
               {disabled ? <Spinner /> : <ArrowUpIcon />}

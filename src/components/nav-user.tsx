@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { toast } from "sonner";
 import { useOpenShortcutsHelp } from "@/components/keyboard-shortcuts";
+import { ThemeSubmenu } from "@/components/theme-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -36,7 +37,10 @@ type CurrentUser = NonNullable<
   FunctionReturnType<typeof api.auth.getCurrentUser>
 >;
 
-/** The signed-in user, with a menu for the shortcuts help and signing out. */
+/**
+ * The signed-in user, with a menu for the theme, the shortcuts help, and
+ * signing out.
+ */
 export function NavUser() {
   const { isLoading } = useConvexAuth();
   const user = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
@@ -113,6 +117,7 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              <ThemeSubmenu />
               <DropdownMenuItem onSelect={openShortcutsHelp}>
                 <KeyboardIcon />
                 Keyboard shortcuts
