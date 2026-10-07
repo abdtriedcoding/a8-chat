@@ -153,8 +153,10 @@ function PromptEditor({
   }
 
   return (
+    // The padding makes room for the focus ring. The list item paints
+    // nothing outside itself (content-visibility: auto).
     <form
-      className="w-full"
+      className="w-full p-1"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
