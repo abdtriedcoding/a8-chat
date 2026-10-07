@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Rubik } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getToken } from "@/lib/auth-server";
@@ -25,15 +26,24 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const token = await getToken();
   return (
+    // next-themes sets the theme class on <html> before React hydrates.
     <html
       lang="en"
+      suppressHydrationWarning
       className={cn("h-full", "antialiased", rubik.variable, geistMono.variable, "font-sans")}
     >
       <body className="min-h-full flex flex-col">
-        <ConvexClientProvider initialToken={token}>
-          <TooltipProvider>{children}</TooltipProvider>
-        </ConvexClientProvider>
-        <Toaster />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <ConvexClientProvider initialToken={token}>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ConvexClientProvider>
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -116,7 +116,7 @@ export function ChatDemo({ className }: { className?: string }) {
                   <InputGroupButton
                     variant="default"
                     size="icon-sm"
-                    className="ml-auto rounded-full"
+                    className="ml-auto"
                   >
                     <ArrowUpIcon />
                   </InputGroupButton>

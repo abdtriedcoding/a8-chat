@@ -16,10 +16,13 @@ import { threadTitle } from "@/lib/thread-title";
 export function ChatHeader({ children }: { children?: ReactNode }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-      <SidebarTrigger />
+      <SidebarTrigger variant="outline" />
       {children && (
         <>
-          <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
+          <Separator
+            orientation="vertical"
+            className="data-vertical:h-4 data-vertical:self-auto"
+          />
           {children}
         </>
       )}

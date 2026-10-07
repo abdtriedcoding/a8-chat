@@ -68,15 +68,15 @@ function InputGroupAddon({
 // --edge:0px flattens the raised edge of solid and outline buttons, which
 // doesn't fit inside a field.
 const inputGroupButtonVariants = cva(
-  "flex items-center gap-2 text-sm shadow-none [--edge:0px]",
+  "flex items-center gap-2 text-sm",
   {
     variants: {
       size: {
         xs: "h-6 gap-1 rounded-[calc(var(--radius)-5px)] px-1.5 [&>svg:not([class*='size-'])]:size-3.5",
         sm: "",
         "icon-xs":
-          "size-6 rounded-[calc(var(--radius)-5px)] p-0 has-[>svg]:p-0",
-        "icon-sm": "size-8 p-0 has-[>svg]:p-0",
+          "size-6 rounded-[calc(var(--radius)-5px)] px-0 pt-0 [--edge:2px]",
+        "icon-sm": "size-8 px-0 pt-0 [--edge:2px]",
       },
     },
     defaultVariants: {

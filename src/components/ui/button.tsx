@@ -14,7 +14,7 @@ const buttonVariants = cva(
         default:
           "bg-primary pb-(--edge) text-primary-foreground shadow-[inset_0_calc(var(--edge)*-1)_0_0_var(--primary-edge)] hover:bg-primary/90",
         outline:
-          "border-border bg-card pb-(--edge) shadow-[inset_0_calc(var(--edge)*-1)_0_0_var(--border)] hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-card pb-(--edge) shadow-[inset_0_calc(var(--edge)*-1)_0_0_var(--border)] hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-secondary dark:hover:bg-accent",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
