@@ -4,13 +4,7 @@ import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -33,36 +27,23 @@ const DEBOUNCE_MS = 250;
 // [] on each render would loop.
 const NO_RESULTS: SearchResult[] = [];
 
-const OpenSearchContext = createContext<(() => void) | null>(null);
+type ThreadSearchControls = {
+  openSearch: () => void;
+  toggleSearch: () => void;
+};
+
+const ThreadSearchContext = createContext<ThreadSearchControls | null>(null);
 
 /**
- * The thread search dialog, opened by Cmd/Ctrl+K or by ThreadSearchButton.
- * It lives outside the sidebar, because on phones the sidebar is a sheet
- * that unmounts when closed. Must be inside SidebarProvider.
+ * The thread search dialog, opened by Cmd/Ctrl+K (see
+ * KeyboardShortcutsProvider) or by ThreadSearchButton. It lives outside the
+ * sidebar, because on phones the sidebar is a sheet that unmounts when
+ * closed. Must be inside SidebarProvider.
  */
 export function ThreadSearchProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const closeOnMobile = useCloseSidebarOnMobile();
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      // No toLowerCase(): Chrome sends autofill keydowns with no key.
-      if (
-        (event.key === "k" || event.key === "K") &&
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        !event.isComposing
-      ) {
-        // Chrome on Windows would focus the address bar.
-        event.preventDefault();
-        setOpen((wasOpen) => !wasOpen);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   function openThread(threadId: string) {
     setOpen(false);
@@ -71,7 +52,12 @@ export function ThreadSearchProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <OpenSearchContext value={() => setOpen(true)}>
+    <ThreadSearchContext
+      value={{
+        openSearch: () => setOpen(true),
+        toggleSearch: () => setOpen((wasOpen) => !wasOpen),
+      }}
+    >
       {children}
       <CommandDialog
         open={open}
@@ -82,18 +68,22 @@ export function ThreadSearchProvider({ children }: { children: ReactNode }) {
       >
         <ThreadSearch onSelect={openThread} />
       </CommandDialog>
-    </OpenSearchContext>
+    </ThreadSearchContext>
   );
+}
+
+/** Opens or toggles the search dialog. */
+export function useThreadSearch() {
+  const controls = useContext(ThreadSearchContext);
+  if (!controls) {
+    throw new Error("useThreadSearch must be used within ThreadSearchProvider.");
+  }
+  return controls;
 }
 
 /** The sidebar's button for the search dialog. Phones have no Cmd/Ctrl+K. */
 export function ThreadSearchButton() {
-  const openSearch = useContext(OpenSearchContext);
-  if (!openSearch) {
-    throw new Error(
-      "ThreadSearchButton must be used within ThreadSearchProvider.",
-    );
-  }
+  const { openSearch } = useThreadSearch();
   return (
     <Button variant="ghost" className="justify-start" onClick={openSearch}>
       <SearchIcon data-icon="inline-start" />

@@ -2,9 +2,15 @@
 
 import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ChevronsUpDownIcon, LogInIcon, LogOutIcon } from "lucide-react";
+import {
+  ChevronsUpDownIcon,
+  KeyboardIcon,
+  LogInIcon,
+  LogOutIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { useOpenShortcutsHelp } from "@/components/keyboard-shortcuts";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -30,11 +36,12 @@ type CurrentUser = NonNullable<
   FunctionReturnType<typeof api.auth.getCurrentUser>
 >;
 
-/** The signed-in user, with a menu to sign out. */
+/** The signed-in user, with a menu for the shortcuts help and signing out. */
 export function NavUser() {
   const { isLoading } = useConvexAuth();
   const user = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
   const { isMobile } = useSidebar();
+  const openShortcutsHelp = useOpenShortcutsHelp();
 
   async function signOut() {
     const failed = () => {
@@ -104,6 +111,13 @@ export function NavUser() {
             <DropdownMenuLabel className="flex items-center gap-2 font-normal">
               {profile}
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={openShortcutsHelp}>
+                <KeyboardIcon />
+                Keyboard shortcuts
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem onSelect={() => void signOut()}>

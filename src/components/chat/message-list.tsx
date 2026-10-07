@@ -35,6 +35,8 @@ export function MessageList({
   replyStatus,
   onRegenerate,
   onEdit,
+  editingLastPrompt,
+  onEditingLastPromptChange,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
@@ -44,6 +46,9 @@ export function MessageList({
   onRegenerate?: () => Promise<void>;
   /** Set while the last prompt can be edited. Only that prompt shows it. */
   onEdit?: (prompt: string) => Promise<void>;
+  /** Whether the last prompt's editor is open. */
+  editingLastPrompt: boolean;
+  onEditingLastPromptChange: (editing: boolean) => void;
 }) {
   const stopped = stoppedTurns(messages);
   const lastPromptIndex = messages.findLastIndex(
@@ -91,6 +96,8 @@ export function MessageList({
                           (part) => part.type === "file",
                         )}
                         onEdit={i === lastPromptIndex ? onEdit : undefined}
+                        editing={i === lastPromptIndex && editingLastPrompt}
+                        onEditingChange={onEditingLastPromptChange}
                       />
                     </MessageScrollerItem>
                     {/* Stopped before any reply was saved, so mark the prompt instead. */}

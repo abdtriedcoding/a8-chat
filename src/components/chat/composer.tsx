@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef, useState, type Ref } from "react";
 import { toast } from "sonner";
 import {
   InputGroup,
@@ -31,18 +31,23 @@ import { FileDropZone } from "./file-drop-zone";
  * attach button, by pasting them into the box, or by dropping them on the
  * page. A prompt can be just attachments, and Send waits for every upload to
  * finish.
+ *
+ * The box is marked data-composer, plus data-empty while it holds no text
+ * and no attachments, for ↑ in KeyboardShortcutsProvider.
  */
 export function Composer({
   onSend,
   onStop,
   disabled = false,
   autoFocus = false,
+  textareaRef,
   className,
 }: {
   onSend: (prompt: string, attachments: UploadedAttachment[]) => Promise<void>;
   onStop?: () => Promise<void>;
   disabled?: boolean;
   autoFocus?: boolean;
+  textareaRef?: Ref<HTMLTextAreaElement>;
   className?: string;
 }) {
   const [text, setText] = useState("");
@@ -131,6 +136,11 @@ export function Composer({
           </InputGroupAddon>
         )}
         <InputGroupTextarea
+          ref={textareaRef}
+          data-composer=""
+          data-empty={
+            text === "" && attachments.length === 0 ? "" : undefined
+          }
           value={text}
           onChange={(event) => setText(event.target.value)}
           onPaste={(event) => {

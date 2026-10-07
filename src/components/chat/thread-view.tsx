@@ -4,6 +4,9 @@ import { useUIMessages } from "@convex-dev/agent/react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
+import { useThreadShortcuts } from "@/components/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -15,8 +18,13 @@ import {
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReplyStatus } from "@/hooks/use-reply-status";
-import { throwIfRefused } from "@/lib/errors";
+import { errorMessage, throwIfRefused } from "@/lib/errors";
 import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
+import {
+  stoppedTurns,
+  type Stop,
+  type ThreadMessage,
+} from "@/lib/stopped-turns";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader, ThreadHeading } from "./chat-header";
@@ -53,6 +61,51 @@ export function ThreadView({ threadId }: { threadId: string }) {
   // progress. A stopped turn counts as done, and so does a reply that timed
   // out.
   const canRedoLastTurn = last !== undefined && !replyInProgress;
+
+  // Whether the last prompt's editor is open. It closes when the prompt
+  // can't be edited anymore, for example when another tab sends a new prompt.
+  const [editingLastPrompt, setEditingLastPrompt] = useState(false);
+  if (!canRedoLastTurn && editingLastPrompt) setEditingLastPrompt(false);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  // Set when ↑ in the message box opened the editor, so closing it puts the
+  // focus back there.
+  const editOpenedByKey = useRef(false);
+
+  function changeEditingLastPrompt(editing: boolean, byKey = false) {
+    if (editing) {
+      editOpenedByKey.current = byKey;
+    } else if (editOpenedByKey.current) {
+      editOpenedByKey.current = false;
+      composerRef.current?.focus();
+    }
+    setEditingLastPrompt(editing);
+  }
+
+  async function stop() {
+    // Keep the reply's text only if some is on screen. If the user stopped
+    // during "Thinking…", the reply is hidden.
+    const keepText = last?.role === "assistant" && last.text !== "";
+    await stopReply({ threadId, keepText });
+  }
+
+  const lastReply = messages.findLast(({ role }) => role === "assistant");
+  const lastReplyText =
+    lastReply &&
+    copyableText(lastReply, stoppedTurns(messages).get(lastReply.order));
+
+  useThreadShortcuts({
+    stopReply: replyInProgress
+      ? () => {
+          stop().catch((error: unknown) => toast.error(errorMessage(error)));
+        }
+      : undefined,
+    editLastPrompt: canRedoLastTurn
+      ? () => changeEditingLastPrompt(true, true)
+      : undefined,
+    copyLastReply: lastReplyText
+      ? () => void copyReply(lastReplyText)
+      : undefined,
+  });
 
   if (thread === null) {
     return (
@@ -116,6 +169,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
                 }
               : undefined
           }
+          editingLastPrompt={editingLastPrompt}
+          onEditingLastPromptChange={changeEditingLastPrompt}
         />
       )}
       <div className="shrink-0 px-4 pb-4">
@@ -140,24 +195,34 @@ export function ThreadView({ threadId }: { threadId: string }) {
               }),
             );
           }}
-          onStop={
-            replyInProgress
-              ? async () => {
-                  // Keep the reply's text only if some is on screen. If the
-                  // user stopped during "Thinking…", the reply is hidden.
-                  const keepText =
-                    last?.role === "assistant" && last.text !== "";
-                  await stopReply({ threadId, keepText });
-                }
-              : undefined
-          }
+          onStop={replyInProgress ? stop : undefined}
           disabled={replyInProgress}
           autoFocus
+          textareaRef={composerRef}
           className="mx-auto max-w-3xl"
         />
       </div>
     </>
   );
+}
+
+/**
+ * The text Copy under a reply copies: none while the reply is still being
+ * written, or when the user stopped it before any text showed.
+ */
+function copyableText(reply: ThreadMessage, stopped: Stop | undefined) {
+  if (stopped) return stopped.keepText ? reply.text : "";
+  if (reply.status === "pending" || reply.status === "streaming") return "";
+  return reply.text;
+}
+
+async function copyReply(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied the last reply.");
+  } catch {
+    toast.error("Couldn't copy the reply.");
+  }
 }
 
 function ConversationSkeleton() {
