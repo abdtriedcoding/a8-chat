@@ -27,22 +27,22 @@ import { SentImageThumbnail, SentPdfChip } from "./attachments";
 /**
  * A prompt's bubble, with its attachments above it. With `onEdit`, a pencil
  * next to it opens an editor in its place. Editing changes only the text.
+ * The caller owns whether the editor is open, so a shortcut can open it too.
  */
 export function UserMessage({
   text,
   attachments,
   onEdit,
+  editing = false,
+  onEditingChange,
 }: {
   text: string;
   attachments: FileUIPart[];
   /** Set on the last prompt while it can be edited. */
   onEdit?: (prompt: string) => Promise<void>;
+  editing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  // Close the editor when the prompt can't be edited anymore, for example
-  // when another tab sends a new prompt.
-  if (!onEdit && editing) setEditing(false);
-
   return (
     <Message align="end">
       <MessageContent>
@@ -70,9 +70,9 @@ export function UserMessage({
             attachmentCount={attachments.length}
             onSave={async (prompt) => {
               await onEdit(prompt);
-              setEditing(false);
+              onEditingChange?.(false);
             }}
-            onCancel={() => setEditing(false)}
+            onCancel={() => onEditingChange?.(false)}
           />
         ) : (
           <div className="flex items-end justify-end gap-1">
@@ -83,7 +83,7 @@ export function UserMessage({
                     variant="ghost"
                     size="icon-sm"
                     className="text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-                    onClick={() => setEditing(true)}
+                    onClick={() => onEditingChange?.(true)}
                   >
                     <PencilIcon />
                     <span className="sr-only">Edit</span>
