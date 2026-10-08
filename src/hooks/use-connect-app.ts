@@ -16,8 +16,8 @@ import { api } from "../../convex/_generated/api";
 const POPUP_NAME = "a8-app-sign-in";
 const POPUP_FEATURES = "popup,width=520,height=720";
 const POPUP_POLL_MS = 500;
-// After the popup closes, how long to wait for its message before calling
-// the sign-in cancelled. The callback page sends it just before closing.
+// After the user closes the popup, how long to wait for a message that was
+// already on its way before calling the sign-in cancelled.
 const CLOSED_GRACE_MS = 1500;
 
 type Connector = { handle: string; name: string };
@@ -34,6 +34,9 @@ export function useConnectApp(connectors: readonly Connector[]) {
   // The same as `waiting`, for the popup watch's timers to read.
   const waitingFor = useRef<string | null>(null);
   const popupWatch = useRef<number>(undefined);
+  // The sign-in popup. This tab closes it when it reports back, since the
+  // page in it can't close itself after the app's pages.
+  const popupRef = useRef<Window | null>(null);
 
   function setWaiting(handle: string | null) {
     waitingFor.current = handle;
@@ -55,6 +58,8 @@ export function useConnectApp(connectors: readonly Connector[]) {
 
   const onPopupMessage = useEffectEvent((outcome: SignInOutcome) => {
     stopWaiting();
+    popupRef.current?.close();
+    popupRef.current = null;
     showOutcome(outcome);
   });
 
@@ -99,6 +104,7 @@ export function useConnectApp(connectors: readonly Connector[]) {
     // Open the popup now, while the click still counts as the user's. The
     // sign-in URL comes after a round trip, which would be too late.
     const popup = window.open("", POPUP_NAME, POPUP_FEATURES);
+    popupRef.current = popup;
     setWaiting(connector.handle);
     try {
       const started = await startConnect({

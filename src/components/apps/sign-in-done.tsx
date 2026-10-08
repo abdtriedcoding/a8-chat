@@ -17,9 +17,9 @@ import { api } from "../../../convex/_generated/api";
 /**
  * Finishes a sign-in and reports it. With a `state`, the server sent back a
  * code, and finishConnect connects the app. Without one, the sign-in ended
- * early with `result`. In the popup, it tells the opening tab and closes.
- * After a full-page sign-in, it goes back to the page that started it,
- * which shows the outcome.
+ * early with `result`. In the popup, it tells the opening tab, which
+ * closes the popup. After a full-page sign-in, it goes back to the page
+ * that started it, which shows the outcome.
  */
 export function SignInDone(params: {
   state: string | null;
@@ -71,16 +71,15 @@ export function SignInDone(params: {
         router.replace(path);
         return;
       }
+      // The tab that opened the popup closes it when this arrives.
       const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
       channel.postMessage(next);
       channel.close();
-      window.close();
     }
     void finish();
   }, [finishConnect, params, router]);
 
-  // Shown while it finishes, and after if the browser won't let the page
-  // close itself.
+  // Shown while it finishes, and after if no tab closes the popup.
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm">
       {outcome === undefined ? (

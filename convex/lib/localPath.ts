@@ -9,7 +9,7 @@ export function isLocalPath(path: string): boolean {
     path.length <= MAX_LENGTH &&
     path.startsWith("/") &&
     !path.startsWith("//") &&
-    !/[\\s\x00-\x1f\x7f]/.test(path)
+    !/[\\\s\x00-\x1f\x7f]/.test(path)
   );
 }
 

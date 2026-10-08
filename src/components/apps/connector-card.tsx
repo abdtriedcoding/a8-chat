@@ -173,8 +173,7 @@ function ConnectDialog({
             <DialogTitle>Connect {connector.name}</DialogTitle>
           </div>
           <DialogDescription>
-            You&apos;ll sign in to {connector.name} in a new window. After that,
-            a8 can:
+            You&apos;ll sign in to {connector.name} next. After that, a8 can:
           </DialogDescription>
         </DialogHeader>
         <ul className="flex list-disc flex-col gap-1.5 pl-5">
