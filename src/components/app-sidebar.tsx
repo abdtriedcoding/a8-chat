@@ -1,6 +1,6 @@
 "use client";
 
-import { SquarePenIcon } from "lucide-react";
+import { BlocksIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { NavUser } from "@/components/nav-user";
@@ -37,6 +37,12 @@ export function AppSidebar() {
             </Link>
           </Button>
           <ThreadSearchButton />
+          <Button variant="ghost" className="justify-start" asChild>
+            <Link href="/apps" onClick={closeOnMobile}>
+              <BlocksIcon data-icon="inline-start" />
+              Apps
+            </Link>
+          </Button>
         </div>
       </SidebarHeader>
       <SidebarContent>

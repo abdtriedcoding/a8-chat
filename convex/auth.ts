@@ -7,6 +7,7 @@ import type { DataModel } from "./_generated/dataModel";
 import {
   env,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
@@ -53,7 +54,7 @@ export const getCurrentUser = query({
   },
 });
 
-export async function requireUser(ctx: QueryCtx | MutationCtx) {
+export async function requireUser(ctx: QueryCtx | MutationCtx | ActionCtx) {
   const user = await authComponent.safeGetAuthUser(ctx);
   if (!user) {
     throw new ConvexError({

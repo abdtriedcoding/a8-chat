@@ -13,6 +13,9 @@ const app = defineApp({
     ANTHROPIC_API_KEY: v.string(),
     // Optional. Without it, the model gets no web search tool.
     TAVILY_API_KEY: v.optional(v.string()),
+    // Optional. 32 random bytes, base64. The vault (convex/lib/vault.ts)
+    // encrypts connection tokens with it. Without it, connectors are off.
+    VAULT_KEY: v.optional(v.string()),
   },
 });
 

@@ -36,6 +36,7 @@ type Env = {
   readonly GOOGLE_CLIENT_SECRET: string;
   readonly SITE_URL: string;
   readonly TAVILY_API_KEY: string | undefined;
+  readonly VAULT_KEY: string | undefined;
 };
 
 /**
