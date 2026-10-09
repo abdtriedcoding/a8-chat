@@ -27,7 +27,7 @@ A file (an image or a PDF) sent with a prompt.
 _Avoid_: upload, file
 
 **Send**:
-Any user action that asks the model for a new reply: a new prompt, an edited prompt, or a regenerated reply. Sends are what rate limits count.
+Any user action that asks the model for a new reply: a new prompt, an edited prompt, or a regenerated reply. The send rate limits count sends. Web searches and connector tool calls have limits of their own.
 _Avoid_: request, message (as a unit of usage)
 
 ### Apps

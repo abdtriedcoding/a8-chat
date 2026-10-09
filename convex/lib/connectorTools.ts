@@ -19,6 +19,7 @@ import {
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { limitConnectorToolCall } from "../rateLimits";
 import { createConnectorClient, decryptAccessToken } from "./connectorAuth";
 import { findConnector, modelToolName, type Connector } from "./connectors";
 
@@ -33,6 +34,10 @@ const TOOL_CALL_TIMEOUT_MS = 60_000;
 
 /** The tag a connector tool's result is wrapped in for the model. */
 const UNTRUSTED_TAG = "untrusted-data";
+
+/** The tool error once the user hits the daily connector tool call limit. */
+const DAILY_LIMIT_REACHED =
+  "The user has reached today's limit for connector tools. Tell them it resets at 00:00 UTC, and answer without connector tools.";
 
 type McpTool = ListToolsResult["tools"][number];
 
@@ -52,7 +57,8 @@ export type ConnectorTools = {
  * The reply's tools from the user's connections. Only `connected`
  * connections get tools, and only the allowlisted ones. A tool list over a
  * day old is used as is, and a fresh one is fetched in the background for
- * later replies.
+ * later replies. Each call counts against the user's daily connector tool
+ * call limit first.
  */
 export async function createConnectorTools(
   ctx: ActionCtx,
@@ -94,6 +100,9 @@ export async function createConnectorTools(
           properties: mcpTool.inputSchema.properties ?? {},
         } as JSONSchema7),
         execute: async (input, { abortSignal }): Promise<string> => {
+          if (!(await limitConnectorToolCall(ctx, connection.userId))) {
+            throw new Error(DAILY_LIMIT_REACHED);
+          }
           let result: CallToolResult;
           try {
             const mcp = await openClient();
