@@ -1,16 +1,22 @@
-import type {
-  OAuthAuthorizationServerInformation,
-  OAuthClientInformation,
-  OAuthClientMetadata,
-  OAuthClientProvider,
-  OAuthTokens,
+import {
+  createMCPClient,
+  type MCPClient,
+  type OAuthAuthorizationServerInformation,
+  type OAuthClientInformation,
+  type OAuthClientMetadata,
+  type OAuthClientProvider,
+  type OAuthTokens,
 } from "@ai-sdk/mcp";
 import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { env, type ActionCtx } from "../_generated/server";
 import type { Connector } from "./connectors";
-import { decryptSecret, encryptOptionalSecret } from "./encryption";
+import {
+  decryptSecret,
+  encryptOptionalSecret,
+  getEncryptionKey,
+} from "./encryption";
 
 /** Where the vendor sends the browser back after sign-in (convex/http.ts). */
 export const CALLBACK_PATH = "/connectors/callback";
@@ -233,6 +239,34 @@ export function pinnedFetch(connector: Connector) {
     const redirect = init?.redirect === "manual" ? "manual" : "error";
     return await fetch(input, { ...init, redirect });
   };
+}
+
+/**
+ * An MCP client for the connector's server, sending `accessToken`. It only
+ * reaches the pinned origins. Close it when done.
+ */
+export async function createConnectorClient(
+  connector: Connector,
+  accessToken: string,
+): Promise<MCPClient> {
+  return await createMCPClient({
+    transport: {
+      type: "http",
+      url: connector.mcpServerUrl,
+      headers: { Authorization: `Bearer ${accessToken}` },
+      fetch: pinnedFetch(connector),
+    },
+  });
+}
+
+/** The connection's access token, decrypted. */
+export async function decryptAccessToken(
+  connection: Pick<Doc<"connections">, "encryptedAccessToken">,
+): Promise<string> {
+  return await decryptSecret(
+    await getEncryptionKey(),
+    connection.encryptedAccessToken,
+  );
 }
 
 function assertPinnedOrigin(

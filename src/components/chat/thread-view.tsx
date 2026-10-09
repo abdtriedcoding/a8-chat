@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { errorMessage, throwIfRefused } from "@/lib/errors";
 import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
+import { replyText } from "@/lib/reply-text";
 import {
   stoppedTurns,
   type Stop,
@@ -211,9 +212,9 @@ export function ThreadView({ threadId }: { threadId: string }) {
  * written, or when the user stopped it before any text showed.
  */
 function copyableText(reply: ThreadMessage, stopped: Stop | undefined) {
-  if (stopped) return stopped.keepText ? reply.text : "";
+  if (stopped) return stopped.keepText ? replyText(reply) : "";
   if (reply.status === "pending" || reply.status === "streaming") return "";
-  return reply.text;
+  return replyText(reply);
 }
 
 async function copyReply(text: string) {

@@ -11,13 +11,15 @@
 // sign-in the signed-in user started, so a stranger who sends someone their
 // authorize URL can't link that person's Notion to their own account.
 
-import { auth, createMCPClient, type ListToolsResult } from "@ai-sdk/mcp";
+import { auth, type ListToolsResult } from "@ai-sdk/mcp";
+import { getThreadMetadata } from "@convex-dev/agent";
 import { ConvexError, v, type Infer } from "convex/values";
-import { internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import {
   action,
   env,
   httpAction,
+  internalAction,
   internalMutation,
   internalQuery,
   query,
@@ -27,9 +29,10 @@ import {
 import { requireUser } from "./auth";
 import {
   ConnectorOAuthProvider,
+  createConnectorClient,
+  decryptAccessToken,
   forgetConnectorClient,
   oauthErrorCode,
-  pinnedFetch,
   revokeConnection,
 } from "./lib/connectorAuth";
 import {
@@ -485,6 +488,77 @@ export const saveConnection = internalMutation({
   },
 });
 
+/**
+ * The connections of the thread's owner, tokens included. streamReply builds
+ * the reply's tools from them. It runs from the scheduler with no signed-in
+ * user, so the thread names the user.
+ */
+export const listReplyConnections = internalQuery({
+  args: { threadId: v.string() },
+  returns: v.array(schema.doc("connections")),
+  handler: async (ctx, { threadId }) => {
+    const thread = await getThreadMetadata(ctx, components.agent, {
+      threadId,
+    }).catch(() => null);
+    const userId = thread?.userId;
+    if (!userId) return [];
+    return await ctx.db
+      .query("connections")
+      .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
+      .take(CONNECTORS.length);
+  },
+});
+
+/**
+ * Fetches the connection's tool list again and caches it. A reply schedules
+ * this when the cache is over a day old, or when the server didn't know a
+ * tool the cache listed. Does nothing if the connection is gone.
+ */
+export const refreshToolList = internalAction({
+  args: { connectionId: v.id("connections") },
+  returns: v.null(),
+  handler: async (ctx, { connectionId }) => {
+    const connection = await ctx.runQuery(
+      internal.connectors.getConnectionById,
+      { connectionId },
+    );
+    const connector = connection && findConnector(connection.connectorId);
+    if (!connection || !connector) return null;
+    const toolList = await fetchToolList(
+      connector,
+      await decryptAccessToken(connection),
+    );
+    await ctx.runMutation(internal.connectors.saveToolList, {
+      connectionId,
+      toolList: JSON.stringify(toolList),
+    });
+    return null;
+  },
+});
+
+/** A connection by ID, tokens included. */
+export const getConnectionById = internalQuery({
+  args: { connectionId: v.id("connections") },
+  returns: v.union(schema.doc("connections"), v.null()),
+  handler: async (ctx, { connectionId }) => {
+    return await ctx.db.get("connections", connectionId);
+  },
+});
+
+/** Caches a new tool list on the connection, if it still exists. */
+export const saveToolList = internalMutation({
+  args: { connectionId: v.id("connections"), toolList: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { connectionId, toolList }) => {
+    if (!(await ctx.db.get("connections", connectionId))) return null;
+    await ctx.db.patch("connections", connectionId, {
+      toolList,
+      toolListFetchedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 /** Deletes sign-ins that expired before anyone finished them. Run by a cron. */
 export const cleanUpExpiredConnects = internalMutation({
   args: {},
@@ -549,14 +623,7 @@ async function fetchToolList(
   connector: Connector,
   accessToken: string,
 ): Promise<ListToolsResult["tools"]> {
-  const client = await createMCPClient({
-    transport: {
-      type: "http",
-      url: connector.mcpServerUrl,
-      headers: { Authorization: `Bearer ${accessToken}` },
-      fetch: pinnedFetch(connector),
-    },
-  });
+  const client = await createConnectorClient(connector, accessToken);
   try {
     const tools: ListToolsResult["tools"] = [];
     let cursor: string | undefined;

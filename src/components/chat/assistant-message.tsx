@@ -11,7 +11,13 @@ import {
   MessageContent,
   MessageFooter,
 } from "@/components/ui/message";
+import { replyText } from "@/lib/reply-text";
 import type { Stop, ThreadMessage } from "@/lib/stopped-turns";
+import {
+  connectorToolCalls,
+  ConnectorToolRow,
+  isRunning,
+} from "./connector-tool-call";
 import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
 import { RegenerateButton } from "./regenerate-button";
@@ -34,7 +40,8 @@ export function AssistantMessage({
   /** Set on the last reply while it can be regenerated. */
   onRegenerate?: () => Promise<void>;
 }) {
-  const [visibleText, { isStreaming }] = useSmoothText(message.text, {
+  const text = replyText(message);
+  const [visibleText, { isStreaming }] = useSmoothText(text, {
     startStreaming: message.status === "streaming",
   });
 
@@ -48,7 +55,7 @@ export function AssistantMessage({
 
   // If the user stopped before seeing any text, or the reply has none, show
   // only "Stopped".
-  if (stopped && (!stopped.keepText || !message.text)) {
+  if (stopped && (!stopped.keepText || !text)) {
     return <StoppedMarker onRegenerate={onRegenerate} />;
   }
 
@@ -57,7 +64,14 @@ export function AssistantMessage({
   // shows one as running.
   const runningSearch = streaming ? searches.find(isSearching) : undefined;
   const sources = searchSources(searches);
-  if (!visibleText && streaming && !runningSearch) return <ThinkingMessage />;
+  const toolCalls = connectorToolCalls(message);
+  // Between a tool call's result and the next text, the reply is thinking.
+  const thinking =
+    !visibleText &&
+    streaming &&
+    !runningSearch &&
+    !toolCalls.some(isRunning);
+  if (thinking && toolCalls.length === 0) return <ThinkingMessage />;
 
   const failed = message.status === "failed" && !stopped;
   // A failed reply has Regenerate in its error bubble, so the row under it
@@ -70,6 +84,22 @@ export function AssistantMessage({
         <LogoMark className="size-4 text-primary" />
       </MessageAvatar>
       <MessageContent className="pt-1">
+        {toolCalls.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {toolCalls.map((call) => (
+              <ConnectorToolRow
+                key={call.id}
+                call={call}
+                running={streaming && isRunning(call)}
+              />
+            ))}
+          </div>
+        )}
+        {thinking && (
+          <span className="shimmer text-sm text-muted-foreground">
+            Thinking…
+          </span>
+        )}
         {visibleText && (
           <Bubble variant="ghost" className="w-full">
             <BubbleContent className="w-full">
@@ -96,9 +126,9 @@ export function AssistantMessage({
           </Bubble>
         )}
         {stopped && <StoppedMarker />}
-        {!streaming && (message.text || footerRegenerate) && (
+        {!streaming && (text || footerRegenerate) && (
           <MessageFooter className="-mt-1.5 gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
-            {message.text && <CopyReplyButton text={message.text} />}
+            {text && <CopyReplyButton text={text} />}
             {footerRegenerate && (
               <RegenerateButton onRegenerate={footerRegenerate} />
             )}

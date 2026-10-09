@@ -18,6 +18,7 @@ import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lib_attachments from "../lib/attachments.js";
 import type * as lib_connectorAuth from "../lib/connectorAuth.js";
+import type * as lib_connectorTools from "../lib/connectorTools.js";
 import type * as lib_connectors from "../lib/connectors.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as lib_instructions from "../lib/instructions.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/attachments": typeof lib_attachments;
   "lib/connectorAuth": typeof lib_connectorAuth;
+  "lib/connectorTools": typeof lib_connectorTools;
   "lib/connectors": typeof lib_connectors;
   "lib/encryption": typeof lib_encryption;
   "lib/instructions": typeof lib_instructions;

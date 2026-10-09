@@ -1,13 +1,23 @@
 // See the docs at https://docs.convex.dev/agents/getting-started
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { Agent, stepCountIs, type UsageHandler } from "@convex-dev/agent";
+import { Agent, type UsageHandler } from "@convex-dev/agent";
+import type { ToolSet } from "ai";
 import { components } from "../_generated/api";
 import { env } from "../_generated/server";
 import { canSearchWeb } from "../lib/searchWeb";
 import { webSearch } from "./webSearch";
 
-/** The most model calls one reply makes. Each tool round trip adds one. */
-export const MAX_REPLY_STEPS = 5;
+/**
+ * The most model calls one reply makes, reached only with connector tools.
+ * Each tool round trip adds one.
+ */
+export const MAX_REPLY_STEPS = 20;
+
+/** The most model calls a reply without connector tools makes. */
+export const MAX_STEPS_WITHOUT_CONNECTORS = 5;
+
+/** The tools a8 offers on every reply. A tool is offered only when it's set up. */
+export const nativeTools: ToolSet = canSearchWeb ? { webSearch } : {};
 
 /** The model that writes replies and thread titles. */
 export const chatModel = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY })(
@@ -30,12 +40,11 @@ export const logUsage: UsageHandler = async (
   });
 };
 
-// Instructions are set for each reply (streamReply), since they carry the
-// user's date. A tool is registered only when it's set up.
+// Instructions, tools and the step limit are set for each reply
+// (streamReply). The instructions carry the user's date, and the tools
+// depend on the user's connections.
 export const chatAgent = new Agent(components.agent, {
   name: "a8",
   languageModel: chatModel,
-  tools: canSearchWeb ? { webSearch } : {},
-  stopWhen: stepCountIs(MAX_REPLY_STEPS),
   usageHandler: logUsage,
 });
