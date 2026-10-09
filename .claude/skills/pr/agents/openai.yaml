@@ -1,0 +1,5 @@
+interface:
+  display_name: "PR"
+  short_description: "Open a PR that explains the feature flow"
+policy:
+  allow_implicit_invocation: false
