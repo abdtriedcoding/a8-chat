@@ -4,6 +4,7 @@ import {
   createThread,
   listMessages,
   listStreams,
+  stepCountIs,
   syncStreams,
   toUIMessages,
   vStreamArgs,
@@ -24,9 +25,18 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { chatAgent, MAX_REPLY_STEPS } from "./agents/chat";
+import {
+  chatAgent,
+  MAX_REPLY_STEPS,
+  MAX_STEPS_WITHOUT_CONNECTORS,
+  nativeTools,
+} from "./agents/chat";
 import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
 import { requireUser } from "./auth";
+import {
+  createConnectorTools,
+  type ConnectorTools,
+} from "./lib/connectorTools";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";
@@ -47,6 +57,12 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
  * and saved as the error on a stopped reply that we hide.
  */
 const STOPPED = "Stopped by the user";
+
+/**
+ * How long a reply can run before its next step has to be its last. Convex
+ * stops an action at 10 minutes, so this leaves time for the final text.
+ */
+const REPLY_TIME_LIMIT_MS = 8 * 60 * 1000;
 
 /**
  * Extra data listThreadMessages adds to every message in a turn. Messages
@@ -415,6 +431,8 @@ export const streamReply = internalAction({
     timeZone: v.string(),
   },
   handler: async (ctx, { promptMessageId, threadId, order, timeZone }) => {
+    const startedAt = Date.now();
+    let connectorTools: ConnectorTools | undefined;
     try {
       // Skip the model call if the user pressed Stop first, or a regenerate
       // or an edit replaced this turn.
@@ -424,17 +442,37 @@ export const streamReply = internalAction({
         order,
       });
       if (!canReply) return;
+      const connections = await ctx.runQuery(
+        internal.connectors.listReplyConnections,
+        { threadId },
+      );
+      connectorTools = await createConnectorTools(ctx, connections);
+      const tools = { ...nativeTools, ...connectorTools.tools };
+      const maxSteps =
+        Object.keys(connectorTools.tools).length > 0
+          ? MAX_REPLY_STEPS
+          : MAX_STEPS_WITHOUT_CONNECTORS;
       const result = await chatAgent.streamText(
         ctx,
         { threadId },
         {
           promptMessageId,
-          instructions: replyInstructions(timeZone, new Date(), canSearchWeb),
+          instructions: replyInstructions({
+            timeZone,
+            now: new Date(),
+            canSearchWeb,
+            connections,
+          }),
+          tools,
+          stopWhen: stepCountIs(maxSteps),
           // The last step can't call tools, so a reply that hits the step
-          // cap still ends with text. "none" keeps the tools defined, which
-          // Anthropic needs when earlier steps called them.
+          // cap or runs long still ends with text. "none" keeps the tools
+          // defined, which Anthropic needs when earlier steps called them.
           prepareStep: ({ stepNumber }) =>
-            stepNumber === MAX_REPLY_STEPS - 1 ? { toolChoice: "none" } : {},
+            stepNumber === maxSteps - 1 ||
+            Date.now() - startedAt >= REPLY_TIME_LIMIT_MS
+              ? { toolChoice: "none" }
+              : {},
         },
         // more custom delta options (`true` uses defaults)
         { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
@@ -443,6 +481,7 @@ export const streamReply = internalAction({
       // or using this call to consume it all.
       await result.consumeStream();
     } finally {
+      await connectorTools?.close();
       // Runs even if the model call failed. Does nothing unless the user
       // stopped this reply.
       await ctx.runMutation(internal.chat.settleStop, {

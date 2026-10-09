@@ -7,6 +7,14 @@ export type ConnectorSignIn =
   | { kind: "dynamicRegistration" }
   | { kind: "preRegistered"; clientIdEnvVar: string; clientSecretEnvVar: string };
 
+/** One tool a8 offers the model from a connector's MCP server. */
+export type ConnectorTool = {
+  /** The tool's name on the MCP server, like `notion-search`. */
+  name: string;
+  /** What the tool's row in a reply says, like "Searching Notion". */
+  label: string;
+};
+
 /** One entry in a8's catalog: an app a8 can work with through MCP. */
 export type Connector = {
   id: string;
@@ -26,7 +34,7 @@ export type Connector = {
   pinnedOrigins: { mcpServer: string; authorizationServer: string };
   signIn: ConnectorSignIn;
   /** The MCP tools a8 offers the model. Every other tool stays hidden. */
-  toolAllowlist: string[];
+  toolAllowlist: ConnectorTool[];
   /** Tools that ask for approval even when the server marks them read-only. */
   toolsNeedingApproval: string[];
   /**
@@ -52,8 +60,21 @@ export const CONNECTORS: Connector[] = [
       authorizationServer: "https://mcp.notion.com",
     },
     signIn: { kind: "dynamicRegistration" },
-    // Empty until replies use Notion's tools.
-    toolAllowlist: [],
+    // Replies leave out the actions until action cards ship (#60).
+    toolAllowlist: [
+      { name: "notion-search", label: "Searching Notion" },
+      { name: "notion-fetch", label: "Reading Notion" },
+      { name: "notion-query-data-sources", label: "Reading a Notion database" },
+      { name: "notion-get-comments", label: "Reading Notion comments" },
+      { name: "notion-get-users", label: "Finding Notion users" },
+      { name: "notion-get-teams", label: "Finding Notion teamspaces" },
+      { name: "notion-create-pages", label: "Creating Notion pages" },
+      { name: "notion-update-page", label: "Updating a Notion page" },
+      { name: "notion-move-pages", label: "Moving Notion pages" },
+      { name: "notion-duplicate-page", label: "Duplicating a Notion page" },
+      { name: "notion-create-database", label: "Creating a Notion database" },
+      { name: "notion-create-comment", label: "Commenting in Notion" },
+    ],
     toolsNeedingApproval: [],
     accountLabelField: "workspace_name",
   },
@@ -68,4 +89,34 @@ export type ConnectError = (typeof CONNECT_ERRORS)[number];
 
 export function findConnector(id: string): Connector | undefined {
   return CONNECTORS.find((connector) => connector.id === id);
+}
+
+/**
+ * The model's name for a connector's tool, `<handle>__<tool>`. The handle
+ * prefix Notion puts on its own names is dropped, so `notion-search`
+ * becomes `notion__search`.
+ */
+export function modelToolName(connector: Connector, mcpName: string): string {
+  const prefix = `${connector.handle}-`;
+  const tool = mcpName.startsWith(prefix) ? mcpName.slice(prefix.length) : mcpName;
+  return `${connector.handle}__${tool}`;
+}
+
+/**
+ * The connector behind a model tool name, and the label its row shows.
+ * Undefined for a8's own tools, like webSearch. A tool since dropped from
+ * the allowlist gets a generic label, so old threads still show it.
+ */
+export function findConnectorTool(
+  modelName: string,
+): { connector: Connector; label: string } | undefined {
+  const separator = modelName.indexOf("__");
+  if (separator === -1) return undefined;
+  const handle = modelName.slice(0, separator);
+  const connector = CONNECTORS.find((entry) => entry.handle === handle);
+  if (!connector) return undefined;
+  const tool = connector.toolAllowlist.find(
+    (entry) => modelToolName(connector, entry.name) === modelName,
+  );
+  return { connector, label: tool?.label ?? `Using ${connector.name}` };
 }
