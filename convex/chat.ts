@@ -36,8 +36,10 @@ import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
 import { requireUser } from "./auth";
 import {
   createConnectorTools,
+  mentionedToolsFirst,
   type ConnectorTools,
 } from "./lib/connectorTools";
+import { findMentions } from "./lib/connectors";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";
@@ -640,8 +642,16 @@ export const streamReply = internalAction({
         internal.connectors.listReplyConnections,
         { threadId },
       );
+      const promptText: string = await ctx.runQuery(
+        internal.chat.getPromptText,
+        { threadId, promptMessageId, order },
+      );
+      const mentioned = findMentions(promptText);
       connectorTools = await createConnectorTools(ctx, connections);
-      const tools = { ...nativeTools, ...connectorTools.tools };
+      const tools = mentionedToolsFirst(
+        { ...nativeTools, ...connectorTools.tools },
+        mentioned,
+      );
       // The cap counts steps across the whole reply, but the Agent's count
       // starts over when a reply continues after an action card (ADR 0002).
       const maxSteps = Math.max(
@@ -660,6 +670,7 @@ export const streamReply = internalAction({
             now: new Date(),
             canSearchWeb,
             connections,
+            mentioned,
           }),
           tools,
           toolApproval: connectorTools.toolApproval,
@@ -724,6 +735,26 @@ export const canReply = internalQuery({
 });
 
 /**
+ * The text of the prompt a reply answers, for finding its mentions.
+ * `promptMessageId` is the prompt, or the user's decisions on action cards
+ * when the reply continues. The turn's prompt is at or before it. Empty if
+ * the prompt has no text or is gone.
+ */
+export const getPromptText = internalQuery({
+  args: {
+    threadId: v.string(),
+    promptMessageId: v.string(),
+    order: v.number(),
+  },
+  returns: v.string(),
+  handler: async (ctx, { threadId, promptMessageId, order }) => {
+    const turn = await listTurnUpTo(ctx, { threadId, promptMessageId, order });
+    const prompt = turn?.find((message) => message.message?.role === "user");
+    return prompt?.text ?? "";
+  },
+});
+
+/**
  * Cleans up a stopped reply after the runner is done with it. streamReply
  * calls it last. Does nothing if the user didn't stop the reply, or if a
  * regenerate or an edit replaced the turn.
@@ -749,25 +780,11 @@ export const settleStop = internalMutation({
     const stopped = await getStoppedReply(ctx, threadId, order);
     if (!stopped) return null;
     // After a regenerate or an edit deletes this prompt, the same order
-    // belongs to a new turn, and that turn can have its own stop. Without
-    // this prompt, the list below has no upper bound. It would read the new
-    // turn's messages and change the new reply.
-    if (!(await promptExists(ctx, promptMessageId))) return null;
-
-    // This turn's messages, newest first. The list starts at this turn, so
-    // messages the user sent afterwards don't push it off the page. The page
-    // size fits the prompt plus everything one reply can save.
-    const { page } = await ctx.runQuery(
-      components.agent.messages.listMessagesByThreadId,
-      {
-        threadId,
-        upToAndIncludingMessageId: promptMessageId,
-        order: "desc",
-        paginationOpts: { numItems: MAX_TURN_MESSAGES, cursor: null },
-      },
-    );
-    for (const message of page) {
-      if (message.order !== order || message.message?.role === "user") continue;
+    // belongs to a new turn, and that turn can have its own stop.
+    // listTurnUpTo returns null then, so the new reply stays as it is.
+    const turn = await listTurnUpTo(ctx, { threadId, promptMessageId, order });
+    for (const message of turn ?? []) {
+      if (message.message?.role === "user") continue;
       if (stopped.keepText) {
         if (message.status === "failed" && message.text?.trim()) {
           // The Agent's "async abort" error stays on the message, because a
@@ -787,6 +804,37 @@ export const settleStop = internalMutation({
     return null;
   },
 });
+
+/**
+ * The turn's messages up to and including `promptMessageId`, newest first.
+ * The list starts there, so messages the user sent afterwards don't push
+ * the turn off the page. The page size fits the prompt plus everything one
+ * reply can save.
+ *
+ * Null once a regenerate or an edit has deleted the message. Without it,
+ * the list would have no upper bound, and would read a newer turn at the
+ * same order.
+ */
+async function listTurnUpTo(
+  ctx: QueryCtx,
+  {
+    threadId,
+    promptMessageId,
+    order,
+  }: { threadId: string; promptMessageId: string; order: number },
+): Promise<MessageDoc[] | null> {
+  if (!(await promptExists(ctx, promptMessageId))) return null;
+  const { page } = await ctx.runQuery(
+    components.agent.messages.listMessagesByThreadId,
+    {
+      threadId,
+      upToAndIncludingMessageId: promptMessageId,
+      order: "desc",
+      paginationOpts: { numItems: MAX_TURN_MESSAGES, cursor: null },
+    },
+  );
+  return page.filter((message) => message.order === order);
+}
 
 /** The turn's stoppedReplies row, or null if the user didn't stop it. */
 async function getStoppedReply(ctx: QueryCtx, threadId: string, order: number) {

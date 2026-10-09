@@ -91,6 +91,28 @@ export function findConnector(id: string): Connector | undefined {
 }
 
 /**
+ * What can come right before the @ of a mention: the start of the text,
+ * whitespace, an opening bracket or a quote. So `(@notion` is a mention,
+ * and an email address like `me@notion.so` isn't.
+ */
+export const MENTION_START = String.raw`(?<=^|[\s(\["'])`;
+
+/**
+ * The connectors a prompt mentions, in catalog order. A mention is @ and a
+ * handle after MENTION_START, not followed by a letter, digit, - or _. Case
+ * doesn't matter, so `@Notion` counts.
+ */
+export function findMentions(text: string): Connector[] {
+  const handles = new Set(
+    Array.from(
+      text.matchAll(new RegExp(String.raw`${MENTION_START}@([\w-]+)`, "g")),
+      (match) => match[1].toLowerCase(),
+    ),
+  );
+  return CONNECTORS.filter((connector) => handles.has(connector.handle));
+}
+
+/**
  * The model's name for a connector's tool, `<handle>__<tool>`. The handle
  * prefix Notion puts on its own names is dropped, so `notion-search`
  * becomes `notion__search`.

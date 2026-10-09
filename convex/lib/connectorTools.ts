@@ -20,7 +20,12 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { createConnectorClient, decryptAccessToken } from "./connectorAuth";
-import { findConnector, modelToolName, type Connector } from "./connectors";
+import {
+  findConnector,
+  findConnectorTool,
+  modelToolName,
+  type Connector,
+} from "./connectors";
 
 /** The most of a tool result the model sees, in UTF-8 bytes. */
 const MAX_RESULT_BYTES = 20_000;
@@ -129,6 +134,25 @@ export async function createConnectorTools(
       );
     },
   };
+}
+
+/**
+ * The tools with the mentioned connectors' tools moved to the front, so the
+ * model sees them before a8's own tools and other connectors' (ADR 0005).
+ */
+export function mentionedToolsFirst(
+  tools: ToolSet,
+  mentioned: Connector[],
+): ToolSet {
+  const isMentioned = ([name]: [string, unknown]) => {
+    const connector = findConnectorTool(name)?.connector;
+    return connector !== undefined && mentioned.includes(connector);
+  };
+  const entries = Object.entries(tools);
+  return Object.fromEntries([
+    ...entries.filter(isMentioned),
+    ...entries.filter((entry) => !isMentioned(entry)),
+  ]);
 }
 
 /** The cached tools on the connector's allowlist, which a reply offers. */

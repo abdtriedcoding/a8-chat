@@ -1,6 +1,8 @@
 "use client";
 
+import { cn } from "cn";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState, type Ref } from "react";
 import { toast } from "sonner";
 import {
@@ -19,9 +21,11 @@ import {
   useComposerAttachments,
   type UploadedAttachment,
 } from "@/hooks/use-composer-attachments";
+import { useComposerMentions } from "@/hooks/use-composer-mentions";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
 import { FileDropZone } from "./file-drop-zone";
+import { MentionMenu } from "./mention-menu";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
@@ -32,6 +36,10 @@ import { FileDropZone } from "./file-drop-zone";
  * attach button, by pasting them into the box, or by dropping them on the
  * page. A prompt can be just attachments, and Send waits for every upload to
  * finish.
+ *
+ * Typing @ opens a menu of connectors to mention (useComposerMentions). A
+ * prompt that mentions a connector that isn't connected can't be sent, and
+ * a button above the text links to the Connectors page.
  *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
@@ -64,6 +72,7 @@ export function Composer({
     freePreviews,
   } = useComposerAttachments();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mentions = useComposerMentions({ text, setText });
 
   const uploadedAttachments: UploadedAttachment[] = attachments.flatMap(
     ({ fileId, fileUrl, mediaType, filename }) =>
@@ -75,6 +84,7 @@ export function Composer({
   const canSend =
     !disabled &&
     allUploadsDone &&
+    mentions.canSend &&
     (text.trim() !== "" || attachments.length > 0);
 
   async function send() {
@@ -104,7 +114,7 @@ export function Composer({
 
   return (
     <form
-      className={className}
+      className={cn("relative", className)}
       onSubmit={(event) => {
         event.preventDefault();
         void send();
@@ -126,7 +136,40 @@ export function Composer({
         onDrop={addFiles}
         disabled={acceptedMediaTypes.length === 0}
       />
+      {mentions.options.length > 0 && (
+        <MentionMenu
+          options={mentions.options}
+          selectedId={mentions.selectedId}
+          onSelectedChange={mentions.setSelectedId}
+          onPick={mentions.pick}
+        />
+      )}
       <InputGroup>
+        {mentions.blockedMentions.length > 0 && (
+          <InputGroupAddon
+            align="block-start"
+            className="flex-col items-stretch gap-1.5 px-3 pt-2.5"
+          >
+            {mentions.blockedMentions.map(({ id, name, status }) => (
+              <div
+                key={id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 font-normal"
+              >
+                <span>
+                  {status === "needs_reconnect"
+                    ? `${name} needs reconnecting before this can be sent.`
+                    : `${name} isn't connected, so this can't be sent yet.`}
+                </span>
+                <InputGroupButton asChild variant="outline" size="xs">
+                  <Link href="/connectors">
+                    {status === "needs_reconnect" ? "Reconnect" : "Connect"}{" "}
+                    {name}
+                  </Link>
+                </InputGroupButton>
+              </div>
+            ))}
+          </InputGroupAddon>
+        )}
         {attachments.length > 0 && (
           <InputGroupAddon align="block-start" className="flex-wrap px-2 pt-2">
             {attachments.map((attachment) => (
@@ -145,7 +188,11 @@ export function Composer({
             text === "" && attachments.length === 0 ? "" : undefined
           }
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            mentions.syncCaret(event.target);
+          }}
+          {...mentions.caretHandlers}
           onPaste={(event) => {
             // A screenshot pastes as a file with no text. Text copied from
             // some apps, such as spreadsheets, comes with a picture of it
@@ -161,6 +208,7 @@ export function Composer({
             addFiles(pastedFiles);
           }}
           onKeyDown={(event) => {
+            if (mentions.onKeyDown(event)) return;
             // Skip while an IME is composing: its Enter confirms a word.
             if (
               event.key === "Enter" &&
