@@ -17,11 +17,13 @@ import { ActionCard, type DecideAction } from "./action-card";
 import {
   connectorToolCalls,
   ConnectorToolRow,
+  failedNeedingReconnect,
   isRunning,
   isWaitingForApproval,
 } from "./connector-tool-call";
 import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
+import { ReconnectChip } from "./reconnect-chip";
 import { RegenerateButton } from "./regenerate-button";
 import {
   isSearching,
@@ -81,6 +83,11 @@ export function AssistantMessage({
   // A stopped reply can't continue, so its waiting actions show as rows.
   const waitingActions = stopped ? [] : toolCalls.filter(isWaitingForApproval);
   const toolRows = toolCalls.filter((call) => !waitingActions.includes(call));
+  const reconnects = [
+    ...new Set(
+      toolCalls.filter(failedNeedingReconnect).map((call) => call.connector),
+    ),
+  ];
   // Between a tool call's result and the next text, the reply is thinking.
   const thinking =
     !visibleText &&
@@ -125,6 +132,9 @@ export function AssistantMessage({
         )}
         {waitingActions.map((call) => (
           <ActionCard key={call.id} call={call} onDecide={onDecideAction} />
+        ))}
+        {reconnects.map((connector) => (
+          <ReconnectChip key={connector.id} connector={connector} />
         ))}
         {runningSearch && (
           <SearchingMarker query={runningSearch.input?.query} />

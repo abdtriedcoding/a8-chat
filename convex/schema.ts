@@ -61,6 +61,9 @@ export default defineSchema({
     tokenExpiresAt: v.optional(v.number()),
     // Bumped on every token change, for the refresh lease (ADR 0003).
     tokenVersion: v.number(),
+    // Set while a reply holds the refresh lease (claimRefresh), and until
+    // when. Other replies wait for it instead of refreshing too.
+    refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
     // The MCP server's tools/list result, as JSON. Stored as a string

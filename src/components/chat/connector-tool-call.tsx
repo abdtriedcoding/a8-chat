@@ -8,6 +8,7 @@ import {
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import {
   findConnectorTool,
+  needsReconnectError,
   type Connector,
 } from "../../../convex/lib/connectors";
 
@@ -83,6 +84,15 @@ export function isRunning(call: ConnectorToolCall): boolean {
 /** Whether a call is an action whose card is waiting for the user. */
 export function isWaitingForApproval(call: ConnectorToolCall): boolean {
   return call.state === "approval-requested";
+}
+
+/** Whether a call failed because its connection needs reconnecting. */
+export function failedNeedingReconnect(call: ConnectorToolCall): boolean {
+  return (
+    call.state === "output-error" &&
+    call.errorText?.replace(/^Error: /, "") ===
+      needsReconnectError(call.connector)
+  );
 }
 
 /**

@@ -91,6 +91,15 @@ export function findConnector(id: string): Connector | undefined {
 }
 
 /**
+ * The tool error a connector's tool returns once its connection needs
+ * reconnecting. The reply shows a Reconnect chip for a call that failed
+ * with it, so the text has to stay exactly this.
+ */
+export function needsReconnectError(connector: Connector): string {
+  return `${connector.name} needs reconnecting. Tell the user to reconnect ${connector.name}, and answer without it.`;
+}
+
+/**
  * The model's name for a connector's tool, `<handle>__<tool>`. The handle
  * prefix Notion puts on its own names is dropped, so `notion-search`
  * becomes `notion__search`.
