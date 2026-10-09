@@ -626,12 +626,14 @@ export const streamReply = internalAction({
     const startedAt = Date.now();
     let connectorTools: ConnectorTools | undefined;
     try {
-      // Skip the model call if the user pressed Stop first, or a regenerate
-      // or an edit replaced this turn.
+      // Skip the model call if the user pressed Stop first, a regenerate or
+      // an edit replaced this turn, or a new prompt came after the action
+      // cards this reply continues from.
       const canReply = await ctx.runQuery(internal.chat.canReply, {
         threadId,
         promptMessageId,
         order,
+        continuing: stepsTaken > 0,
       });
       if (!canReply) return;
       const connections = await ctx.runQuery(
@@ -695,16 +697,28 @@ export const streamReply = internalAction({
  * Stop before the runner started. It's also false if the prompt is gone. A
  * regenerate or an edit deletes the old prompt, so a runner left over from
  * before it stops here.
+ *
+ * A reply continuing after action cards also stops here once the user has
+ * sent a new prompt. That prompt closed the turn's actions
+ * (closeUnrunActions), and the reply would add an answer after it.
  */
 export const canReply = internalQuery({
   args: {
     threadId: v.string(),
     promptMessageId: v.string(),
     order: v.number(),
+    continuing: v.boolean(),
   },
   returns: v.boolean(),
-  handler: async (ctx, { threadId, promptMessageId, order }) => {
+  handler: async (ctx, { threadId, promptMessageId, order, continuing }) => {
     if (!(await promptExists(ctx, promptMessageId))) return false;
+    if (continuing) {
+      const { page } = await listMessages(ctx, components.agent, {
+        threadId,
+        paginationOpts: { numItems: 1, cursor: null },
+      });
+      if (page[0]?.order !== order) return false;
+    }
     return (await getStoppedReply(ctx, threadId, order)) === null;
   },
 });
