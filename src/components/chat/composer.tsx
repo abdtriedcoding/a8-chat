@@ -25,7 +25,8 @@ import { FileDropZone } from "./file-drop-zone";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
- * is set, a Stop button shows in place of Send.
+ * is set, a Stop button shows in place of Send. `initialText` is read on
+ * mount only, so give the box a new key to start it with other text.
  *
  * When the current model accepts files, they can be attached with the
  * attach button, by pasting them into the box, or by dropping them on the
@@ -36,6 +37,7 @@ import { FileDropZone } from "./file-drop-zone";
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
  */
 export function Composer({
+  initialText = "",
   onSend,
   onStop,
   disabled = false,
@@ -43,6 +45,7 @@ export function Composer({
   textareaRef,
   className,
 }: {
+  initialText?: string;
   onSend: (prompt: string, attachments: UploadedAttachment[]) => Promise<void>;
   onStop?: () => Promise<void>;
   disabled?: boolean;
@@ -50,7 +53,7 @@ export function Composer({
   textareaRef?: Ref<HTMLTextAreaElement>;
   className?: string;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const {
     acceptedMediaTypes,
     attachments,

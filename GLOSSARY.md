@@ -33,31 +33,31 @@ _Avoid_: request, message (as a unit of usage)
 ### Apps
 
 **App**:
-A third-party product a person already uses, like Gmail or Notion. UI copy says "app".
+A third-party product a person already uses, like Gmail or Notion.
 _Avoid_: integration, service, tool (for the product)
 
 **Connector**:
-Something a8 knows how to connect to, listed in the catalog with a handle, a logo and its tools. Built into a8 or served by the app's vendor.
-_Avoid_: plugin, integration, MCP server (for the catalog entry)
+An entry in a8's catalog for one app, with a handle, a logo and the tools a8 exposes. UI copy says "connector". A custom MCP server a user adds becomes a connector only they see.
+_Avoid_: plugin, integration, connected app, MCP server (for the catalog entry)
 
 **Connection**:
-One user's signed-in link to a connector, or to a custom MCP URL they pasted. A custom URL is a connection with no connector behind it; the user names it when adding it.
+One user's signed-in link to a connector. A user has at most one connection per connector.
 _Avoid_: account, link, install
 
 **Handle**:
-The word typed after @ to pick an app, like `gmail`. For a custom URL, the name the user gave it.
+The word typed after @ to pick a connector, like `notion`.
 _Avoid_: slug, tag
 
-**Active apps**:
-The apps a thread is working with: every app mentioned so far in that thread, until the user removes it.
-_Avoid_: scope, context
+**Mention**:
+A connector's handle typed after @ in a prompt. It tells the model to use that connector, though the model can use any connection without one.
+_Avoid_: tag, active app
 
 **Read**:
 A tool call that only fetches from an app, like searching email. Runs without asking.
 _Avoid_: query, lookup
 
 **Action**:
-A tool call that writes to or deletes from an app, like sending an email. Runs only after the user approves it. Not to be confused with a send, which asks the model for a reply.
+A tool call that writes to or deletes from an app, like sending an email. Every tool that isn't a read is an action. Runs only after the user approves it. Not to be confused with a send, which asks the model for a reply.
 _Avoid_: write, operation, mutation
 
 **Action card**:

@@ -1,7 +1,8 @@
 "use client";
 
-import { SquarePenIcon } from "lucide-react";
+import { PlugIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
 import { NavUser } from "@/components/nav-user";
 import { ThreadList } from "@/components/thread-list";
@@ -18,6 +19,7 @@ import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 
 export function AppSidebar() {
   const closeOnMobile = useCloseSidebarOnMobile();
+  const onConnectorsPage = usePathname() === "/connectors";
   return (
     <Sidebar>
       <SidebarHeader className="gap-3">
@@ -37,6 +39,20 @@ export function AppSidebar() {
             </Link>
           </Button>
           <ThreadSearchButton />
+          <Button
+            variant="ghost"
+            className="justify-start aria-[current=page]:bg-muted"
+            asChild
+          >
+            <Link
+              href="/connectors"
+              aria-current={onConnectorsPage ? "page" : undefined}
+              onClick={closeOnMobile}
+            >
+              <PlugIcon data-icon="inline-start" />
+              Connectors
+            </Link>
+          </Button>
         </div>
       </SidebarHeader>
       <SidebarContent>
