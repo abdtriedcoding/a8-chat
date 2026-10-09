@@ -15,8 +15,8 @@ import type { Connector } from "../../../convex/lib/connectors";
 
 /**
  * One catalog entry on the Connectors page. Turning the toggle on sends the
- * browser to the vendor's sign-in. The example prompt opens a new chat with
- * that prompt in the composer, unsent.
+ * browser to the vendor's sign-in, and turning it off disconnects. The
+ * example prompt opens a new chat with that prompt in the composer, unsent.
  *
  * `connection` is undefined until the user's connections load.
  */
@@ -29,9 +29,18 @@ export function ConnectorCard({
 }) {
   const { id, name, handle, logo, description, examplePrompt } = connector;
   const connect = useAction(api.connectors.connect);
+  const disconnect = useAction(api.connectors.disconnect);
   const [connecting, setConnecting] = useState(false);
+  // connectedAt of the connection being disconnected. The toggle shows off
+  // from the click until the list query drops the connection, which can
+  // land after the action returns.
+  const [disconnectingConnectedAt, setDisconnectingConnectedAt] = useState<number>();
   const connected =
     connection !== undefined && connection.status !== "disconnected";
+  const disconnecting =
+    connected &&
+    disconnectingConnectedAt !== undefined &&
+    connection.connectedAt === disconnectingConnectedAt;
 
   async function startConnect() {
     setConnecting(true);
@@ -40,6 +49,23 @@ export function ConnectorCard({
     } catch (error) {
       toast.error(errorMessage(error));
       setConnecting(false);
+    }
+  }
+
+  async function startDisconnect() {
+    setDisconnectingConnectedAt(connection?.connectedAt);
+    try {
+      const { revoked } = await disconnect({ connectorId: id });
+      if (revoked) {
+        toast.success(`${name} is disconnected.`);
+      } else {
+        toast.warning(
+          `${name} is disconnected, but a8 couldn't revoke its access in ${name}. You can remove a8 in ${name}'s connection settings.`,
+        );
+      }
+    } catch (error) {
+      toast.error(errorMessage(error));
+      setDisconnectingConnectedAt(undefined);
     }
   }
 
@@ -54,19 +80,19 @@ export function ConnectorCard({
           <h2 className="font-heading font-medium">{name}</h2>
           <p className="truncate text-muted-foreground">
             @{handle}
-            {connected && (
+            {connected && !disconnecting && (
               <> · {connection.accountLabel ?? "Connected"}</>
             )}
           </p>
         </div>
-        {/* Disconnecting isn't built yet, so a connected toggle is locked on. */}
         <Switch
-          checked={connected || connecting}
-          disabled={connection === undefined || connected || connecting}
+          checked={(connected && !disconnecting) || connecting}
+          disabled={connection === undefined || connecting || disconnecting}
           onCheckedChange={(checked) => {
             if (checked) void startConnect();
+            else void startDisconnect();
           }}
-          aria-label={connected ? `${name} is connected` : `Connect ${name}`}
+          aria-label={`${name} connection`}
         />
       </CardHeader>
       <CardContent>
