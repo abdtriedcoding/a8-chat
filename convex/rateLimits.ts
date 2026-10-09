@@ -3,7 +3,7 @@ import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import { v, type Infer } from "convex/values";
 import { components } from "./_generated/api";
-import type { MutationCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 
 const DAY = 24 * HOUR;
 
@@ -17,6 +17,15 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Everyone's web searches together. 30 a day stays inside Tavily's free
   // tier of 1,000 a month. Windows open at 00:00 UTC, like dailySends.
   dailyWebSearches: { kind: "fixed window", rate: 30, period: DAY, start: 0 },
+  // Each user's connector tool calls, reads and actions both, so a reply
+  // stuck calling tools can't run up the bill or hammer the vendor. Web
+  // searches don't count here. Windows open at 00:00 UTC, like dailySends.
+  userConnectorToolCalls: {
+    kind: "fixed window",
+    rate: 300,
+    period: DAY,
+    start: 0,
+  },
 });
 
 /** Why a Send was refused. The Send mutations return it instead of throwing. */
@@ -68,6 +77,20 @@ export async function limitWebSearch(
   ctx: GenericActionCtx<GenericDataModel>,
 ): Promise<boolean> {
   const { ok } = await rateLimiter.limit(ctx, "dailyWebSearches");
+  return ok;
+}
+
+/**
+ * Counts one connector tool call against the user's daily limit. Returns
+ * false, and counts nothing, once the limit is hit.
+ */
+export async function limitConnectorToolCall(
+  ctx: ActionCtx,
+  userId: string,
+): Promise<boolean> {
+  const { ok } = await rateLimiter.limit(ctx, "userConnectorToolCalls", {
+    key: userId,
+  });
   return ok;
 }
 
