@@ -18,8 +18,19 @@ import { api } from "../../../convex/_generated/api";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 
-/** The new-chat page: sending the first message creates the thread. */
-export function NewChat() {
+/**
+ * Puts the caret after a prompt the box starts with, so typing adds to it.
+ * Defined once, so React calls it on mount only, not on every render.
+ */
+function caretToEnd(textarea: HTMLTextAreaElement | null) {
+  textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+/**
+ * The new-chat page: sending the first message creates the thread. `prompt`
+ * starts in the composer, unsent.
+ */
+export function NewChat({ prompt }: { prompt?: string }) {
   const router = useRouter();
   const startThread = useMutation(api.chat.startThread);
   // Creating the thread, then navigating to it: the composer stays off
@@ -59,6 +70,10 @@ export function NewChat() {
           </EmptyHeader>
         </Empty>
         <Composer
+          // Keyed, so leaving /chat?prompt=… for /chat empties the box.
+          key={prompt}
+          initialText={prompt}
+          textareaRef={caretToEnd}
           onSend={send}
           disabled={starting || navigating}
           autoFocus
