@@ -182,14 +182,9 @@ export const callback = httpAction(async (ctx, request) => {
 
   const vendorError = params.get("error");
   if (vendorError) {
-    const connectorId = await ctx.runMutation(
-      internal.connectors.deletePendingConnect,
-      { state },
-    );
-    const connector = connectorId ? findConnector(connectorId) : undefined;
-    if (connector && isRejectedClient(vendorError)) {
-      await forgetConnectorClient(ctx, connector);
-    }
+    // Anyone can put `error` in this URL, so it never drops the shared
+    // client. finishConnect and auth() drop it when Notion itself rejects it.
+    await ctx.runMutation(internal.connectors.deletePendingConnect, { state });
     return redirectToConnectors({
       error: vendorError === "access_denied" ? "cancelled" : "failed",
     });
@@ -360,15 +355,14 @@ export const saveCallbackCode = internalMutation({
   },
 });
 
-/** Deletes the sign-in named by `state`. Returns its connector, if found. */
+/** Deletes the sign-in named by `state`, if there is one. */
 export const deletePendingConnect = internalMutation({
   args: { state: v.string() },
-  returns: v.union(v.string(), v.null()),
+  returns: v.null(),
   handler: async (ctx, { state }) => {
     const pending = await findPendingConnect(ctx, state);
-    if (!pending) return null;
-    await ctx.db.delete("pendingConnects", pending._id);
-    return pending.connectorId;
+    if (pending) await ctx.db.delete("pendingConnects", pending._id);
+    return null;
   },
 });
 

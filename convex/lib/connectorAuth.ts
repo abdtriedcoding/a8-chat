@@ -227,7 +227,11 @@ export function pinnedFetch(connector: Connector) {
     init?: RequestInit,
   ): Promise<Response> => {
     assertPinnedOrigin(connector, input);
-    return await fetch(input, init);
+    // fetch would follow a redirect to an origin nobody checked. auth()'s
+    // metadata discovery asks for "manual" and follows redirects itself,
+    // through this function, so each hop is still checked.
+    const redirect = init?.redirect === "manual" ? "manual" : "error";
+    return await fetch(input, { ...init, redirect });
   };
 }
 
