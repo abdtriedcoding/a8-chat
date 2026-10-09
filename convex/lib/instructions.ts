@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import { CONNECTORS } from "./connectors";
+import { CONNECTORS, type Connector } from "./connectors";
 
 const INSTRUCTIONS =
   "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
@@ -60,27 +60,57 @@ type ConnectionSummary = Pick<
  * @param timeZone A time zone already checked by resolveTimeZone.
  * @param canSearchWeb Whether the model has the web search tool.
  * @param connections The user's connections.
+ * @param mentioned The connectors the prompt mentions (findMentions).
  */
 export function replyInstructions({
   timeZone,
   now,
   canSearchWeb,
   connections,
+  mentioned,
 }: {
   timeZone: string;
   now: Date;
   canSearchWeb: boolean;
   connections: ConnectionSummary[];
+  mentioned: Connector[];
 }): string {
   return [
     INSTRUCTIONS,
     FORMATTING,
     ...(canSearchWeb ? [WEB_SEARCH] : []),
     ...(CONNECTORS.length > 0
-      ? [`${CONNECTOR_GUIDE}\n${connectorStatusLine(connections)}`]
+      ? [
+          [
+            CONNECTOR_GUIDE,
+            connectorStatusLine(connections),
+            ...mentioned.map((connector) =>
+              mentionInstruction(connector, connections),
+            ),
+          ].join("\n"),
+        ]
       : []),
     dateInstruction(timeZone, now),
   ].join("\n\n");
+}
+
+/**
+ * Tells the model to use a connector the prompt mentions, or to ask the
+ * user to connect it. The composer won't send a mention of a connector that
+ * isn't connected, but its status can change before the reply runs.
+ */
+function mentionInstruction(
+  connector: Connector,
+  connections: ConnectionSummary[],
+): string {
+  const status = connections.find(
+    (row) => row.connectorId === connector.id,
+  )?.status;
+  const mention = `The user mentioned @${connector.handle} in their prompt`;
+  if (status === "connected") {
+    return `${mention}, so answer it with ${connector.name}'s tools. Use them before web search or your own knowledge.`;
+  }
+  return `${mention}, but ${connector.name} ${status === "needs_reconnect" ? "needs reconnecting" : "isn't connected"}. Tell them to fix that on the Connectors page.`;
 }
 
 /**
