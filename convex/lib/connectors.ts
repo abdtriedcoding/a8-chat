@@ -91,6 +91,15 @@ export function findConnector(id: string): Connector | undefined {
 }
 
 /**
+ * The tool error a connector's tool returns once its connection needs
+ * reconnecting. The reply shows a Reconnect chip for a call that failed
+ * with it, so the text has to stay exactly this.
+ */
+export function needsReconnectError(connector: Connector): string {
+  return `${connector.name} needs reconnecting. Tell the user to reconnect ${connector.name}, and answer without it.`;
+}
+
+/**
  * What can come right before the @ of a mention: the start of the text,
  * whitespace, an opening bracket or a quote. So `(@notion` is a mention,
  * and an email address like `me@notion.so` isn't.

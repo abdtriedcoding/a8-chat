@@ -15,6 +15,7 @@ import { auth, type ListToolsResult } from "@ai-sdk/mcp";
 import { getThreadMetadata } from "@convex-dev/agent";
 import { ConvexError, v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import {
   action,
   env,
@@ -30,11 +31,14 @@ import { requireUser } from "./auth";
 import {
   ConnectorOAuthProvider,
   createConnectorClient,
-  decryptAccessToken,
   forgetConnectorClient,
   oauthErrorCode,
   revokeConnection,
 } from "./lib/connectorAuth";
+import {
+  connectionAccessToken,
+  REFRESH_LEASE_MS,
+} from "./lib/connectionTokens";
 import {
   CONNECT_ERRORS,
   CONNECTORS,
@@ -523,15 +527,137 @@ export const refreshToolList = internalAction({
       { connectionId },
     );
     const connector = connection && findConnector(connection.connectorId);
-    if (!connection || !connector) return null;
-    const toolList = await fetchToolList(
-      connector,
-      await decryptAccessToken(connection),
-    );
+    if (connection?.status !== "connected" || !connector) return null;
+    const token = await connectionAccessToken(ctx, connector, connection);
+    if ("needsReconnect" in token) return null;
+    const toolList = await fetchToolList(connector, token.accessToken);
     await ctx.runMutation(internal.connectors.saveToolList, {
       connectionId,
       toolList: JSON.stringify(toolList),
     });
+    return null;
+  },
+});
+
+const connectionFields = schema.tables.connections.validator.fields;
+
+/** The token fields of a connection, which a reply keeps up to date. */
+const vConnectionTokens = v.object({
+  _id: v.id("connections"),
+  encryptedAccessToken: connectionFields.encryptedAccessToken,
+  encryptedRefreshToken: connectionFields.encryptedRefreshToken,
+  tokenExpiresAt: connectionFields.tokenExpiresAt,
+  tokenVersion: connectionFields.tokenVersion,
+});
+
+export type ConnectionTokens = Infer<typeof vConnectionTokens>;
+
+const vClaimRefreshResult = v.union(
+  // The caller holds the lease and refreshes these tokens.
+  v.object({ kind: v.literal("claimed"), tokens: vConnectionTokens }),
+  // Another reply holds the lease. Wait and claim again.
+  v.object({ kind: v.literal("busy") }),
+  // The tokens changed since `tokenVersion`, so these are newer. Use them.
+  v.object({ kind: v.literal("changed"), tokens: vConnectionTokens }),
+  // The connection is gone or needs reconnecting.
+  v.object({ kind: v.literal("needsReconnect") }),
+);
+
+export type ClaimRefreshResult = Infer<typeof vClaimRefreshResult>;
+
+/**
+ * Claims the lease to refresh the connection's tokens at `tokenVersion`
+ * (ADR 0003). Notion rotates refresh tokens and can revoke the connection
+ * if a rotated-away one is used again, so only the lease holder refreshes.
+ * The holder calls settleRefresh when done.
+ */
+export const claimRefresh = internalMutation({
+  args: { connectionId: v.id("connections"), tokenVersion: v.number() },
+  returns: vClaimRefreshResult,
+  handler: async (
+    ctx,
+    { connectionId, tokenVersion },
+  ): Promise<ClaimRefreshResult> => {
+    const connection = await ctx.db.get("connections", connectionId);
+    if (connection?.status !== "connected") return { kind: "needsReconnect" };
+    if (connection.tokenVersion !== tokenVersion) {
+      return { kind: "changed", tokens: connectionTokens(connection) };
+    }
+    const now = Date.now();
+    if ((connection.refreshLeaseExpiresAt ?? 0) > now) return { kind: "busy" };
+    await ctx.db.patch("connections", connectionId, {
+      refreshLeaseExpiresAt: now + REFRESH_LEASE_MS,
+    });
+    return { kind: "claimed", tokens: connectionTokens(connection) };
+  },
+});
+
+/**
+ * Ends the refresh lease claimed at `tokenVersion`:
+ * - `refreshed` stores the new tokens and bumps the version.
+ * - `rejected` means the vendor refused the refresh, so the connection
+ *   needs reconnecting.
+ * - `failed` means the vendor couldn't be reached. The tokens stay.
+ *
+ * Changes nothing if the tokens changed since `tokenVersion`, like after a
+ * reconnect. Returns the connection's tokens afterwards, or null once it's
+ * gone or needs reconnecting.
+ */
+export const settleRefresh = internalMutation({
+  args: {
+    connectionId: v.id("connections"),
+    tokenVersion: v.number(),
+    outcome: v.union(
+      v.object({
+        kind: v.literal("refreshed"),
+        encryptedAccessToken: v.string(),
+        encryptedRefreshToken: v.optional(v.string()),
+        tokenExpiresAt: v.optional(v.number()),
+      }),
+      v.object({ kind: v.literal("rejected") }),
+      v.object({ kind: v.literal("failed") }),
+    ),
+  },
+  returns: v.union(vConnectionTokens, v.null()),
+  handler: async (ctx, { connectionId, tokenVersion, outcome }) => {
+    const connection = await ctx.db.get("connections", connectionId);
+    if (connection?.tokenVersion === tokenVersion) {
+      const change =
+        outcome.kind === "refreshed"
+          ? {
+              encryptedAccessToken: outcome.encryptedAccessToken,
+              encryptedRefreshToken: outcome.encryptedRefreshToken,
+              tokenExpiresAt: outcome.tokenExpiresAt,
+              tokenVersion: tokenVersion + 1,
+            }
+          : outcome.kind === "rejected"
+            ? { status: "needs_reconnect" as const }
+            : {};
+      await ctx.db.patch("connections", connectionId, {
+        ...change,
+        refreshLeaseExpiresAt: undefined,
+      });
+    }
+    const settled = await ctx.db.get("connections", connectionId);
+    return settled?.status === "connected" ? connectionTokens(settled) : null;
+  },
+});
+
+/**
+ * Marks the connection as needing reconnecting, unless its tokens changed
+ * since `tokenVersion`. A reply calls this when the vendor refuses a token
+ * it just refreshed.
+ */
+export const markNeedsReconnect = internalMutation({
+  args: { connectionId: v.id("connections"), tokenVersion: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { connectionId, tokenVersion }) => {
+    const connection = await ctx.db.get("connections", connectionId);
+    if (connection?.tokenVersion === tokenVersion) {
+      await ctx.db.patch("connections", connectionId, {
+        status: "needs_reconnect",
+      });
+    }
     return null;
   },
 });
@@ -600,6 +726,16 @@ async function findConnection(
       q.eq("userId", userId).eq("connectorId", connectorId),
     )
     .unique();
+}
+
+function connectionTokens(connection: Doc<"connections">): ConnectionTokens {
+  return {
+    _id: connection._id,
+    encryptedAccessToken: connection.encryptedAccessToken,
+    encryptedRefreshToken: connection.encryptedRefreshToken,
+    tokenExpiresAt: connection.tokenExpiresAt,
+    tokenVersion: connection.tokenVersion,
+  };
 }
 
 async function findPendingConnect(ctx: QueryCtx, state: string) {

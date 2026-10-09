@@ -12,11 +12,7 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { env, type ActionCtx } from "../_generated/server";
 import type { Connector } from "./connectors";
-import {
-  decryptSecret,
-  encryptOptionalSecret,
-  getEncryptionKey,
-} from "./encryption";
+import { decryptSecret, encryptOptionalSecret } from "./encryption";
 
 /** Where the vendor sends the browser back after sign-in (convex/http.ts). */
 export const CALLBACK_PATH = "/connectors/callback";
@@ -48,7 +44,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
 
   constructor(
     private readonly ctx: ActionCtx,
-    private readonly connector: Connector,
+    protected readonly connector: Connector,
     private readonly encryptionKey: CryptoKey,
     /** Set when finishing a sign-in. */
     private readonly pending?: PendingConnect,
@@ -112,7 +108,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
 
   // A sign-in always goes to the vendor's consent screen, so there are no
   // tokens to reuse or refresh.
-  tokens(): undefined {
+  tokens(): OAuthTokens | undefined {
     return undefined;
   }
 
@@ -257,16 +253,6 @@ export async function createConnectorClient(
       fetch: pinnedFetch(connector),
     },
   });
-}
-
-/** The connection's access token, decrypted. */
-export async function decryptAccessToken(
-  connection: Pick<Doc<"connections">, "encryptedAccessToken">,
-): Promise<string> {
-  return await decryptSecret(
-    await getEncryptionKey(),
-    connection.encryptedAccessToken,
-  );
 }
 
 function assertPinnedOrigin(

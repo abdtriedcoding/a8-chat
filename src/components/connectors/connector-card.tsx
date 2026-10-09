@@ -1,13 +1,22 @@
 "use client";
 
 import { useAction } from "convex/react";
-import { MessageSquareIcon } from "lucide-react";
+import { MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { useConnectConnector } from "@/hooks/use-connect-connector";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";
@@ -17,6 +26,8 @@ import type { Connector } from "../../../convex/lib/connectors";
  * One catalog entry on the Connectors page. Turning the toggle on sends the
  * browser to the vendor's sign-in, and turning it off disconnects. The
  * example prompt opens a new chat with that prompt in the composer, unsent.
+ * A connection that needs reconnecting shows a Reconnect button, which
+ * signs in again.
  *
  * `connection` is undefined until the user's connections load.
  */
@@ -28,9 +39,8 @@ export function ConnectorCard({
   connection: ConnectorStatus | undefined;
 }) {
   const { id, name, handle, logo, description, examplePrompt } = connector;
-  const connect = useAction(api.connectors.connect);
+  const { connecting, startConnect } = useConnectConnector(id);
   const disconnect = useAction(api.connectors.disconnect);
-  const [connecting, setConnecting] = useState(false);
   // connectedAt of the connection being disconnected. The toggle shows off
   // from the click until the list query drops the connection, which can
   // land after the action returns.
@@ -41,16 +51,8 @@ export function ConnectorCard({
     connected &&
     disconnectingConnectedAt !== undefined &&
     connection.connectedAt === disconnectingConnectedAt;
-
-  async function startConnect() {
-    setConnecting(true);
-    try {
-      window.location.assign(await connect({ connectorId: id }));
-    } catch (error) {
-      toast.error(errorMessage(error));
-      setConnecting(false);
-    }
-  }
+  const needsReconnect =
+    connection?.status === "needs_reconnect" && !disconnecting;
 
   async function startDisconnect() {
     setDisconnectingConnectedAt(connection?.connectedAt);
@@ -96,6 +98,25 @@ export function ConnectorCard({
         />
       </CardHeader>
       <CardContent>
+        {needsReconnect && (
+          <Alert variant="destructive" className="mb-3">
+            <TriangleAlertIcon />
+            <AlertTitle>Needs reconnecting</AlertTitle>
+            <AlertDescription>
+              {name} stopped accepting a8&apos;s access.
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                size="sm"
+                disabled={connecting}
+                onClick={() => void startConnect()}
+              >
+                {connecting && <Spinner data-icon="inline-start" />}
+                Reconnect
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
         <p>{description}</p>
         <Link
           href={`/chat?prompt=${encodeURIComponent(examplePrompt)}`}
