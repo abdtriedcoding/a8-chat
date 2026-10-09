@@ -13,10 +13,12 @@ import {
 } from "@/components/ui/message";
 import { replyText } from "@/lib/reply-text";
 import type { Stop, ThreadMessage } from "@/lib/stopped-turns";
+import { ActionCard, type DecideAction } from "./action-card";
 import {
   connectorToolCalls,
   ConnectorToolRow,
   isRunning,
+  isWaitingForApproval,
 } from "./connector-tool-call";
 import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
@@ -32,13 +34,22 @@ import {
 export function AssistantMessage({
   message,
   stopped,
+  continuing = false,
   onRegenerate,
+  onDecideAction,
 }: {
   message: ThreadMessage;
   /** Set if the user stopped this reply. */
   stopped?: Stop;
+  /**
+   * Whether the user has decided on the reply's action cards, and the reply
+   * hasn't picked up again yet.
+   */
+  continuing?: boolean;
   /** Set on the last reply while it can be regenerated. */
   onRegenerate?: () => Promise<void>;
+  /** Approves or cancels one of the reply's actions. */
+  onDecideAction: DecideAction;
 }) {
   const text = replyText(message);
   const [visibleText, { isStreaming }] = useSmoothText(text, {
@@ -50,7 +61,9 @@ export function AssistantMessage({
   // still be catching up, though.
   const streaming =
     (!stopped &&
-      (message.status === "pending" || message.status === "streaming")) ||
+      (message.status === "pending" ||
+        message.status === "streaming" ||
+        continuing)) ||
     isStreaming;
 
   // If the user stopped before seeing any text, or the reply has none, show
@@ -65,6 +78,9 @@ export function AssistantMessage({
   const runningSearch = streaming ? searches.find(isSearching) : undefined;
   const sources = searchSources(searches);
   const toolCalls = connectorToolCalls(message);
+  // A stopped reply can't continue, so its waiting actions show as rows.
+  const waitingActions = stopped ? [] : toolCalls.filter(isWaitingForApproval);
+  const toolRows = toolCalls.filter((call) => !waitingActions.includes(call));
   // Between a tool call's result and the next text, the reply is thinking.
   const thinking =
     !visibleText &&
@@ -84,9 +100,9 @@ export function AssistantMessage({
         <LogoMark className="size-4 text-primary" />
       </MessageAvatar>
       <MessageContent className="pt-1">
-        {toolCalls.length > 0 && (
+        {toolRows.length > 0 && (
           <div className="flex flex-col gap-2">
-            {toolCalls.map((call) => (
+            {toolRows.map((call) => (
               <ConnectorToolRow
                 key={call.id}
                 call={call}
@@ -107,6 +123,9 @@ export function AssistantMessage({
             </BubbleContent>
           </Bubble>
         )}
+        {waitingActions.map((call) => (
+          <ActionCard key={call.id} call={call} onDecide={onDecideAction} />
+        ))}
         {runningSearch && (
           <SearchingMarker query={runningSearch.input?.query} />
         )}

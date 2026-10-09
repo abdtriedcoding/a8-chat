@@ -16,6 +16,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { ReplyStatus } from "@/hooks/use-reply-status";
 import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
+import type { DecideAction } from "./action-card";
 import {
   AssistantMessage,
   StoppedMarker,
@@ -35,6 +36,7 @@ export function MessageList({
   replyStatus,
   onRegenerate,
   onEdit,
+  onDecideAction,
   editingLastPrompt,
   onEditingLastPromptChange,
 }: {
@@ -46,6 +48,8 @@ export function MessageList({
   onRegenerate?: () => Promise<void>;
   /** Set while the last prompt can be edited. Only that prompt shows it. */
   onEdit?: (prompt: string) => Promise<void>;
+  /** Approves or cancels an action waiting on its card. */
+  onDecideAction: DecideAction;
   /** Whether the last prompt's editor is open. */
   editingLastPrompt: boolean;
   onEditingLastPromptChange: (editing: boolean) => void;
@@ -124,7 +128,12 @@ export function MessageList({
                       key={replyKey}
                       message={message}
                       stopped={stopped.get(message.order)}
+                      continuing={
+                        i === messages.length - 1 &&
+                        replyStatus === "continuing"
+                      }
                       onRegenerate={regenerate}
+                      onDecideAction={onDecideAction}
                     />
                   </MessageScrollerItem>
                 );
