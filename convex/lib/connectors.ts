@@ -29,6 +29,11 @@ export type Connector = {
   toolAllowlist: string[];
   /** Tools that ask for approval even when the server marks them read-only. */
   toolsNeedingApproval: string[];
+  /**
+   * The field of the vendor's token response that names the signed-in
+   * account, like Notion's `workspace_name`. The card shows it once connected.
+   */
+  accountLabelField?: string;
 };
 
 /** Every connector a8 ships with. */
@@ -50,5 +55,17 @@ export const CONNECTORS: Connector[] = [
     // Empty until replies use Notion's tools.
     toolAllowlist: [],
     toolsNeedingApproval: [],
+    accountLabelField: "workspace_name",
   },
 ];
+
+/**
+ * Why a sign-in ended without connecting: the user cancelled at the vendor,
+ * the sign-in expired or belongs to another user, or a step failed.
+ */
+export const CONNECT_ERRORS = ["cancelled", "expired", "failed"] as const;
+export type ConnectError = (typeof CONNECT_ERRORS)[number];
+
+export function findConnector(id: string): Connector | undefined {
+  return CONNECTORS.find((connector) => connector.id === id);
+}
