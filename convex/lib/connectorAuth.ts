@@ -275,3 +275,94 @@ export function oauthErrorCode(error: unknown): string | undefined {
     .errorCode;
   return typeof code === "string" ? code : undefined;
 }
+
+/** How long each revocation request can take before a8 gives up on it. */
+const REVOKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Revokes a connection's grant at the vendor (RFC 7009). It revokes the
+ * refresh token when there is one, which revokes the access tokens issued
+ * with it. Returns false if the vendor has no revocation endpoint or a8 has
+ * no client to authenticate with. Throws if a request fails.
+ */
+export async function revokeConnection(
+  ctx: ActionCtx,
+  connector: Connector,
+  encryptionKey: CryptoKey,
+  connection: Pick<
+    Doc<"connections">,
+    "encryptedAccessToken" | "encryptedRefreshToken"
+  >,
+): Promise<boolean> {
+  const client = await new ConnectorOAuthProvider(
+    ctx,
+    connector,
+    encryptionKey,
+  ).clientInformation();
+  if (!client) return false;
+  const fetchPinned = pinnedFetch(connector);
+  const endpoint = await findRevocationEndpoint(
+    fetchPinned,
+    client.authorization_server ?? connector.pinnedOrigins.authorizationServer,
+  );
+  if (!endpoint) return false;
+
+  const [encryptedToken, tokenTypeHint] =
+    connection.encryptedRefreshToken === undefined
+      ? [connection.encryptedAccessToken, "access_token"]
+      : [connection.encryptedRefreshToken, "refresh_token"];
+  const body = new URLSearchParams({
+    token: await decryptSecret(encryptionKey, encryptedToken),
+    token_type_hint: tokenTypeHint,
+  });
+  const headers = new Headers({
+    "Content-Type": "application/x-www-form-urlencoded",
+  });
+  // The same client authentication auth() uses at the token endpoint.
+  if (client.client_secret) {
+    headers.set(
+      "Authorization",
+      `Basic ${btoa(`${client.client_id}:${client.client_secret}`)}`,
+    );
+  } else {
+    body.set("client_id", client.client_id);
+  }
+  const response = await fetchPinned(endpoint, {
+    method: "POST",
+    headers,
+    body,
+    signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `${connector.name} refused to revoke the token: ${response.status} ${await response.text()}`,
+    );
+  }
+  return true;
+}
+
+/**
+ * The revocation endpoint from the authorization server's metadata
+ * (RFC 8414), or undefined if it doesn't list one.
+ */
+async function findRevocationEndpoint(
+  fetchPinned: ReturnType<typeof pinnedFetch>,
+  authorizationServerUrl: string,
+): Promise<string | undefined> {
+  const server = new URL(authorizationServerUrl);
+  const path = server.pathname === "/" ? "" : server.pathname.replace(/\/$/, "");
+  const response = await fetchPinned(
+    new URL(`/.well-known/oauth-authorization-server${path}`, server.origin),
+    { signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS) },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Reading the authorization server's metadata failed: ${response.status}`,
+    );
+  }
+  const metadata: unknown = await response.json();
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const endpoint: unknown = (metadata as Record<string, unknown>)
+    .revocation_endpoint;
+  return typeof endpoint === "string" ? endpoint : undefined;
+}

@@ -30,6 +30,7 @@ import {
   forgetConnectorClient,
   oauthErrorCode,
   pinnedFetch,
+  revokeConnection,
 } from "./lib/connectorAuth";
 import {
   CONNECT_ERRORS,
@@ -79,6 +80,10 @@ const vConnectResult = v.union(
 /** How a sign-in ended. */
 export type ConnectResult = Infer<typeof vConnectResult>;
 
+const vDisconnectResult = v.object({ revoked: v.boolean() });
+
+export type DisconnectResult = Infer<typeof vDisconnectResult>;
+
 /**
  * The catalog, with the user's connection status for each connector. Never
  * returns token fields.
@@ -90,12 +95,7 @@ export const list = query({
     const user = await requireUser(ctx);
     return await Promise.all(
       CONNECTORS.map(async (connector): Promise<ConnectorStatus> => {
-        const connection = await ctx.db
-          .query("connections")
-          .withIndex("by_userId_and_connectorId", (q) =>
-            q.eq("userId", user._id).eq("connectorId", connector.id),
-          )
-          .unique();
+        const connection = await findConnection(ctx, user._id, connector.id);
         return {
           id: connector.id,
           name: connector.name,
@@ -266,6 +266,76 @@ export const finishConnect = action({
   },
 });
 
+/**
+ * Disconnects the user from a connector. Revokes a8's access at the vendor
+ * when the vendor supports revocation, then deletes the connection, even if
+ * revocation failed. Keeps the client registration, so connecting again
+ * doesn't register a8 again. Threads keep their tool-call parts.
+ *
+ * Returns whether a8's access was revoked at the vendor. False means the
+ * vendor may still accept the token until it expires.
+ */
+export const disconnect = action({
+  args: { connectorId: v.string() },
+  returns: vDisconnectResult,
+  handler: async (ctx, { connectorId }): Promise<DisconnectResult> => {
+    await requireIdentity(ctx);
+    const connector = findConnector(connectorId);
+    if (!connector) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "Unknown connector." });
+    }
+    const connection = await ctx.runQuery(internal.connectors.getConnection, {
+      connectorId,
+    });
+    // Already disconnected, maybe from another tab. a8 holds no token.
+    if (!connection) return { revoked: true };
+
+    let revoked = false;
+    try {
+      const encryptionKey = await getEncryptionKey();
+      revoked = await revokeConnection(ctx, connector, encryptionKey, connection);
+    } catch (error) {
+      console.error(`Revoking a8's ${connector.name} access failed`, error);
+    }
+    await ctx.runMutation(internal.connectors.deleteConnection, {
+      connectionId: connection._id,
+      tokenVersion: connection.tokenVersion,
+    });
+    return { revoked };
+  },
+});
+
+/** The signed-in user's connection to the connector, tokens included. */
+export const getConnection = internalQuery({
+  args: { connectorId: v.string() },
+  returns: v.union(schema.doc("connections"), v.null()),
+  handler: async (ctx, { connectorId }) => {
+    const user = await requireUser(ctx);
+    return await findConnection(ctx, user._id, connectorId);
+  },
+});
+
+/**
+ * Deletes the signed-in user's connection, unless its tokens changed since
+ * `tokenVersion`. A reconnect from another tab during disconnect replaces
+ * the row and bumps the version, and that new connection stays.
+ */
+export const deleteConnection = internalMutation({
+  args: { connectionId: v.id("connections"), tokenVersion: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { connectionId, tokenVersion }) => {
+    const user = await requireUser(ctx);
+    const connection = await ctx.db.get("connections", connectionId);
+    if (
+      connection?.userId === user._id &&
+      connection.tokenVersion === tokenVersion
+    ) {
+      await ctx.db.delete("connections", connectionId);
+    }
+    return null;
+  },
+});
+
 export const getConnectorClient = internalQuery({
   args: { connectorId: v.string() },
   returns: v.union(schema.doc("connectorClients"), v.null()),
@@ -397,12 +467,7 @@ export const saveConnection = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("connections")
-      .withIndex("by_userId_and_connectorId", (q) =>
-        q.eq("userId", args.userId).eq("connectorId", args.connectorId),
-      )
-      .unique();
+    const existing = await findConnection(ctx, args.userId, args.connectorId);
     const now = Date.now();
     const connection = {
       ...args,
@@ -447,6 +512,19 @@ async function findConnectorClient(ctx: QueryCtx, connectorId: string) {
   return await ctx.db
     .query("connectorClients")
     .withIndex("by_connectorId", (q) => q.eq("connectorId", connectorId))
+    .unique();
+}
+
+async function findConnection(
+  ctx: QueryCtx,
+  userId: string,
+  connectorId: string,
+) {
+  return await ctx.db
+    .query("connections")
+    .withIndex("by_userId_and_connectorId", (q) =>
+      q.eq("userId", userId).eq("connectorId", connectorId),
+    )
     .unique();
 }
 
