@@ -1,16 +1,48 @@
+"use client";
+
+import { useAction } from "convex/react";
 import { MessageSquareIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { errorMessage } from "@/lib/errors";
+import { api } from "../../../convex/_generated/api";
+import type { ConnectorStatus } from "../../../convex/connectors";
 import type { Connector } from "../../../convex/lib/connectors";
 
 /**
- * One catalog entry on the Connectors page. The example prompt opens a new
- * chat with that prompt in the composer, unsent.
+ * One catalog entry on the Connectors page. Turning the toggle on sends the
+ * browser to the vendor's sign-in. The example prompt opens a new chat with
+ * that prompt in the composer, unsent.
+ *
+ * `connection` is undefined until the user's connections load.
  */
-export function ConnectorCard({ connector }: { connector: Connector }) {
-  const { name, handle, logo, description, examplePrompt } = connector;
+export function ConnectorCard({
+  connector,
+  connection,
+}: {
+  connector: Connector;
+  connection: ConnectorStatus | undefined;
+}) {
+  const { id, name, handle, logo, description, examplePrompt } = connector;
+  const connect = useAction(api.connectors.connect);
+  const [connecting, setConnecting] = useState(false);
+  const connected =
+    connection !== undefined && connection.status !== "disconnected";
+
+  async function startConnect() {
+    setConnecting(true);
+    try {
+      window.location.assign(await connect({ connectorId: id }));
+    } catch (error) {
+      toast.error(errorMessage(error));
+      setConnecting(false);
+    }
+  }
+
   return (
     <Card size="sm">
       <CardHeader className="flex items-center gap-3">
@@ -20,10 +52,22 @@ export function ConnectorCard({ connector }: { connector: Connector }) {
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-heading font-medium">{name}</h2>
-          <p className="text-muted-foreground">@{handle}</p>
+          <p className="truncate text-muted-foreground">
+            @{handle}
+            {connected && (
+              <> · {connection.accountLabel ?? "Connected"}</>
+            )}
+          </p>
         </div>
-        {/* Doesn't connect anything yet. */}
-        <Switch disabled aria-label={`Connect ${name}`} />
+        {/* Disconnecting isn't built yet, so a connected toggle is locked on. */}
+        <Switch
+          checked={connected || connecting}
+          disabled={connection === undefined || connected || connecting}
+          onCheckedChange={(checked) => {
+            if (checked) void startConnect();
+          }}
+          aria-label={connected ? `${name} is connected` : `Connect ${name}`}
+        />
       </CardHeader>
       <CardContent>
         <p>{description}</p>

@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ChatHeader } from "@/components/chat/chat-header";
-import { ConnectorCard } from "@/components/connectors/connector-card";
+import {
+  ConnectorList,
+  type CallbackParams,
+} from "@/components/connectors/connector-list";
 import { isAuthenticated } from "@/lib/auth-server";
-import { CONNECTORS } from "../../../../convex/lib/connectors";
+import {
+  CONNECT_ERRORS,
+  type ConnectError,
+} from "../../../../convex/lib/connectors";
 
 export const metadata: Metadata = { title: "Connectors" };
 
-export default async function ConnectorsPage() {
+export default async function ConnectorsPage(props: PageProps<"/connectors">) {
   if (!(await isAuthenticated())) redirect("/sign-in");
   return (
     <>
@@ -20,15 +26,25 @@ export default async function ConnectorsPage() {
             Connect the apps you work in, and a8 can search, read and write in
             them.
           </p>
-          <ul className="flex flex-col gap-4">
-            {CONNECTORS.map((connector) => (
-              <li key={connector.id}>
-                <ConnectorCard connector={connector} />
-              </li>
-            ))}
-          </ul>
+          <ConnectorList
+            callbackParams={parseCallbackParams(await props.searchParams)}
+          />
         </div>
       </div>
     </>
   );
+}
+
+/** The sign-in callback's redirect adds `?finish=<state>` or `?error=<code>`. */
+function parseCallbackParams(
+  params: Record<string, string | string[] | undefined>,
+): CallbackParams {
+  const { finish, error } = params;
+  if (typeof finish === "string") return { finish };
+  if (isConnectError(error)) return { error };
+  return undefined;
+}
+
+function isConnectError(value: unknown): value is ConnectError {
+  return CONNECT_ERRORS.some((error) => error === value);
 }

@@ -11,4 +11,12 @@ crons.cron(
   {},
 );
 
+// Sign-ins expire after 10 minutes, so an hourly sweep keeps the table small.
+crons.interval(
+  "clean up expired connects",
+  { hours: 1 },
+  internal.connectors.cleanUpExpiredConnects,
+  {},
+);
+
 export default crons;

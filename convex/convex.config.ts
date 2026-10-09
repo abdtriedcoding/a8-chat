@@ -13,6 +13,9 @@ const app = defineApp({
     ANTHROPIC_API_KEY: v.string(),
     // Optional. Without it, the model gets no web search tool.
     TAVILY_API_KEY: v.optional(v.string()),
+    // Base64-encoded 32-byte key that encrypts connection tokens. Generate
+    // one with `openssl rand -base64 32`.
+    CONNECTION_ENCRYPTION_KEY: v.string(),
   },
 });
 
