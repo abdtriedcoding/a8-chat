@@ -21,6 +21,11 @@ export type ConnectorToolCall = {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  /**
+   * Set on an action (ADR 0002). `approved` is undefined while its card
+   * waits, and set once the user decides.
+   */
+  approval?: { id: string; approved?: boolean };
 };
 
 /** The reply's connector tool calls, in the order the model made them. */
@@ -37,6 +42,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
       input?: unknown;
       output?: unknown;
       errorText?: string;
+      approval?: { id: string; approved?: boolean };
     };
     // A saved reply loses the error state: the Agent shows the AI SDK's
     // "Error: ..." text as a result. A connector tool's own results always
@@ -53,14 +59,38 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
         input: call.input,
         output: call.output,
         errorText: savedError ? (call.output as string) : call.errorText,
+        approval: call.approval && {
+          id: call.approval.id,
+          approved: call.approval.approved,
+        },
       },
     ];
   });
 }
 
-/** Whether a call is still running, without a result or an error yet. */
+/**
+ * Whether a call is still running, without a result or an error yet. An
+ * approved action counts from the click on Approve.
+ */
 export function isRunning(call: ConnectorToolCall): boolean {
-  return call.state === "input-streaming" || call.state === "input-available";
+  return (
+    call.state === "input-streaming" ||
+    call.state === "input-available" ||
+    (call.state === "approval-responded" && call.approval?.approved === true)
+  );
+}
+
+/** Whether a call is an action whose card is waiting for the user. */
+export function isWaitingForApproval(call: ConnectorToolCall): boolean {
+  return call.state === "approval-requested";
+}
+
+/**
+ * Whether the user cancelled the action, on its card or by sending a new
+ * prompt while the card waited.
+ */
+function isCancelled(call: ConnectorToolCall): boolean {
+  return call.approval?.approved === false;
 }
 
 /**
@@ -77,6 +107,9 @@ export function ConnectorToolRow({
   running: boolean;
 }) {
   const failed = call.state === "output-error";
+  const cancelled = isCancelled(call);
+  // Approved, but the user stopped the reply before it ran.
+  const stopped = call.state === "approval-responded" && !running;
   return (
     <Collapsible className="w-full">
       <CollapsibleTrigger className="group/trigger flex max-w-full items-center gap-2 rounded-md text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
@@ -87,6 +120,8 @@ export function ConnectorToolRow({
         <span className={running ? "shimmer truncate" : "truncate"}>
           {call.label}
           {failed && " failed"}
+          {cancelled && " cancelled"}
+          {stopped && !cancelled && " stopped"}
         </span>
         <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
       </CollapsibleTrigger>

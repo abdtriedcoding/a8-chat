@@ -53,10 +53,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const stopReply = useMutation(api.chat.stopReply);
   const regenerateReply = useMutation(api.chat.regenerateReply);
   const editPrompt = useMutation(api.chat.editPrompt);
+  const decideAction = useMutation(api.chat.decideAction);
 
   const replyStatus = useReplyStatus(messages);
   const replyInProgress =
-    replyStatus === "waiting" || replyStatus === "streaming";
+    replyStatus === "waiting" ||
+    replyStatus === "continuing" ||
+    replyStatus === "streaming";
   const last = messages.at(-1);
   // The last turn can be regenerated or edited while no reply is in
   // progress. A stopped turn counts as done, and so does a reply that timed
@@ -84,8 +87,11 @@ export function ThreadView({ threadId }: { threadId: string }) {
 
   async function stop() {
     // Keep the reply's text only if some is on screen. If the user stopped
-    // during "Thinking…", the reply is hidden.
-    const keepText = last?.role === "assistant" && last.text !== "";
+    // during "Thinking…", the reply is hidden. A reply that continues after
+    // an action card keeps what it had before, so the model still sees it.
+    const keepText =
+      replyStatus === "continuing" ||
+      (last?.role === "assistant" && last.text !== "");
     await stopReply({ threadId, keepText });
   }
 
@@ -170,6 +176,14 @@ export function ThreadView({ threadId }: { threadId: string }) {
                 }
               : undefined
           }
+          onDecideAction={async (approvalId, approve) => {
+            await decideAction({
+              threadId,
+              approvalId,
+              approve,
+              timeZone: browserTimeZone(),
+            });
+          }}
           editingLastPrompt={editingLastPrompt}
           onEditingLastPromptChange={changeEditingLastPrompt}
         />

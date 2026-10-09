@@ -9,7 +9,13 @@ import {
   type ListToolsResult,
   type MCPClient,
 } from "@ai-sdk/mcp";
-import { jsonSchema, tool, type JSONSchema7, type ToolSet } from "ai";
+import {
+  jsonSchema,
+  tool,
+  type JSONSchema7,
+  type ToolApprovalStatus,
+  type ToolSet,
+} from "ai";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -33,21 +39,27 @@ type McpTool = ListToolsResult["tools"][number];
 export type ConnectorTools = {
   /** The tools of every connected connection, named `<handle>__<tool>`. */
   tools: ToolSet;
+  /**
+   * The reply's `toolApproval` option. It makes every action wait for the
+   * user to approve it (ADR 0002). Reads aren't listed, so they run at once.
+   */
+  toolApproval: Record<string, ToolApprovalStatus>;
   /** Closes every MCP client the reply opened. Call it once the reply ends. */
   close: () => Promise<void>;
 };
 
 /**
  * The reply's tools from the user's connections. Only `connected`
- * connections get tools, and only the allowlisted tools that run without
- * approval. A tool list over a day old is used as is, and a fresh one is
- * fetched in the background for later replies.
+ * connections get tools, and only the allowlisted ones. A tool list over a
+ * day old is used as is, and a fresh one is fetched in the background for
+ * later replies.
  */
 export async function createConnectorTools(
   ctx: ActionCtx,
   connections: Doc<"connections">[],
 ): Promise<ConnectorTools> {
   const tools: ToolSet = {};
+  const toolApproval: Record<string, ToolApprovalStatus> = {};
   const opened: Promise<MCPClient>[] = [];
 
   for (const connection of connections) {
@@ -72,8 +84,10 @@ export async function createConnectorTools(
       return client;
     };
 
-    for (const mcpTool of replyTools(connector, connection.toolList)) {
-      tools[modelToolName(connector, mcpTool.name)] = tool({
+    for (const mcpTool of allowedTools(connector, connection.toolList)) {
+      const name = modelToolName(connector, mcpTool.name);
+      if (!isRead(connector, mcpTool)) toolApproval[name] = "user-approval";
+      tools[name] = tool({
         description: mcpTool.description,
         inputSchema: jsonSchema<Record<string, unknown>>({
           ...mcpTool.inputSchema,
@@ -108,6 +122,7 @@ export async function createConnectorTools(
 
   return {
     tools,
+    toolApproval,
     close: async () => {
       await Promise.allSettled(
         opened.map(async (client) => await (await client).close()),
@@ -116,19 +131,23 @@ export async function createConnectorTools(
   };
 }
 
-/**
- * The cached tools a reply offers: the ones on the connector's allowlist
- * that run without approval. A tool runs without approval only when the
- * server marks it read-only and the connector doesn't force approval on it
- * (ADR 0005). Actions stay out until replies can pause on an action card.
- */
-function replyTools(connector: Connector, toolList: string): McpTool[] {
+/** The cached tools on the connector's allowlist, which a reply offers. */
+function allowedTools(connector: Connector, toolList: string): McpTool[] {
   const allowed = new Set(connector.toolAllowlist.map((entry) => entry.name));
-  return (JSON.parse(toolList) as McpTool[]).filter(
-    (mcpTool) =>
-      allowed.has(mcpTool.name) &&
-      mcpTool.annotations?.readOnlyHint === true &&
-      !connector.toolsNeedingApproval.includes(mcpTool.name),
+  return (JSON.parse(toolList) as McpTool[]).filter((mcpTool) =>
+    allowed.has(mcpTool.name),
+  );
+}
+
+/**
+ * Whether a tool is a read, which runs without approval. That's only when
+ * the server marks it read-only and the connector doesn't force approval on
+ * it (ADR 0005). Every other tool is an action.
+ */
+function isRead(connector: Connector, mcpTool: McpTool): boolean {
+  return (
+    mcpTool.annotations?.readOnlyHint === true &&
+    !connector.toolsNeedingApproval.includes(mcpTool.name)
   );
 }
 

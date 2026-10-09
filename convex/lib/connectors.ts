@@ -60,7 +60,6 @@ export const CONNECTORS: Connector[] = [
       authorizationServer: "https://mcp.notion.com",
     },
     signIn: { kind: "dynamicRegistration" },
-    // Replies leave out the actions until action cards ship (#60).
     toolAllowlist: [
       { name: "notion-search", label: "Searching Notion" },
       { name: "notion-fetch", label: "Reading Notion" },

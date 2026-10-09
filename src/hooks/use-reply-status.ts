@@ -7,12 +7,19 @@ const REPLY_TIMEOUT_MS = 60_000;
 /**
  * Where the reply to the user's latest prompt is:
  * - "waiting": the prompt is saved, but the reply hasn't started.
+ * - "continuing": the user decided on the reply's action cards, but the
+ *   reply hasn't picked up again.
  * - "timedOut": still no reply after REPLY_TIMEOUT_MS, so it's probably not
  *   coming. Without this, a reply that never starts would block Send for good.
  * - "streaming": the reply is being written.
  * - "idle": no reply in progress, or the user stopped it.
  */
-export type ReplyStatus = "waiting" | "timedOut" | "streaming" | "idle";
+export type ReplyStatus =
+  | "waiting"
+  | "continuing"
+  | "timedOut"
+  | "streaming"
+  | "idle";
 
 /** The reply status of a thread, from its messages (oldest first). */
 export function useReplyStatus(messages: ThreadMessage[]): ReplyStatus {
@@ -21,7 +28,13 @@ export function useReplyStatus(messages: ThreadMessage[]): ReplyStatus {
   // goes by the prompt's id, not its key. Regenerate saves the prompt again
   // with the same key and a new id, and the new prompt gets the full wait.
   const waitingPromptId = last?.role === "user" ? last.id : null;
-  const timedOut = useTimedOut(waitingPromptId, REPLY_TIMEOUT_MS);
+  // A reply waiting to continue after its action cards waits by its own id.
+  const continuingReplyId =
+    last?.role === "assistant" && last.metadata?.continuing ? last.id : null;
+  const timedOut = useTimedOut(
+    waitingPromptId ?? continuingReplyId,
+    REPLY_TIMEOUT_MS,
+  );
 
   // A stopped turn is over as soon as the user presses Stop, even if the
   // server is still finishing the reply.
@@ -30,6 +43,9 @@ export function useReplyStatus(messages: ThreadMessage[]): ReplyStatus {
   if (waitingPromptId !== null) return timedOut ? "timedOut" : "waiting";
   if (last?.status === "pending" || last?.status === "streaming") {
     return "streaming";
+  }
+  if (continuingReplyId !== null) {
+    return timedOut ? "timedOut" : "continuing";
   }
   return "idle";
 }
