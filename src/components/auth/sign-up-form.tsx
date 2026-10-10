@@ -5,6 +5,7 @@ import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
+import { useTransition } from "react";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const formSchema = z.object({
 
 export function SignUpForm() {
   const router = useRouter();
+  const [navigating, startNavigation] = useTransition();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,7 +46,9 @@ export function SignUpForm() {
     },
   });
   
-  const pending = form.formState.isSubmitting || form.formState.isSubmitSuccessful;
+  // `navigating` clears when the redirect settles, so a bounced redirect
+  // leaves the form usable.
+  const pending = form.formState.isSubmitting || navigating;
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     const { error } = await authClient.signUp.email(data);
@@ -54,8 +58,10 @@ export function SignUpForm() {
       });
       return;
     }
-    router.replace("/chat");
-    router.refresh();
+    startNavigation(() => {
+      router.replace("/chat");
+      router.refresh();
+    });
   }
 
   return (

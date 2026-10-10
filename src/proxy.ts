@@ -2,6 +2,7 @@ import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth-server";
 
+// The auth pages are checked here only, not again in their page.tsx.
 const AUTH_PAGES = ["/sign-in", "/sign-up"];
 
 export async function proxy(request: NextRequest) {
@@ -16,5 +17,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/sign-in", "/sign-up", "/chat", "/c/:path*"],
+  matcher: ["/sign-in", "/sign-up", "/chat", "/c/:path*", "/connectors"],
 };

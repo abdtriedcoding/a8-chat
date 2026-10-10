@@ -16,6 +16,9 @@ const app = defineApp({
     // Base64-encoded 32-byte key that encrypts connection tokens. Generate
     // one with `openssl rand -base64 32`.
     CONNECTION_ENCRYPTION_KEY: v.string(),
+    // Optional. Comma-separated origins besides SITE_URL that may call the
+    // auth API, such as a preview or staging domain.
+    TRUSTED_ORIGINS: v.optional(v.string()),
   },
 });
 

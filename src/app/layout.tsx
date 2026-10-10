@@ -4,9 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getToken } from "@/lib/auth-server";
 import { cn } from "@/lib/utils";
-import { ConvexClientProvider } from "./ConvexClientProvider";
 
 const rubik = Rubik({
   variable: "--font-sans",
@@ -23,8 +21,7 @@ export const metadata: Metadata = {
   description: "Open-source AI workspace that gets work done across your apps",
 };
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const token = await getToken();
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // next-themes sets the theme class on <html> before React hydrates.
     <html
@@ -39,9 +36,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
-          <ConvexClientProvider initialToken={token}>
-            <TooltipProvider>{children}</TooltipProvider>
-          </ConvexClientProvider>
+          <TooltipProvider>{children}</TooltipProvider>
           <Toaster />
         </ThemeProvider>
       </body>
