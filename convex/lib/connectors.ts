@@ -103,6 +103,31 @@ export const CONNECTORS: Connector[] = [
     ],
     accountLabel: { from: "tokenResponse", field: "workspace_name" },
   },
+  {
+    id: "linear",
+    name: "Linear",
+    handle: "linear",
+    logo: "/connectors/linear.svg",
+    description: "Find, create and update Linear issues, and comment on them.",
+    examplePrompt: "@linear list my open issues, highest priority first",
+    mcpServerUrl: "https://mcp.linear.app/mcp",
+    pinnedOrigins: ["https://mcp.linear.app"],
+    signIn: { kind: "dynamicRegistration" },
+    toolAllowlist: [
+      { name: "list_issues", kind: "read", label: "Searching Linear issues" },
+      { name: "get_issue", kind: "read", label: "Reading a Linear issue" },
+      { name: "list_comments", kind: "read", label: "Reading Linear comments" },
+      { name: "list_projects", kind: "read", label: "Finding Linear projects" },
+      { name: "list_teams", kind: "read", label: "Finding Linear teams" },
+      { name: "list_users", kind: "read", label: "Finding Linear users" },
+      { name: "list_issue_statuses", kind: "read", label: "Finding Linear statuses" },
+      { name: "list_issue_labels", kind: "read", label: "Finding Linear labels" },
+      { name: "get_workspace", kind: "read", label: "Reading the Linear workspace" },
+      { name: "save_issue", kind: "action", label: "Saving a Linear issue" },
+      { name: "save_comment", kind: "action", label: "Commenting in Linear" },
+    ],
+    accountLabel: { from: "tool", tool: "get_workspace", field: "name" },
+  },
 ];
 
 /**
