@@ -23,6 +23,7 @@ import type * as lib_connectionTokens from "../lib/connectionTokens.js";
 import type * as lib_connectorAuth from "../lib/connectorAuth.js";
 import type * as lib_connectorToolList from "../lib/connectorToolList.js";
 import type * as lib_connectorTools from "../lib/connectorTools.js";
+import type * as lib_connectorView from "../lib/connectorView.js";
 import type * as lib_connectors from "../lib/connectors.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as lib_instructions from "../lib/instructions.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   "lib/connectorAuth": typeof lib_connectorAuth;
   "lib/connectorToolList": typeof lib_connectorToolList;
   "lib/connectorTools": typeof lib_connectorTools;
+  "lib/connectorView": typeof lib_connectorView;
   "lib/connectors": typeof lib_connectors;
   "lib/encryption": typeof lib_encryption;
   "lib/instructions": typeof lib_instructions;

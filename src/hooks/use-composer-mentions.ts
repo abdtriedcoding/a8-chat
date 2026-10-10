@@ -8,10 +8,20 @@ import {
 import { flushSync } from "react-dom";
 import { api } from "../../convex/_generated/api";
 import type { ConnectorStatus } from "../../convex/connectors";
-import { findMentions, MENTION_START } from "../../convex/lib/connectors";
+import {
+  CONNECTOR_VIEWS,
+  findMentions,
+  MENTION_START,
+  type ConnectorView,
+} from "../../convex/lib/connectorView";
 
 /** The @ word the caret is in: where it starts and ends, and what follows @. */
 type MentionQuery = { start: number; end: number; query: string };
+
+/** A catalog connector with the user's status for it. */
+export type MentionOption = ConnectorView & {
+  status: ConnectorStatus["status"];
+};
 
 /**
  * The composer's @ mentions. Typing @ opens a menu of every connector,
@@ -32,7 +42,8 @@ export function useComposerMentions({
   setText: (text: string) => void;
 }) {
   const { isLoading } = useConvexAuth();
-  const connectors = useQuery(api.connectors.list, isLoading ? "skip" : {});
+  const statuses = useQuery(api.connectors.list, isLoading ? "skip" : {});
+  const connectors = statuses && withStatus(statuses);
   const [mention, setMention] = useState<MentionQuery>();
   // The start of a mention Esc closed, so its menu stays closed while the
   // user keeps typing it.
@@ -80,7 +91,7 @@ export function useComposerMentions({
     syncCaret(event.currentTarget);
   }
 
-  function pick(connector: ConnectorStatus) {
+  function pick(connector: MentionOption) {
     if (!mention) return;
     const before = text.slice(0, mention.start);
     const after = text.slice(mention.end);
@@ -169,15 +180,24 @@ function mentionQueryAt(text: string, caret: number): MentionQuery | undefined {
   };
 }
 
+/** Every catalog connector, in catalog order, with the user's status. */
+function withStatus(statuses: ConnectorStatus[]): MentionOption[] {
+  return CONNECTOR_VIEWS.map((connector) => ({
+    ...connector,
+    status:
+      statuses.find(({ id }) => id === connector.id)?.status ?? "disconnected",
+  }));
+}
+
 /**
  * The connectors whose handle or name contains the query. Ones with a
  * connection come first, as on the Connectors page, and each group keeps
  * catalog order.
  */
 function menuOptions(
-  connectors: ConnectorStatus[],
+  connectors: MentionOption[],
   query: string,
-): ConnectorStatus[] {
+): MentionOption[] {
   const lowered = query.toLowerCase();
   const matches = connectors.filter(
     ({ handle, name }) =>

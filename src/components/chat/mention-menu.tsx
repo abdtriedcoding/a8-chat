@@ -8,9 +8,9 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
-import type { ConnectorStatus } from "../../../convex/connectors";
+import type { MentionOption } from "@/hooks/use-composer-mentions";
 
-const STATUS_LABELS: Record<ConnectorStatus["status"], string | undefined> = {
+const STATUS_LABELS: Record<MentionOption["status"], string | undefined> = {
   connected: undefined,
   needs_reconnect: "Needs reconnecting",
   disconnected: "Not connected",
@@ -27,10 +27,10 @@ export function MentionMenu({
   onSelectedChange,
   onPick,
 }: {
-  options: ConnectorStatus[];
+  options: MentionOption[];
   selectedId: string;
   onSelectedChange: (id: string) => void;
-  onPick: (connector: ConnectorStatus) => void;
+  onPick: (connector: MentionOption) => void;
 }) {
   return (
     <Command

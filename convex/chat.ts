@@ -39,7 +39,7 @@ import {
   createConnectorTools,
   type ConnectorTools,
 } from "./lib/connectorTools";
-import { findMentions } from "./lib/connectors";
+import { findMentions } from "./lib/connectorView";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";

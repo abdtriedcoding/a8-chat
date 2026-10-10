@@ -31,11 +31,11 @@ import { createConnectorClient } from "./connectorAuth";
 import type { McpTool } from "./connectorToolList";
 import {
   findConnector,
-  modelToolName,
   ReconnectError,
   type Connector,
   type ConnectorTool,
 } from "./connectors";
+import { modelToolName } from "./connectorView";
 import { estimateToolTokens, type ConnectorToolGroup } from "./toolLoading";
 
 /** The most of a tool result the model sees, in UTF-8 bytes. */
