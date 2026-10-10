@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "probe": "bun scripts/probe-connector.ts",
     "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p convex"
   },
   "dependencies": {
