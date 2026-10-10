@@ -555,17 +555,10 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     console.log(`${ok ? "ok  " : "FAIL"}  ${line}`);
   };
 
-  const { signIn } = connector;
-  if (signIn.kind === "dynamicRegistration") {
-    report(
-      findings.registrationEndpoint !== undefined,
-      `dynamic registration: the server has ${findings.registrationEndpoint ? "a" : "no"} registration endpoint`,
-    );
-  } else {
-    console.log(
-      `      pre-registered client from ${signIn.clientIdEnvVar} and ${signIn.clientSecretEnvVar}`,
-    );
-  }
+  report(
+    findings.registrationEndpoint !== undefined,
+    `dynamic registration: the server has ${findings.registrationEndpoint ? "a" : "no"} registration endpoint`,
+  );
 
   const pinned = new Set(
     connector.pinnedOrigins.map((url) => new URL(url).origin),

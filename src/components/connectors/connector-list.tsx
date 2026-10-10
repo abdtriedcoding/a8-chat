@@ -17,6 +17,7 @@ import type {
 } from "../../../convex/connectors";
 import {
   CONNECTORS,
+  connectorHandle,
   findConnector,
   type ConnectError,
   type Connector,
@@ -134,9 +135,9 @@ export function ConnectorList({
 function matchingConnectors(search: string): Connector[] {
   const query = search.trim().replace(/^@/, "").toLowerCase();
   return CONNECTORS.filter(
-    ({ name, handle }) =>
-      name.toLowerCase().includes(query) ||
-      handle.toLowerCase().includes(query),
+    (connector) =>
+      connector.name.toLowerCase().includes(query) ||
+      connectorHandle(connector).toLowerCase().includes(query),
   );
 }
 

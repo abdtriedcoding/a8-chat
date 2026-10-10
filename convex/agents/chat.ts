@@ -5,7 +5,6 @@ import type { ToolSet } from "ai";
 import { components } from "../_generated/api";
 import { env } from "../_generated/server";
 import { canSearchWeb } from "../lib/searchWeb";
-import { supportsToolSearch } from "../lib/toolLoading";
 import { webSearch } from "./webSearch";
 
 /**
@@ -22,17 +21,21 @@ export const nativeTools: ToolSet = canSearchWeb ? { webSearch } : {};
 
 const anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
-/** The model that writes replies and thread titles. */
+/**
+ * The model that writes replies and thread titles. Replies need a model
+ * with Anthropic's tool search (toolSearch). Haiku 4.5 isn't in the AI
+ * SDK's list, but the tool search spike
+ * (docs/connectors/tool-search-spike.md) found it searches well when the
+ * system prompt names the user's connections.
+ */
 export const chatModel = anthropic("claude-haiku-4-5-20251001");
 
 /**
  * The tool a reply that defers connector tools offers for finding them
- * (ADR 0006), or undefined when the model can't search tools. It's
- * Anthropic's native BM25 search, which matches plain-language queries.
+ * (ADR 0006). It's Anthropic's native BM25 search, which matches
+ * plain-language queries.
  */
-export const toolSearch = supportsToolSearch(chatModel.modelId)
-  ? anthropic.tools.toolSearchBm25_20251119()
-  : undefined;
+export const toolSearch = anthropic.tools.toolSearchBm25_20251119();
 
 /** Logs a model call's token usage. Replies and titles both log here. */
 export const logUsage: UsageHandler = async (

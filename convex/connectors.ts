@@ -48,6 +48,7 @@ import {
 import {
   CONNECT_ERRORS,
   CONNECTORS,
+  connectorHandle,
   findConnector,
   type ConnectError,
   type Connector,
@@ -112,7 +113,7 @@ export const list = query({
         return {
           id: connector.id,
           name: connector.name,
-          handle: connector.handle,
+          handle: connectorHandle(connector),
           logo: connector.logo,
           description: connector.description,
           examplePrompt: connector.examplePrompt,

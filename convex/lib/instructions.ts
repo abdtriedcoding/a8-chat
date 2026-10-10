@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import { CONNECTORS, type Connector } from "./connectors";
+import { CONNECTORS, connectorHandle, type Connector } from "./connectors";
 import { TOOL_SEARCH_KEY, type ToolLoading } from "./toolLoading";
 
 const INSTRUCTIONS =
@@ -29,7 +29,6 @@ const WEB_SEARCH =
   "If the tool says web search is off for today, answer from what you know " +
   "and tell the user that web search is off for today.";
 
-// Only added when the catalog has connectors (convex/lib/connectors.ts).
 const CONNECTOR_GUIDE =
   "Connectors link a8 to the user's apps. A tool named <connector>__<tool>, " +
   "like notion__search, works in that connector's app. When a question is " +
@@ -91,21 +90,14 @@ export function replyInstructions({
     INSTRUCTIONS,
     FORMATTING,
     ...(canSearchWeb ? [WEB_SEARCH] : []),
-    ...(CONNECTORS.length > 0
-      ? [
-          [
-            CONNECTOR_GUIDE,
-            connectorStatusLine(connections),
-            ...(loading === "search" ? [TOOL_SEARCH] : []),
-            ...(loading === "mentions"
-              ? [mentionsOnlyInstruction(connections)]
-              : []),
-            ...mentioned.map((connector) =>
-              mentionInstruction(connector, connections),
-            ),
-          ].join("\n"),
-        ]
-      : []),
+    [
+      CONNECTOR_GUIDE,
+      connectorStatusLine(connections),
+      ...(loading === "search" ? [TOOL_SEARCH] : []),
+      ...mentioned.map((connector) =>
+        mentionInstruction(connector, connections),
+      ),
+    ].join("\n"),
     dateInstruction(timeZone, now),
   ].join("\n\n");
 }
@@ -122,29 +114,11 @@ function mentionInstruction(
   const status = connections.find(
     (row) => row.connectorId === connector.id,
   )?.status;
-  const mention = `The user mentioned @${connector.handle} in their prompt`;
+  const mention = `The user mentioned @${connectorHandle(connector)} in their prompt`;
   if (status === "connected") {
     return `${mention}, so answer it with ${connector.name}'s tools. Use them before web search or your own knowledge.`;
   }
   return `${mention}, but ${connector.name} ${status === "needs_reconnect" ? "needs reconnecting" : "isn't connected"}. Tell them to fix that on the Connectors page.`;
-}
-
-/**
- * Tells the model only mentioned connectors' tools are loaded, and how the
- * user mentions the others. For a model without tool search, above the
- * tool budget (ADR 0006).
- */
-function mentionsOnlyInstruction(connections: ConnectionSummary[]): string {
-  const handles = CONNECTORS.filter((connector) =>
-    connections.some(
-      (row) => row.connectorId === connector.id && row.status === "connected",
-    ),
-  ).map((connector) => `@${connector.handle}`);
-  return (
-    "Only the tools of connectors the user mentions are loaded in this " +
-    "reply. If the question needs another connected app, ask the user to " +
-    `mention it and send the question again. Their connected apps' mentions are ${handles.join(", ")}.`
-  );
 }
 
 /**

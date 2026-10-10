@@ -20,7 +20,10 @@ import { useConnectConnector } from "@/hooks/use-connect-connector";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";
-import type { Connector } from "../../../convex/lib/connectors";
+import {
+  connectorHandle,
+  type Connector,
+} from "../../../convex/lib/connectors";
 
 /**
  * One catalog entry on the Connectors page. Turning the toggle on sends the
@@ -38,8 +41,8 @@ export function ConnectorCard({
   connector: Connector;
   connection: ConnectorStatus | undefined;
 }) {
-  const { id, name, handle, logo, description, examplePrompt, cardNote } =
-    connector;
+  const { id, name, logo, description, examplePrompt, cardNote } = connector;
+  const handle = connectorHandle(connector);
   const { connecting, startConnect } = useConnectConnector(id);
   const disconnect = useAction(api.connectors.disconnect);
   // connectedAt of the connection being disconnected. The toggle shows off
