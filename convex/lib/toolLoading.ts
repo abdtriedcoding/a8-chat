@@ -1,9 +1,8 @@
 // Which connector tools a reply loads (ADR 0005, ADR 0006). While the
 // user's connector tools fit TOOL_BUDGET_TOKENS, every tool loads. Above
-// it, the thread defers. Mentioned connectors load, and on a model with
-// tool search every other connector tool is sent deferred, for the model
-// to find with Anthropic's tool search. A model without tool search gets
-// only the mentioned connectors' tools.
+// it, the thread defers. Mentioned connectors load, and every other
+// connector tool is sent deferred, for the model to find with Anthropic's
+// tool search.
 
 import type { ModelMessage, StepResult, Tool, ToolSet } from "ai";
 import { findConnectorTool, type Connector } from "./connectors";
@@ -29,10 +28,8 @@ export const TOOL_SEARCH_KEY = "toolSearch";
  * How a reply offers connector tools:
  * - `all`: every tool loads.
  * - `search`: mentioned connectors load, and the rest are deferred.
- * - `mentions`: only mentioned connectors load, on a model without tool
- *   search.
  */
-export type ToolLoading = "all" | "search" | "mentions";
+export type ToolLoading = "all" | "search";
 
 /** One connection's tools in a reply. */
 export type ConnectorToolGroup = {
@@ -57,30 +54,12 @@ export function estimateToolTokens(definition: {
 }
 
 /**
- * Whether the model supports Anthropic's native tool search: Claude Opus,
- * Sonnet or Haiku 4.5 and later. Haiku 4.5 isn't in the AI SDK's list, but
- * the tool search spike (docs/connectors/tool-search-spike.md) found it
- * searches well when the system prompt names the user's connections.
- */
-export function supportsToolSearch(modelId: string): boolean {
-  const match = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?:-|$)/.exec(
-    modelId,
-  );
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2] ?? 0);
-  return major > 4 || (major === 4 && minor >= 5);
-}
-
-/**
  * The reply's tools. With `deferred` false, every connector tool loads,
- * the mentioned connectors' first. With `deferred` true and a `toolSearch`
- * tool, the first MAX_LOADED_MENTIONS mentioned connectors load, and every
- * other connector tool is sent deferred, its description starting with the
- * connector's name in brackets, so search can match terse names. Without a
- * `toolSearch` tool, every mentioned connector loads and the rest are left
- * out, so the model has each tool its instructions tell it to use. When no
- * connector is left over, loading is `all`. Native tools always load.
+ * the mentioned connectors' first. With `deferred` true, the first
+ * MAX_LOADED_MENTIONS mentioned connectors load, and every other connector
+ * tool is sent deferred with `toolSearch`, its description starting with
+ * the connector's name in brackets, so search can match terse names. When
+ * no connector is left over, loading is `all`. Native tools always load.
  */
 export function arrangeReplyTools({
   nativeTools,
@@ -93,7 +72,7 @@ export function arrangeReplyTools({
   groups: ConnectorToolGroup[];
   mentioned: Connector[];
   deferred: boolean;
-  toolSearch?: Tool;
+  toolSearch: Tool;
 }): { tools: ToolSet; loading: ToolLoading } {
   const isMentioned = (group: ConnectorToolGroup) =>
     mentioned.includes(group.connector);
@@ -110,13 +89,6 @@ export function arrangeReplyTools({
         ...toolsOf(otherGroups),
       },
       loading: "all",
-    };
-  }
-  if (!toolSearch) {
-    const tools = { ...toolsOf(mentionedGroups), ...nativeTools };
-    return {
-      tools,
-      loading: mentionedGroups.length === groups.length ? "all" : "mentions",
     };
   }
   const loaded = mentionedGroups.slice(0, MAX_LOADED_MENTIONS);

@@ -8,7 +8,6 @@ import {
   type OAuthClientProvider,
   type OAuthTokens,
 } from "@ai-sdk/mcp";
-import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { env, type ActionCtx } from "../_generated/server";
@@ -134,23 +133,21 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {
-    const { signIn } = this.connector;
-    if (signIn.kind === "preRegistered") {
-      const clientId = process.env[signIn.clientIdEnvVar];
-      const clientSecret = process.env[signIn.clientSecretEnvVar];
-      if (!clientId || !clientSecret) {
-        throw new ConvexError({
-          code: "MISCONFIGURED",
-          message: `${this.connector.name} needs ${signIn.clientIdEnvVar} and ${signIn.clientSecretEnvVar}. Ask whoever runs this a8 to set them.`,
-        });
-      }
-      return { client_id: clientId, client_secret: clientSecret };
-    }
     const client = await this.ctx.runQuery(
       internal.connectors.getConnectorClient,
       { connectorId: this.connector.id },
     );
     if (!client) return undefined;
+    // The vendor rejects a client whose secret expired, so a8 forgets it
+    // now. A sign-in then registers again, and a refresh needs a reconnect.
+    if (
+      client.encryptedClientSecret !== undefined &&
+      client.clientSecretExpiresAt &&
+      client.clientSecretExpiresAt * 1000 <= Date.now()
+    ) {
+      await forgetConnectorClient(this.ctx, this.connector);
+      return undefined;
+    }
     return {
       client_id: client.clientId,
       client_secret:
@@ -335,13 +332,13 @@ function labelAt(data: unknown, path: string): string | undefined {
 
 /**
  * Deletes the connector's client registration, so the next sign-in
- * registers again. Only for a client the vendor rejected.
+ * registers again. Only for a client the vendor rejected or whose secret
+ * expired.
  */
 export async function forgetConnectorClient(
   ctx: ActionCtx,
   connector: Connector,
 ) {
-  if (connector.signIn.kind !== "dynamicRegistration") return;
   await ctx.runMutation(internal.connectors.deleteConnectorClient, {
     connectorId: connector.id,
   });
@@ -428,9 +425,8 @@ export async function revokeConnection(
 
 /**
  * The authorization server the MCP server names in its protected resource
- * metadata (RFC 9728), or the MCP server's own origin if it names none. A
- * pre-registered client has no stored authorization server, so revocation
- * looks it up here.
+ * metadata (RFC 9728), or the MCP server's own origin if it names none. For
+ * a client stored without its authorization server.
  */
 async function findAuthorizationServer(
   fetchPinned: ReturnType<typeof pinnedFetch>,

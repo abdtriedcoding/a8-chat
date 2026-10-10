@@ -48,6 +48,7 @@ import {
 import {
   CONNECT_ERRORS,
   CONNECTORS,
+  connectorHandle,
   findConnector,
   type ConnectError,
   type Connector,
@@ -118,7 +119,7 @@ export const list = query({
         return {
           id: connector.id,
           name: connector.name,
-          handle: connector.handle,
+          handle: connectorHandle(connector),
           logo: connector.logo,
           description: connector.description,
           examplePrompt: connector.examplePrompt,
@@ -327,7 +328,7 @@ export const disconnect = action({
     }
     await ctx.runMutation(internal.connectors.deleteConnection, {
       connectionId: connection._id,
-      tokenVersion: connection.tokenVersion,
+      connectedAt: connection.connectedAt,
     });
     return { revoked };
   },
@@ -429,19 +430,21 @@ export const getConnection = internalQuery({
 });
 
 /**
- * Deletes the signed-in user's connection, unless its tokens changed since
- * `tokenVersion`. A reconnect from another tab during disconnect replaces
- * the row and bumps the version, and that new connection stays.
+ * Deletes the signed-in user's connection, unless it was replaced since the
+ * caller read it. A reconnect from another tab during disconnect replaces the
+ * row with a later `connectedAt`, and that new connection stays. A token
+ * refresh or a reply marking it as needing reconnecting keeps `connectedAt`,
+ * so neither stops the delete.
  */
 export const deleteConnection = internalMutation({
-  args: { connectionId: v.id("connections"), tokenVersion: v.number() },
+  args: { connectionId: v.id("connections"), connectedAt: v.number() },
   returns: v.null(),
-  handler: async (ctx, { connectionId, tokenVersion }) => {
+  handler: async (ctx, { connectionId, connectedAt }) => {
     const user = await requireUser(ctx);
     const connection = await ctx.db.get("connections", connectionId);
     if (
       connection?.userId === user._id &&
-      connection.tokenVersion === tokenVersion
+      connection.connectedAt === connectedAt
     ) {
       await ctx.db.delete("connections", connectionId);
     }
@@ -579,7 +582,9 @@ export const saveConnection = internalMutation({
       status: "connected" as const,
       tokenVersion: (existing?.tokenVersion ?? 0) + 1,
       toolListFetchedAt: now,
-      connectedAt: now,
+      // Always later than the replaced row's, even within one millisecond,
+      // so deleteConnection can tell a reconnect happened.
+      connectedAt: Math.max(now, (existing?.connectedAt ?? 0) + 1),
     };
     if (existing) {
       await ctx.db.replace("connections", existing._id, connection);
@@ -655,7 +660,7 @@ export const refreshToolList = internalAction({
     let token = await connectionAccessToken(ctx, connector, connection);
     if ("needsReconnect" in token) return null;
     let toolList = await listToolsWithToken(connector, token.accessToken);
-    if (toolList === null) {
+    if (toolList === 401) {
       // settleRefresh marks the connection if the vendor refuses the refresh.
       token = await connectionAccessToken(ctx, connector, token.tokens, {
         refused: true,
@@ -663,8 +668,8 @@ export const refreshToolList = internalAction({
       if ("needsReconnect" in token) return null;
       toolList = await listToolsWithToken(connector, token.accessToken);
     }
-    if (toolList === null) {
-      // The vendor refused a token a8 just refreshed.
+    if (typeof toolList === "number") {
+      // The vendor refused a token a8 just refreshed, or answered 403.
       await ctx.runMutation(internal.connectors.markNeedsReconnect, {
         connectionId,
         tokenVersion: token.tokens.tokenVersion,
@@ -786,7 +791,8 @@ export const settleRefresh = internalMutation({
 /**
  * Marks the connection as needing reconnecting, unless its tokens changed
  * since `tokenVersion`. A reply calls this when the vendor refuses a token
- * it just refreshed, and so does refreshToolList.
+ * it just refreshed or answers 403, and so does refreshToolList. a8 also
+ * calls it when it can't decrypt the access token.
  */
 export const markNeedsReconnect = internalMutation({
   args: { connectionId: v.id("connections"), tokenVersion: v.number() },
@@ -916,12 +922,12 @@ async function fetchToolList(
 
 /**
  * The connector's tool list (fetchToolList), read with `accessToken`.
- * Returns null if the vendor refuses the token with a 401.
+ * Returns the status if the vendor refuses the token with a 401 or 403.
  */
 async function listToolsWithToken(
   connector: Connector,
   accessToken: string,
-): Promise<string | null> {
+): Promise<string | 401 | 403> {
   try {
     const client = await createConnectorClient(connector, accessToken);
     try {
@@ -930,8 +936,10 @@ async function listToolsWithToken(
       await client.close();
     }
   } catch (error) {
-    if (MCPClientError.isInstance(error) && error.statusCode === 401) {
-      return null;
+    if (MCPClientError.isInstance(error)) {
+      if (error.statusCode === 401 || error.statusCode === 403) {
+        return error.statusCode;
+      }
     }
     throw error;
   }

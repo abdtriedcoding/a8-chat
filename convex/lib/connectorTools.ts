@@ -3,7 +3,8 @@
 // connection's cached tool list, so building them sends nothing to the
 // vendor. A connector's MCP client opens on the first call to one of its
 // tools in the reply, and the reply closes it when it ends. A call the
-// vendor refuses with a 401 refreshes the token and runs once more.
+// vendor refuses with a 401 refreshes the token and runs once more. A 403
+// means the connection needs reconnecting.
 
 import {
   MCPClientError,
@@ -31,7 +32,7 @@ import type { McpTool } from "./connectorToolList";
 import {
   findConnector,
   modelToolName,
-  needsReconnectError,
+  ReconnectError,
   type Connector,
   type ConnectorTool,
 } from "./connectors";
@@ -123,6 +124,7 @@ export async function createConnectorTools(
               options: { signal: abortSignal, timeout: TOOL_CALL_TIMEOUT_MS },
             });
           } catch (error) {
+            if (error instanceof ReconnectError) throw error;
             throw new Error(
               await callFailedMessage(ctx, connector, connection, error),
             );
@@ -159,12 +161,15 @@ type CallToolRequest = Parameters<MCPClient["callTool"]>[0];
 /** An MCP client, and the version of the tokens it sends. */
 type VersionedClient = { tokenVersion: number; mcp: MCPClient };
 
-/** What a call throws once its connection needs reconnecting. */
-class NeedsReconnectError extends Error {}
-
-/** Thrown when the vendor refuses the access token at `tokenVersion`. */
+/**
+ * Thrown when the vendor refuses the access token at `tokenVersion`, with
+ * a 401 or a 403.
+ */
 class RefusedTokenError extends Error {
-  constructor(readonly tokenVersion: number) {
+  constructor(
+    readonly tokenVersion: number,
+    readonly status: 401 | 403,
+  ) {
     super("The vendor refused the access token.");
   }
 }
@@ -172,10 +177,10 @@ class RefusedTokenError extends Error {
 /**
  * One connection's MCP client in a reply. It opens on the first call, with
  * the access token refreshed first if it's about to expire. When the vendor
- * refuses the token, it refreshes it and tries the call once more. If the
- * refresh is refused, or the vendor refuses the new token too, the
- * connection needs reconnecting, and every later call throws
- * NeedsReconnectError. If the vendor couldn't be reached for the refresh,
+ * refuses the token with a 401, it refreshes it and tries the call once
+ * more. If the refresh is refused, the vendor refuses the new token too, or
+ * it answers 403, the connection needs reconnecting, and every later call
+ * throws ReconnectError. If the vendor couldn't be reached for the refresh,
  * every later call in the reply fails without trying it again.
  */
 class ReplyConnection {
@@ -199,16 +204,16 @@ class ReplyConnection {
       return await this.callOnce(request);
     } catch (error) {
       if (!(error instanceof RefusedTokenError)) throw error;
+      // A refresh keeps the token's access, so it can't fix a 403.
+      if (error.status === 403) {
+        throw await this.markNeedsReconnect(error.tokenVersion);
+      }
       try {
         return await this.callOnce(request, error.tokenVersion);
       } catch (retryError) {
         if (!(retryError instanceof RefusedTokenError)) throw retryError;
         // The vendor refused a token a8 just refreshed.
-        await this.ctx.runMutation(internal.connectors.markNeedsReconnect, {
-          connectionId: this.tokens._id,
-          tokenVersion: retryError.tokenVersion,
-        });
-        throw this.giveUp();
+        throw await this.markNeedsReconnect(retryError.tokenVersion);
       }
     }
   }
@@ -248,7 +253,7 @@ class ReplyConnection {
    * failed, every later call throws without trying again.
    */
   private async connect(refusedVersion?: number): Promise<VersionedClient> {
-    if (this.needsReconnect) throw new NeedsReconnectError();
+    if (this.needsReconnect) throw new ReconnectError(this.connector);
     if (this.tokenFailed) {
       throw new Error(
         `Getting the ${this.connector.name} access token failed earlier in this reply.`,
@@ -282,10 +287,24 @@ class ReplyConnection {
     }
   }
 
-  /** Marks the connection as needing reconnecting for the rest of the reply. */
-  private giveUp(): NeedsReconnectError {
+  /**
+   * Marks the connection as needing reconnecting, unless its tokens changed
+   * since `tokenVersion`, and gives up on it for the rest of the reply.
+   */
+  private async markNeedsReconnect(
+    tokenVersion: number,
+  ): Promise<ReconnectError> {
+    await this.ctx.runMutation(internal.connectors.markNeedsReconnect, {
+      connectionId: this.tokens._id,
+      tokenVersion,
+    });
+    return this.giveUp();
+  }
+
+  /** Gives up on the connection for the rest of the reply. */
+  private giveUp(): ReconnectError {
     this.needsReconnect = true;
-    return new NeedsReconnectError();
+    return new ReconnectError(this.connector);
   }
 
   async close() {
@@ -297,11 +316,13 @@ class ReplyConnection {
 
 /**
  * RefusedTokenError if the vendor refused the access token at
- * `tokenVersion` with a 401, or else the error as it is.
+ * `tokenVersion` with a 401 or a 403, or else the error as it is.
  */
 function asRefusedToken(error: unknown, tokenVersion: number): unknown {
-  return MCPClientError.isInstance(error) && error.statusCode === 401
-    ? new RefusedTokenError(tokenVersion)
+  if (!MCPClientError.isInstance(error)) return error;
+  const status = error.statusCode;
+  return status === 401 || status === 403
+    ? new RefusedTokenError(tokenVersion, status)
     : error;
 }
 
@@ -370,13 +391,6 @@ async function callFailedMessage(
   connection: Doc<"connections">,
   error: unknown,
 ): Promise<string> {
-  if (error instanceof NeedsReconnectError) {
-    return needsReconnectError(connector);
-  }
-  const status = MCPClientError.isInstance(error) ? error.statusCode : undefined;
-  if (status === 403) {
-    return `${connector.name} refused a8's access. Tell the user ${connector.name} needs reconnecting on the Connectors page.`;
-  }
   const message = error instanceof Error ? error.message : String(error);
   if (await refreshIfUnknownTool(ctx, connection, message)) {
     return `${connector.name} no longer has this tool. Answer without it.`;

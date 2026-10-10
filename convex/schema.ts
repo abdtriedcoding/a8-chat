@@ -20,6 +20,7 @@ export const vConnectorClient = v.object({
   clientId: v.string(),
   encryptedClientSecret: v.optional(v.string()),
   clientIdIssuedAt: v.optional(v.number()),
+  // Seconds since the epoch (RFC 7591). 0 means the secret never expires.
   clientSecretExpiresAt: v.optional(v.number()),
   issuer: v.optional(v.string()),
   authorizationServerUrl: v.optional(v.string()),
@@ -102,10 +103,6 @@ export default defineSchema({
     connectorId: v.string(),
     // finishConnect checks that the code exchange goes to this server.
     authorizationServer: vAuthorizationServer,
-    // No longer written. Rows saved before the callback stopped storing the
-    // code may still have these. Remove them once those rows have expired.
-    code: v.optional(v.string()),
-    callbackIssuer: v.optional(v.string()),
     expiresAt: v.number(),
   })
     .index("by_state", ["state"])
@@ -114,7 +111,8 @@ export default defineSchema({
   // The OAuth client a8 registered with a connector's authorization server.
   // One row per connector per deployment, shared by every user. Notion
   // orphans earlier grants when a client registers again, so a8 only
-  // registers again after the vendor rejects this client.
+  // registers again after the vendor rejects this client or its secret
+  // expires.
   connectorClients: defineTable(vConnectorClient).index("by_connectorId", [
     "connectorId",
   ]),

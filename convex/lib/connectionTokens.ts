@@ -53,8 +53,9 @@ export type AccessTokenResult =
  * The connection's access token, and the tokens it came from. It's
  * refreshed first when it expires within 5 minutes, or when `refused` is
  * set because the vendor just refused it. Returns `needsReconnect` when the
- * vendor refuses the refresh or the connection needs reconnecting. Throws
- * if the vendor couldn't be reached.
+ * vendor refuses the refresh or the connection needs reconnecting. Tokens
+ * a8 can't decrypt mark the connection as needing reconnecting. Throws if
+ * the vendor couldn't be reached.
  */
 export async function connectionAccessToken(
   ctx: ActionCtx,
@@ -68,10 +69,30 @@ export async function connectionAccessToken(
       ? await refresh(ctx, connector, key, tokens)
       : tokens;
   if (!fresh) return { needsReconnect: true };
-  return {
-    accessToken: await decryptSecret(key, fresh.encryptedAccessToken),
-    tokens: fresh,
-  };
+  const accessToken = await decryptOrUndefined(key, fresh.encryptedAccessToken);
+  if (accessToken === undefined) {
+    await ctx.runMutation(internal.connectors.markNeedsReconnect, {
+      connectionId: fresh._id,
+      tokenVersion: fresh.tokenVersion,
+    });
+    return { needsReconnect: true };
+  }
+  return { accessToken, tokens: fresh };
+}
+
+/**
+ * The secret decrypted, or undefined if a8 can't decrypt it, like after
+ * CONNECTION_ENCRYPTION_KEY changed.
+ */
+async function decryptOrUndefined(
+  key: CryptoKey,
+  stored: string,
+): Promise<string | undefined> {
+  try {
+    return await decryptSecret(key, stored);
+  } catch {
+    return undefined;
+  }
 }
 
 function isNearExpiry(tokens: ConnectionTokens): boolean {
@@ -144,10 +165,10 @@ async function refresh(
 
 /**
  * Trades the refresh token for new tokens at the vendor. Returns null if
- * the vendor refused the refresh token or a8's client, or a8 has neither a
- * refresh token nor a client, so the user has to sign in again. Throws if
- * the vendor couldn't be reached. Only call it while holding the refresh
- * lease.
+ * the vendor refused the refresh token or a8's client, or a8 has no client
+ * or no refresh token it can decrypt, so the user has to sign in again.
+ * Throws if the vendor couldn't be reached. Only call it while holding the
+ * refresh lease.
  */
 async function requestTokens(
   ctx: ActionCtx,
@@ -155,13 +176,12 @@ async function requestTokens(
   key: CryptoKey,
   tokens: ConnectionTokens,
 ): Promise<OAuthTokens | null> {
-  if (tokens.encryptedRefreshToken === undefined) return null;
-  const provider = new RefreshOAuthProvider(
-    ctx,
-    connector,
-    key,
-    await decryptSecret(key, tokens.encryptedRefreshToken),
-  );
+  const refreshToken =
+    tokens.encryptedRefreshToken === undefined
+      ? undefined
+      : await decryptOrUndefined(key, tokens.encryptedRefreshToken);
+  if (refreshToken === undefined) return null;
+  const provider = new RefreshOAuthProvider(ctx, connector, key, refreshToken);
   // Without a client, auth() would register one, and Notion orphans the
   // grants of earlier clients. The refresh token belongs to the lost client
   // anyway.
