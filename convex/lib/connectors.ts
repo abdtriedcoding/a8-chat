@@ -128,6 +128,31 @@ export const CONNECTORS: Connector[] = [
     ],
     accountLabel: { from: "tool", tool: "get_workspace", field: "name" },
   },
+  {
+    id: "todoist",
+    name: "Todoist",
+    handle: "todoist",
+    logo: "/connectors/todoist.svg",
+    description: "Find, add and complete Todoist tasks.",
+    examplePrompt: "@todoist what's due today?",
+    mcpServerUrl: "https://ai.todoist.net/mcp",
+    pinnedOrigins: ["https://ai.todoist.net", "https://todoist.com"],
+    signIn: { kind: "dynamicRegistration" },
+    toolAllowlist: [
+      { name: "find-tasks", kind: "read", label: "Searching Todoist tasks" },
+      { name: "find-tasks-by-date", kind: "read", label: "Finding Todoist tasks by date" },
+      { name: "find-completed-tasks", kind: "read", label: "Finding completed Todoist tasks" },
+      { name: "find-projects", kind: "read", label: "Finding Todoist projects" },
+      { name: "find-sections", kind: "read", label: "Finding Todoist sections" },
+      { name: "find-labels", kind: "read", label: "Finding Todoist labels" },
+      { name: "find-comments", kind: "read", label: "Reading Todoist comments" },
+      { name: "get-overview", kind: "read", label: "Reading a Todoist project overview" },
+      { name: "user-info", kind: "read", label: "Reading the Todoist account" },
+      { name: "add-tasks", kind: "action", label: "Adding Todoist tasks" },
+      { name: "complete-tasks", kind: "action", label: "Completing Todoist tasks" },
+    ],
+    accountLabel: { from: "tool", tool: "user-info", field: "email" },
+  },
 ];
 
 /**
