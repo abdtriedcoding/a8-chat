@@ -1,12 +1,25 @@
-// What a8 stores of an MCP server's tool list, on the connection. Vendor
-// lists go to the model as tool definitions, so a8 checks them here first.
-// One vendor's long description or odd schema mustn't break every reply,
-// and a long list mustn't pass Convex's 1 MB document limit.
+// What a8 stores of an MCP server's tool list, in the connection's
+// connectionToolLists row. Vendor lists go to the model as tool
+// definitions, so a8 checks them here first. One vendor's long description
+// or odd schema mustn't break every reply, and a long list mustn't pass
+// Convex's 1 MB document limit.
 
 import type { ListToolsResult } from "@ai-sdk/mcp";
-import type { Connector } from "./connectors";
+import { modelToolName, type Connector } from "./connectors";
+import { estimateToolTokens } from "./toolLoading";
 
 export type McpTool = ListToolsResult["tools"][number];
+
+/** A tool list as a8 stores it. */
+export type StoredToolList = {
+  /**
+   * The tools as JSON. Stored as a string because JSON Schema keys like
+   * "$schema" aren't valid Convex field names.
+   */
+  tools: string;
+  /** About how many tokens the tools' definitions take (estimateToolTokens). */
+  estimatedTokens: number;
+};
 
 /** The longest description a8 stores, in characters. */
 const MAX_DESCRIPTION_CHARS = 2_048;
@@ -18,38 +31,57 @@ const MAX_TOOLS = 100;
 const MAX_TOOL_LIST_BYTES = 500_000;
 
 /**
- * The server's tools as a8 stores them, as a JSON string. Each tool keeps
+ * The connector's allowlisted tools from the server's list, as a8 stores
+ * them (capToolList). A connector with no allowlist, like a custom
+ * connector (#124), would pass every tool to capToolList instead.
+ */
+export function storedToolList(
+  connector: Connector,
+  tools: McpTool[],
+): StoredToolList {
+  const allowlisted = new Set(connector.toolAllowlist.map((tool) => tool.name));
+  return capToolList(
+    connector,
+    tools.filter((tool) => allowlisted.has(tool.name)),
+  );
+}
+
+/**
+ * The tools as a8 stores them, with their token estimate. Each tool keeps
  * its name, description, input schema and annotations. a8 cuts each
  * description to MAX_DESCRIPTION_CHARS and makes each input schema an
  * object schema (toObjectSchema). The list keeps at most MAX_TOOLS tools
- * and MAX_TOOL_LIST_BYTES bytes, with the allowlisted tools first, so the
- * caps drop other tools before them. a8 skips a tool that doesn't fit.
+ * and MAX_TOOL_LIST_BYTES bytes, in the server's order. a8 skips a tool
+ * that doesn't fit.
  */
-export function storedToolList(connector: Connector, tools: McpTool[]): string {
-  const allowlisted = new Set(connector.toolAllowlist.map((tool) => tool.name));
-  const ordered = [
-    ...tools.filter((tool) => allowlisted.has(tool.name)),
-    ...tools.filter((tool) => !allowlisted.has(tool.name)),
-  ];
+function capToolList(connector: Connector, tools: McpTool[]): StoredToolList {
   const encoder = new TextEncoder();
   const kept: string[] = [];
+  let estimatedTokens = 0;
   // The list starts with the two bytes of its brackets.
   let bytes = 2;
-  for (const tool of ordered) {
+  for (const tool of tools) {
     if (kept.length === MAX_TOOLS) break;
-    const json = JSON.stringify(storedTool(tool));
+    const stored = storedTool(tool);
+    const json = JSON.stringify(stored);
     // Every tool but the first adds a comma.
     const size = encoder.encode(json).length + (kept.length > 0 ? 1 : 0);
     if (bytes + size > MAX_TOOL_LIST_BYTES) continue;
     kept.push(json);
     bytes += size;
+    // The same definition a reply sends the model (createConnectorTools).
+    estimatedTokens += estimateToolTokens({
+      name: modelToolName(connector, stored.name),
+      description: stored.description,
+      inputSchema: stored.inputSchema,
+    });
   }
   if (kept.length < tools.length) {
     console.warn(
       `Stored ${kept.length} of ${connector.name}'s ${tools.length} tools, ${bytes} bytes.`,
     );
   }
-  return `[${kept.join(",")}]`;
+  return { tools: `[${kept.join(",")}]`, estimatedTokens };
 }
 
 function storedTool(tool: McpTool): McpTool {

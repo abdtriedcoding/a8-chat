@@ -85,15 +85,29 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
-    // The MCP server's tools/list result, as JSON. Stored as a string
-    // because JSON Schema keys like "$schema" aren't valid Convex field names.
-    toolList: v.string(),
-    toolListFetchedAt: v.number(),
-    // When a reply last scheduled refreshToolList. Until the cooldown ends,
-    // requestToolListRefresh schedules no other refresh.
+    // Moved to connectionToolLists. migrateToolLists (convex/toolLists.ts)
+    // moves each row's list and unsets these, and then they go.
+    toolList: v.optional(v.string()),
+    toolListFetchedAt: v.optional(v.number()),
     toolListRefreshRequestedAt: v.optional(v.number()),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
+  // The tools a8 stores for one connection (convex/toolLists.ts), apart from
+  // the connection so a token refresh doesn't rewrite them. One row per
+  // connection. saveConnection writes it, a reply refreshes it when it's a
+  // day old, and deleting the connection deletes it.
+  connectionToolLists: defineTable({
+    connectionId: v.id("connections"),
+    // The allowlisted tools, as JSON (lib/connectorToolList.ts).
+    tools: v.string(),
+    // About how many tokens the tools' definitions take, counted when they
+    // were fetched, so a reply doesn't measure them.
+    estimatedTokens: v.number(),
+    fetchedAt: v.number(),
+    // When a reply last scheduled refreshToolList. Until the cooldown ends,
+    // requestToolListRefresh schedules no other refresh.
+    refreshRequestedAt: v.optional(v.number()),
+  }).index("by_connectionId", ["connectionId"]),
   // One row per sign-in in progress (convex/connectors.ts). finishConnect
   // deletes the row. cleanUpExpiredConnects deletes the ones nobody finished.
   pendingConnects: defineTable({

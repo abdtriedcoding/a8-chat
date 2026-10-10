@@ -14,10 +14,9 @@
 // URL, the victim's session doesn't match the starter. That fails the
 // sign-in and deletes it, and the attacker never sees the code.
 
-import { auth, MCPClientError, type MCPClient } from "@ai-sdk/mcp";
-import { getThreadMetadata } from "@convex-dev/agent";
+import { auth } from "@ai-sdk/mcp";
 import { ConvexError, v, type Infer } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import {
   action,
@@ -40,18 +39,14 @@ import {
   readAccountLabel,
   revokeConnection,
 } from "./lib/connectorAuth";
-import { storedToolList, type McpTool } from "./lib/connectorToolList";
-import {
-  connectionAccessToken,
-  REFRESH_LEASE_MS,
-} from "./lib/connectionTokens";
+import type { StoredToolList } from "./lib/connectorToolList";
+import { REFRESH_LEASE_MS } from "./lib/connectionTokens";
 import {
   CONNECT_ERRORS,
   CONNECTORS,
   connectorHandle,
   findConnector,
   type ConnectError,
-  type Connector,
 } from "./lib/connectors";
 import {
   encryptOptionalSecret,
@@ -63,15 +58,15 @@ import schema, {
   vConnectionStatus,
   vConnectorClient,
 } from "./schema";
+import {
+  deleteToolList,
+  fetchToolList,
+  vStoredToolList,
+  writeToolList,
+} from "./toolLists";
 
 /** How long a sign-in can take before its pendingConnects row expires. */
 const PENDING_CONNECT_TTL_MS = 10 * 60 * 1000;
-
-/**
- * How long after a tool list refresh is scheduled before another can be.
- * It's long enough that a vendor outage doesn't make every reply try again.
- */
-const TOOL_LIST_REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 
 /** How many expired pendingConnects rows one cleanup run deletes. */
 const CLEANUP_BATCH_SIZE = 500;
@@ -257,7 +252,7 @@ export const finishConnect = action({
       const tokens = provider.savedTokens;
       if (!tokens) throw new Error("auth() returned without tokens.");
       const client = await createConnectorClient(connector, tokens.access_token);
-      let toolList: string;
+      let toolList: StoredToolList;
       let accountLabel = provider.accountLabel;
       try {
         toolList = await fetchToolList(connector, client);
@@ -388,6 +383,7 @@ export const deleteConnectionById = internalMutation({
   returns: v.null(),
   handler: async (ctx, { connectionId }) => {
     await ctx.db.delete("connections", connectionId);
+    await deleteToolList(ctx, connectionId);
     return null;
   },
 });
@@ -447,6 +443,7 @@ export const deleteConnection = internalMutation({
       connection.connectedAt === connectedAt
     ) {
       await ctx.db.delete("connections", connectionId);
+      await deleteToolList(ctx, connectionId);
     }
     return null;
   },
@@ -562,7 +559,10 @@ export const takePendingConnect = internalMutation({
   },
 });
 
-/** Creates or replaces the user's connection to the connector. */
+/**
+ * Creates or replaces the user's connection to the connector, and stores
+ * its tool list.
+ */
 export const saveConnection = internalMutation({
   args: {
     userId: v.string(),
@@ -571,115 +571,27 @@ export const saveConnection = internalMutation({
     encryptedRefreshToken: v.optional(v.string()),
     tokenExpiresAt: v.optional(v.number()),
     accountLabel: v.optional(v.string()),
-    toolList: v.string(),
+    toolList: vStoredToolList,
   },
   returns: v.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, { toolList, ...args }) => {
     const existing = await findConnection(ctx, args.userId, args.connectorId);
     const now = Date.now();
     const connection = {
       ...args,
       status: "connected" as const,
       tokenVersion: (existing?.tokenVersion ?? 0) + 1,
-      toolListFetchedAt: now,
       // Always later than the replaced row's, even within one millisecond,
       // so deleteConnection can tell a reconnect happened.
       connectedAt: Math.max(now, (existing?.connectedAt ?? 0) + 1),
     };
-    if (existing) {
-      await ctx.db.replace("connections", existing._id, connection);
+    let connectionId = existing?._id;
+    if (connectionId) {
+      await ctx.db.replace("connections", connectionId, connection);
     } else {
-      await ctx.db.insert("connections", connection);
+      connectionId = await ctx.db.insert("connections", connection);
     }
-    return null;
-  },
-});
-
-/**
- * The connections of the thread's owner, tokens included. streamReply builds
- * the reply's tools from them. It runs from the scheduler with no signed-in
- * user, so the thread names the user.
- */
-export const listReplyConnections = internalQuery({
-  args: { threadId: v.string() },
-  returns: v.array(schema.doc("connections")),
-  handler: async (ctx, { threadId }) => {
-    const thread = await getThreadMetadata(ctx, components.agent, {
-      threadId,
-    }).catch(() => null);
-    const userId = thread?.userId;
-    if (!userId) return [];
-    return await ctx.db
-      .query("connections")
-      .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
-      .take(CONNECTORS.length);
-  },
-});
-
-/**
- * Schedules refreshToolList for the connection, unless one was scheduled
- * in the last TOOL_LIST_REFRESH_COOLDOWN_MS. A reply calls this when the
- * cached list is over a day old, or when the server didn't know a tool the
- * list had. Replies that see the same stale list at once share one refresh.
- */
-export const requestToolListRefresh = internalMutation({
-  args: { connectionId: v.id("connections") },
-  returns: v.null(),
-  handler: async (ctx, { connectionId }) => {
-    const connection = await ctx.db.get("connections", connectionId);
-    if (connection?.status !== "connected") return null;
-    const now = Date.now();
-    const requestedAt = connection.toolListRefreshRequestedAt ?? 0;
-    if (now - requestedAt < TOOL_LIST_REFRESH_COOLDOWN_MS) return null;
-    await ctx.db.patch("connections", connectionId, {
-      toolListRefreshRequestedAt: now,
-    });
-    await ctx.scheduler.runAfter(0, internal.connectors.refreshToolList, {
-      connectionId,
-    });
-    return null;
-  },
-});
-
-/**
- * Fetches the connection's tool list again and caches it. Does nothing if
- * the connection is gone. Like a tool call, a token the vendor refuses is
- * refreshed and tried once more. If the refresh is refused, or the vendor
- * refuses the new token too, the connection needs reconnecting.
- */
-export const refreshToolList = internalAction({
-  args: { connectionId: v.id("connections") },
-  returns: v.null(),
-  handler: async (ctx, { connectionId }) => {
-    const connection = await ctx.runQuery(
-      internal.connectors.getConnectionById,
-      { connectionId },
-    );
-    const connector = connection && findConnector(connection.connectorId);
-    if (connection?.status !== "connected" || !connector) return null;
-    let token = await connectionAccessToken(ctx, connector, connection);
-    if ("needsReconnect" in token) return null;
-    let toolList = await listToolsWithToken(connector, token.accessToken);
-    if (toolList === 401) {
-      // settleRefresh marks the connection if the vendor refuses the refresh.
-      token = await connectionAccessToken(ctx, connector, token.tokens, {
-        refused: true,
-      });
-      if ("needsReconnect" in token) return null;
-      toolList = await listToolsWithToken(connector, token.accessToken);
-    }
-    if (typeof toolList === "number") {
-      // The vendor refused a token a8 just refreshed, or answered 403.
-      await ctx.runMutation(internal.connectors.markNeedsReconnect, {
-        connectionId,
-        tokenVersion: token.tokens.tokenVersion,
-      });
-      return null;
-    }
-    await ctx.runMutation(internal.connectors.saveToolList, {
-      connectionId,
-      toolList,
-    });
+    await writeToolList(ctx, connectionId, toolList);
     return null;
   },
 });
@@ -817,20 +729,6 @@ export const getConnectionById = internalQuery({
   },
 });
 
-/** Caches a new tool list on the connection, if it still exists. */
-export const saveToolList = internalMutation({
-  args: { connectionId: v.id("connections"), toolList: v.string() },
-  returns: v.null(),
-  handler: async (ctx, { connectionId, toolList }) => {
-    if (!(await ctx.db.get("connections", connectionId))) return null;
-    await ctx.db.patch("connections", connectionId, {
-      toolList,
-      toolListFetchedAt: Date.now(),
-    });
-    return null;
-  },
-});
-
 /** Deletes sign-ins that expired before anyone finished them. Run by a cron. */
 export const cleanUpExpiredConnects = internalMutation({
   args: {},
@@ -897,51 +795,6 @@ async function requireIdentity(ctx: ActionCtx) {
       code: "UNAUTHENTICATED",
       message: "Please sign in to continue.",
     });
-  }
-}
-
-/**
- * Every tool the connector's MCP server lists, across all pages, as a8
- * stores them (storedToolList).
- */
-async function fetchToolList(
-  connector: Connector,
-  client: MCPClient,
-): Promise<string> {
-  const tools: McpTool[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await client.listTools({
-      params: cursor === undefined ? undefined : { cursor },
-    });
-    tools.push(...page.tools);
-    cursor = page.nextCursor;
-  } while (cursor !== undefined);
-  return storedToolList(connector, tools);
-}
-
-/**
- * The connector's tool list (fetchToolList), read with `accessToken`.
- * Returns the status if the vendor refuses the token with a 401 or 403.
- */
-async function listToolsWithToken(
-  connector: Connector,
-  accessToken: string,
-): Promise<string | 401 | 403> {
-  try {
-    const client = await createConnectorClient(connector, accessToken);
-    try {
-      return await fetchToolList(connector, client);
-    } finally {
-      await client.close();
-    }
-  } catch (error) {
-    if (MCPClientError.isInstance(error)) {
-      if (error.statusCode === 401 || error.statusCode === 403) {
-        return error.statusCode;
-      }
-    }
-    throw error;
   }
 }
 
