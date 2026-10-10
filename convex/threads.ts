@@ -174,8 +174,9 @@ export const rename = mutation({
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
- * the background. This deletes its stoppedReplies rows right away. Its
- * attachments are left unreferenced, and cleanUpUnsentUploads deletes them.
+ * the background. This deletes its stoppedReplies and deferredToolThreads
+ * rows right away. Its attachments are left unreferenced, and
+ * cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
   args: { threadId: v.string() },
@@ -193,6 +194,11 @@ export const remove = mutation({
     for await (const row of stopped) {
       await ctx.db.delete("stoppedReplies", row._id);
     }
+    const deferred = await ctx.db
+      .query("deferredToolThreads")
+      .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+      .unique();
+    if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
     return null;
   },
 });

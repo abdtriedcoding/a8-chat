@@ -1,4 +1,5 @@
-// A reply's connector tools (ADR 0003, ADR 0005). They're built from each
+// A reply's connector tools (ADR 0003, ADR 0005). toolLoading.ts picks
+// which of them the reply loads (ADR 0006). They're built from each
 // connection's cached tool list, so building them sends nothing to the
 // vendor. A connector's MCP client opens on the first call to one of its
 // tools in the reply, and the reply closes it when it ends. A call the
@@ -26,12 +27,12 @@ import { createConnectorClient } from "./connectorAuth";
 import type { McpTool } from "./connectorToolList";
 import {
   findConnector,
-  findConnectorTool,
   modelToolName,
   needsReconnectError,
   type Connector,
   type ConnectorTool,
 } from "./connectors";
+import { estimateToolTokens, type ConnectorToolGroup } from "./toolLoading";
 
 /** The most of a tool result the model sees, in UTF-8 bytes. */
 const MAX_RESULT_BYTES = 20_000;
@@ -50,8 +51,10 @@ const DAILY_LIMIT_REACHED =
   "The user has reached today's limit for connector tools. Tell them it resets at 00:00 UTC, and answer without connector tools.";
 
 export type ConnectorTools = {
-  /** The tools of every connected connection, named by modelToolName. */
-  tools: ToolSet;
+  /** The tools of each connected connection, in the user's connection order. */
+  groups: ConnectorToolGroup[];
+  /** About how many tokens every group's tool definitions take together. */
+  estimatedTokens: number;
   /**
    * The reply's `toolApproval` option. It makes every action wait for the
    * user to approve it (ADR 0002, ADR 0008). Reads aren't listed, so they
@@ -73,7 +76,7 @@ export async function createConnectorTools(
   ctx: ActionCtx,
   connections: Doc<"connections">[],
 ): Promise<ConnectorTools> {
-  const tools: ToolSet = {};
+  const groups: ConnectorToolGroup[] = [];
   const toolApproval: Record<string, ToolApprovalStatus> = {};
   const replyConnections: ReplyConnection[] = [];
 
@@ -86,10 +89,17 @@ export async function createConnectorTools(
     const replyConnection = new ReplyConnection(ctx, connector, connection);
     replyConnections.push(replyConnection);
 
+    const tools: ToolSet = {};
+    let estimatedTokens = 0;
     const allowed = allowedTools(connector, connection.toolList);
     for (const { entry, mcpTool } of allowed) {
       const name = modelToolName(connector, mcpTool.name);
       if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
+      estimatedTokens += estimateToolTokens({
+        name,
+        description: mcpTool.description,
+        inputSchema: mcpTool.inputSchema,
+      });
       tools[name] = tool({
         description: mcpTool.description,
         // storedToolList adds `properties`, but a list stored before it
@@ -125,10 +135,15 @@ export async function createConnectorTools(
         },
       });
     }
+    groups.push({ connector, tools, estimatedTokens });
   }
 
   return {
-    tools,
+    groups,
+    estimatedTokens: groups.reduce(
+      (sum, group) => sum + group.estimatedTokens,
+      0,
+    ),
     toolApproval,
     close: async () => {
       await Promise.allSettled(
@@ -270,25 +285,6 @@ function asRefusedToken(error: unknown, tokenVersion: number): unknown {
   return MCPClientError.isInstance(error) && error.statusCode === 401
     ? new RefusedTokenError(tokenVersion)
     : error;
-}
-
-/**
- * The tools with the mentioned connectors' tools moved to the front, so the
- * model sees them before a8's own tools and other connectors' (ADR 0005).
- */
-export function mentionedToolsFirst(
-  tools: ToolSet,
-  mentioned: Connector[],
-): ToolSet {
-  const isMentioned = ([name]: [string, unknown]) => {
-    const connector = findConnectorTool(name)?.connector;
-    return connector !== undefined && mentioned.includes(connector);
-  };
-  const entries = Object.entries(tools);
-  return Object.fromEntries([
-    ...entries.filter(isMentioned),
-    ...entries.filter((entry) => !isMentioned(entry)),
-  ]);
 }
 
 /**

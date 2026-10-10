@@ -37,6 +37,13 @@ export default defineSchema({
     // reply is then hidden, even if some of its text had been saved.
     keepText: v.boolean(),
   }).index("by_threadId_and_order", ["threadId", "order"]),
+  // One row for each thread that defers connector tools (ADR 0006). A reply
+  // adds it the first time the user's connector tools pass the tool budget
+  // (lib/toolLoading.ts), and the thread defers from then on, so its tool
+  // list doesn't flip back and forth.
+  deferredToolThreads: defineTable({
+    threadId: v.string(),
+  }).index("by_threadId", ["threadId"]),
   // Who uploaded each file in the Agent's files table (convex/attachments.ts).
   // A Send only takes files the user has a row for here. Users who upload the
   // same file share its Agent row, so a file can have a row per user.

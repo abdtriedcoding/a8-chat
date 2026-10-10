@@ -29,6 +29,7 @@ import type * as lib_replyFailure from "../lib/replyFailure.js";
 import type * as lib_searchWeb from "../lib/searchWeb.js";
 import type * as lib_snippet from "../lib/snippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
+import type * as lib_toolLoading from "../lib/toolLoading.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as threads from "../threads.js";
 import type * as titles from "../titles.js";
@@ -61,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   "lib/searchWeb": typeof lib_searchWeb;
   "lib/snippet": typeof lib_snippet;
   "lib/timeZone": typeof lib_timeZone;
+  "lib/toolLoading": typeof lib_toolLoading;
   rateLimits: typeof rateLimits;
   threads: typeof threads;
   titles: typeof titles;

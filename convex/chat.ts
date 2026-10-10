@@ -31,12 +31,12 @@ import {
   MAX_REPLY_STEPS,
   MAX_STEPS_WITHOUT_CONNECTORS,
   nativeTools,
+  toolSearch,
 } from "./agents/chat";
 import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
 import { requireUser } from "./auth";
 import {
   createConnectorTools,
-  mentionedToolsFirst,
   type ConnectorTools,
 } from "./lib/connectorTools";
 import { findMentions } from "./lib/connectors";
@@ -45,6 +45,12 @@ import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";
 import { canSearchWeb } from "./lib/searchWeb";
 import { resolveTimeZone } from "./lib/timeZone";
+import {
+  arrangeReplyTools,
+  dropGoneToolReferences,
+  ReplyToolLog,
+  TOOL_BUDGET_TOKENS,
+} from "./lib/toolLoading";
 import { limitSend, vRateLimited } from "./rateLimits";
 import { authorizeThreadAccess, getOwnThread } from "./threads";
 
@@ -627,6 +633,7 @@ export const streamReply = internalAction({
   ) => {
     const startedAt = Date.now();
     let connectorTools: ConnectorTools | undefined;
+    let toolLog: ReplyToolLog | undefined;
     try {
       // Skip the model call if the user pressed Stop first, a regenerate or
       // an edit replaced this turn, or a new prompt came after the action
@@ -648,15 +655,32 @@ export const streamReply = internalAction({
       );
       const mentioned = findMentions(promptText);
       connectorTools = await createConnectorTools(ctx, connections);
-      const tools = mentionedToolsFirst(
-        { ...nativeTools, ...connectorTools.tools },
+      const deferred: boolean =
+        connectorTools.groups.length > 0 &&
+        (await ctx.runMutation(internal.chat.deferToolsOverBudget, {
+          threadId,
+          estimatedToolTokens: connectorTools.estimatedTokens,
+        }));
+      const { tools, loading } = arrangeReplyTools({
+        nativeTools,
+        groups: connectorTools.groups,
         mentioned,
+        deferred,
+        toolSearch,
+      });
+      toolLog = new ReplyToolLog(
+        threadId,
+        deferred,
+        loading,
+        connectorTools.groups,
       );
+      const offered = new Set(Object.keys(tools));
       // The cap counts steps across the whole reply, but the Agent's count
       // starts over when a reply continues after an action card (ADR 0002).
+      // A native tool search adds no step.
       const maxSteps = Math.max(
         1,
-        (Object.keys(connectorTools.tools).length > 0
+        (connectorTools.groups.length > 0
           ? MAX_REPLY_STEPS
           : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
       );
@@ -671,26 +695,40 @@ export const streamReply = internalAction({
             canSearchWeb,
             connections,
             mentioned,
+            loading,
           }),
           tools,
           toolApproval: connectorTools.toolApproval,
           stopWhen: stepCountIs(maxSteps),
           // The last step can't call tools, so a reply that hits the step
-          // cap or runs long still ends with text. "none" keeps the tools
-          // defined, which Anthropic needs when earlier steps called them.
+          // cap or runs long still ends with text. With no active tools,
+          // @ai-sdk/anthropic sends no tools and leaves tool search parts
+          // out of the history. Anthropic accepts plain tool calls in
+          // history without their tools. toolChoice "none" also sends no
+          // tools, but keeps the search parts, which Anthropic rejects.
           prepareStep: ({ stepNumber }) =>
             stepNumber === maxSteps - 1 ||
             Date.now() - startedAt >= REPLY_TIME_LIMIT_MS
-              ? { toolChoice: "none" }
+              ? { activeTools: [] }
               : {},
+          onStepFinish: (step) => toolLog?.addStep(step),
+          onToolExecutionEnd: (event) => toolLog?.addToolRun(event),
         },
-        // more custom delta options (`true` uses defaults)
-        { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+        {
+          // more custom delta options (`true` uses defaults)
+          saveStreamDeltas: { chunking: "word", throttleMs: 100 },
+          // Runs once per call, on the history saved before it, so a
+          // continuation runs it again. Later steps add only tools this
+          // reply offers. It changes what's sent, not what's saved.
+          contextHandler: async (_ctx, { allMessages }) =>
+            dropGoneToolReferences(allMessages, offered),
+        },
       );
       // We need to make sure the stream finishes - by awaiting each chunk
       // or using this call to consume it all.
       await result.consumeStream();
     } finally {
+      toolLog?.print();
       await connectorTools?.close();
       // Runs even if the model call failed. Does nothing unless the user
       // stopped this reply.
@@ -731,6 +769,26 @@ export const canReply = internalQuery({
       if (page[0]?.order !== order) return false;
     }
     return (await getStoppedReply(ctx, threadId, order)) === null;
+  },
+});
+
+/**
+ * Whether the thread defers connector tools (ADR 0006). It starts to once
+ * a reply's connector tools pass TOOL_BUDGET_TOKENS, and keeps on after
+ * that, so the tool list stays the same and the prompt cache keeps working.
+ */
+export const deferToolsOverBudget = internalMutation({
+  args: { threadId: v.string(), estimatedToolTokens: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, { threadId, estimatedToolTokens }) => {
+    const row = await ctx.db
+      .query("deferredToolThreads")
+      .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+      .unique();
+    if (row) return true;
+    if (estimatedToolTokens <= TOOL_BUDGET_TOKENS) return false;
+    await ctx.db.insert("deferredToolThreads", { threadId });
+    return true;
   },
 });
 
