@@ -85,11 +85,6 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
-    // Moved to connectionToolLists. migrateToolLists (convex/toolLists.ts)
-    // moves each row's list and unsets these, and then they go.
-    toolList: v.optional(v.string()),
-    toolListFetchedAt: v.optional(v.number()),
-    toolListRefreshRequestedAt: v.optional(v.number()),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
   // The tools a8 stores for one connection (convex/toolLists.ts), apart from
