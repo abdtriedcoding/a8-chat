@@ -1,6 +1,7 @@
 import agent from "@convex-dev/agent/convex.config";
 import betterAuth from "@convex-dev/better-auth/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
+import resend from "@convex-dev/resend/convex.config.js";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
 
@@ -19,11 +20,19 @@ const app = defineApp({
     // Optional. Comma-separated origins besides SITE_URL that may call the
     // auth API, such as a preview or staging domain.
     TRUSTED_ORIGINS: v.optional(v.string()),
+    RESEND_API_KEY: v.string(),
+    // Sender for auth emails, such as "a8 <noreply@your-domain.com>".
+    EMAIL_FROM: v.string(),
+    // Optional. Resend test mode only delivers to resend.dev test addresses.
+    // Set to "true" to stay in test mode. Unset or any other value sends to
+    // real addresses.
+    RESEND_TEST_MODE: v.optional(v.string()),
   },
 });
 
 app.use(betterAuth);
 app.use(agent);
 app.use(rateLimiter);
+app.use(resend);
 
 export default app;

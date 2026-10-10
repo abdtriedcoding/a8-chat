@@ -25,13 +25,42 @@ function parseOrigins(value: string | undefined) {
     .filter(Boolean);
 }
 
+// Queues the email in a mutation. Resend runs in the component's workpool, so
+// the auth response doesn't depend on it. Auth routes run in an action, so a
+// query context can't send.
+async function queueEmail(
+  ctx: GenericCtx<DataModel>,
+  kind: "verification" | "resetPassword",
+  to: string,
+  url: string,
+) {
+  if (!("runMutation" in ctx)) return;
+  await ctx.runMutation(internal.emails.sendAuthEmail, { kind, to, url });
+}
+
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
     baseURL: env.SITE_URL,
     trustedOrigins: [env.SITE_URL, ...parseOrigins(env.TRUSTED_ORIGINS)],
     secret: env.BETTER_AUTH_SECRET,
     database: authComponent.adapter(ctx),
-    emailAndPassword: { enabled: true, requireEmailVerification: false },
+    emailAndPassword: {
+      enabled: true,
+      requireEmailVerification: true,
+      resetPasswordTokenExpiresIn: 30 * 60,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url }) => {
+        await queueEmail(ctx, "resetPassword", user.email, url);
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendOnSignIn: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        await queueEmail(ctx, "verification", user.email, url);
+      },
+    },
     socialProviders: {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
@@ -74,6 +103,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       customRules: {
         "/sign-in/email": { window: 60, max: 10 },
         "/sign-up/email": { window: 60, max: 5 },
+        "/request-password-reset": { window: 60, max: 3 },
+        "/send-verification-email": { window: 60, max: 3 },
       },
     },
     hooks: {

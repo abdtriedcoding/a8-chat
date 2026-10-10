@@ -15,8 +15,10 @@ import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
 import type * as connectors from "../connectors.js";
 import type * as crons from "../crons.js";
+import type * as emails from "../emails.js";
 import type * as http from "../http.js";
 import type * as lib_attachments from "../lib/attachments.js";
+import type * as lib_authEmails from "../lib/authEmails.js";
 import type * as lib_connectionTokens from "../lib/connectionTokens.js";
 import type * as lib_connectorAuth from "../lib/connectorAuth.js";
 import type * as lib_connectorToolList from "../lib/connectorToolList.js";
@@ -48,8 +50,10 @@ declare const fullApi: ApiFromModules<{
   chat: typeof chat;
   connectors: typeof connectors;
   crons: typeof crons;
+  emails: typeof emails;
   http: typeof http;
   "lib/attachments": typeof lib_attachments;
+  "lib/authEmails": typeof lib_authEmails;
   "lib/connectionTokens": typeof lib_connectionTokens;
   "lib/connectorAuth": typeof lib_connectorAuth;
   "lib/connectorToolList": typeof lib_connectorToolList;
@@ -98,4 +102,5 @@ export declare const components: {
   betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  resend: import("@convex-dev/resend/_generated/component.js").ComponentApi<"resend">;
 };

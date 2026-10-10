@@ -51,10 +51,16 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
       : null);
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
-    const { error } = await authClient.signIn.email(data);
+    const { error } = await authClient.signIn.email({
+      ...data,
+      callbackURL: `${window.location.origin}/chat`,
+    });
     if (error) {
       form.setError("root", {
-        message: error.message ?? "Couldn't sign you in. Please try again.",
+        message:
+          error.code === "EMAIL_NOT_VERIFIED"
+            ? "Verify your email first. We sent a new link to your inbox."
+            : (error.message ?? "Couldn't sign you in. Please try again."),
       });
       return;
     }
@@ -113,7 +119,15 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
             control={form.control}
             render={({ field, fieldState }) => (
               <Field data-invalid={fieldState.invalid}>
-                <FieldLabel htmlFor="sign-in-password">Password</FieldLabel>
+                <div className="flex items-center justify-between">
+                  <FieldLabel htmlFor="sign-in-password">Password</FieldLabel>
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <PasswordInput
                   {...field}
                   id="sign-in-password"
