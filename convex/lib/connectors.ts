@@ -1,11 +1,8 @@
 /**
  * How a8 gets an OAuth client for a connector's MCP server. With dynamic
- * registration, a8 registers itself once per deployment. A pre-registered
- * client's ID and secret come from the env vars named here.
+ * registration, a8 registers itself once per deployment.
  */
-export type ConnectorSignIn =
-  | { kind: "dynamicRegistration" }
-  | { kind: "preRegistered"; clientIdEnvVar: string; clientSecretEnvVar: string };
+export type ConnectorSignIn = { kind: "dynamicRegistration" };
 
 /** One tool a8 offers the model from a connector's MCP server. */
 export type ConnectorTool = {
@@ -48,8 +45,11 @@ export type Connector = {
    */
   id: string;
   name: string;
-  /** Typed after @ to mention the connector, like `notion`. */
-  handle: string;
+  /**
+   * Typed after @ to mention the connector, like `notion`. Set it only when
+   * it differs from the id (connectorHandle).
+   */
+  handle?: string;
   /** Path of the logo under public/. */
   logo: string;
   description: string;
@@ -85,7 +85,6 @@ export const CONNECTORS: Connector[] = [
   {
     id: "notion",
     name: "Notion",
-    handle: "notion",
     logo: "/connectors/notion.svg",
     description: "Search, read and write pages in your Notion workspace.",
     examplePrompt:
@@ -112,7 +111,6 @@ export const CONNECTORS: Connector[] = [
   {
     id: "linear",
     name: "Linear",
-    handle: "linear",
     logo: "/connectors/linear.svg",
     description: "Find, create and update Linear issues, and comment on them.",
     examplePrompt: "@linear list my open issues, highest priority first",
@@ -137,7 +135,6 @@ export const CONNECTORS: Connector[] = [
   {
     id: "todoist",
     name: "Todoist",
-    handle: "todoist",
     logo: "/connectors/todoist.svg",
     description: "Find, add and complete Todoist tasks.",
     examplePrompt: "@todoist what's due today?",
@@ -162,7 +159,6 @@ export const CONNECTORS: Connector[] = [
   {
     id: "airtable",
     name: "Airtable",
-    handle: "airtable",
     logo: "/connectors/airtable.svg",
     description: "Read your Airtable bases, and add or update records.",
     examplePrompt: "@airtable list my bases and the tables in each",
@@ -186,7 +182,6 @@ export const CONNECTORS: Connector[] = [
   {
     id: "calendly",
     name: "Calendly",
-    handle: "calendly",
     logo: "/connectors/calendly.svg",
     description: "See your Calendly event types and meetings, and book or cancel meetings.",
     examplePrompt: "@calendly what meetings do I have this week?",
@@ -223,6 +218,11 @@ export function findConnector(id: string): Connector | undefined {
   return CONNECTORS.find((connector) => connector.id === id);
 }
 
+/** What the user types after @ to mention the connector. Its id by default. */
+export function connectorHandle(connector: Connector): string {
+  return connector.handle ?? connector.id;
+}
+
 /**
  * The tool error a connector's tool returns once its connection needs
  * reconnecting. The reply shows a Reconnect chip for a call that failed
@@ -251,7 +251,9 @@ export function findMentions(text: string): Connector[] {
       (match) => match[1].toLowerCase(),
     ),
   );
-  return CONNECTORS.filter((connector) => handles.has(connector.handle));
+  return CONNECTORS.filter((connector) =>
+    handles.has(connectorHandle(connector)),
+  );
 }
 
 /** The longest tool name Anthropic accepts. */
