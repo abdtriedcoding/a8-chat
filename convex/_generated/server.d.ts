@@ -33,8 +33,11 @@ type Env = {
   readonly ANTHROPIC_API_KEY: string;
   readonly BETTER_AUTH_SECRET: string;
   readonly CONNECTION_ENCRYPTION_KEY: string;
+  readonly EMAIL_FROM: string;
   readonly GOOGLE_CLIENT_ID: string;
   readonly GOOGLE_CLIENT_SECRET: string;
+  readonly RESEND_API_KEY: string;
+  readonly RESEND_TEST_MODE: string | undefined;
   readonly SITE_URL: string;
   readonly TAVILY_API_KEY: string | undefined;
   readonly TRUSTED_ORIGINS: string | undefined;
