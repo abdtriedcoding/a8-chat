@@ -30,6 +30,7 @@ import {
   modelToolName,
   needsReconnectError,
   type Connector,
+  type ConnectorTool,
 } from "./connectors";
 
 /** The most of a tool result the model sees, in UTF-8 bytes. */
@@ -55,7 +56,8 @@ export type ConnectorTools = {
   tools: ToolSet;
   /**
    * The reply's `toolApproval` option. It makes every action wait for the
-   * user to approve it (ADR 0002). Reads aren't listed, so they run at once.
+   * user to approve it (ADR 0002, ADR 0008). Reads aren't listed, so they
+   * run at once.
    */
   toolApproval: Record<string, ToolApprovalStatus>;
   /** Closes every MCP client the reply opened. Call it once the reply ends. */
@@ -86,9 +88,10 @@ export async function createConnectorTools(
     const replyConnection = new ReplyConnection(ctx, connector, connection);
     replyConnections.push(replyConnection);
 
-    for (const mcpTool of allowedTools(connector, connection.toolList)) {
+    const allowed = allowedTools(connector, connection.toolList);
+    for (const { entry, mcpTool } of allowed) {
       const name = modelToolName(connector, mcpTool.name);
-      if (!isRead(connector, mcpTool)) toolApproval[name] = "user-approval";
+      if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
       tools[name] = tool({
         description: mcpTool.description,
         inputSchema: jsonSchema<Record<string, unknown>>({
@@ -288,24 +291,31 @@ export function mentionedToolsFirst(
   ]);
 }
 
-/** The cached tools on the connector's allowlist, which a reply offers. */
-function allowedTools(connector: Connector, toolList: string): McpTool[] {
-  const allowed = new Set(connector.toolAllowlist.map((entry) => entry.name));
-  return (JSON.parse(toolList) as McpTool[]).filter((mcpTool) =>
-    allowed.has(mcpTool.name),
+/**
+ * The cached tools on the connector's allowlist, which a reply offers, each
+ * with its allowlist entry.
+ */
+function allowedTools(
+  connector: Connector,
+  toolList: string,
+): { entry: ConnectorTool; mcpTool: McpTool }[] {
+  const entries = new Map(
+    connector.toolAllowlist.map((entry) => [entry.name, entry]),
   );
+  return (JSON.parse(toolList) as McpTool[]).flatMap((mcpTool) => {
+    const entry = entries.get(mcpTool.name);
+    return entry ? [{ entry, mcpTool }] : [];
+  });
 }
 
 /**
- * Whether a tool is a read, which runs without approval. That's only when
- * the server marks it read-only and the connector doesn't force approval on
- * it (ADR 0005). Every other tool is an action.
+ * Whether a tool is a read, which runs without approval. The allowlist's
+ * `kind` decides, and the server's `readOnlyHint` can only make a tool
+ * stricter. A read asks anyway when the server marks it not read-only. An
+ * action asks even when the server marks it read-only (ADR 0008).
  */
-function isRead(connector: Connector, mcpTool: McpTool): boolean {
-  return (
-    mcpTool.annotations?.readOnlyHint === true &&
-    !connector.toolsNeedingApproval.includes(mcpTool.name)
-  );
+function isRead(entry: ConnectorTool, mcpTool: McpTool): boolean {
+  return entry.kind === "read" && mcpTool.annotations?.readOnlyHint !== false;
 }
 
 async function scheduleToolListRefresh(

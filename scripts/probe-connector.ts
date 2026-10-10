@@ -506,15 +506,19 @@ async function listTools(url: string, token: string | undefined): Promise<Tool[]
 
 /**
  * One block per tool: its name, its annotations, and the size of its
- * description and input schema. Marks the tools a connector allowlists.
+ * description and input schema. Marks the tools a connector allowlists, with
+ * each one's kind, read or action.
  */
 function printTools(tools: Tool[], connector: Connector | undefined) {
-  const allowlisted = new Set(connector?.toolAllowlist.map((tool) => tool.name));
+  const allowlistKinds = new Map(
+    connector?.toolAllowlist.map((tool) => [tool.name, tool.kind]),
+  );
   let totalBytes = 0;
   for (const tool of tools) {
     const schemaBytes = byteLength(JSON.stringify(tool.inputSchema));
     totalBytes += byteLength(JSON.stringify(tool));
-    console.log(`${tool.name}${allowlisted.has(tool.name) ? "  (allowlisted)" : ""}`);
+    const kind = allowlistKinds.get(tool.name);
+    console.log(`${tool.name}${kind ? `  (allowlisted, ${kind})` : ""}`);
     console.log(`  annotations: ${formatAnnotations(tool.annotations)}`);
     console.log(
       `  description ${tool.description?.length ?? 0} chars, input schema ${formatBytes(schemaBytes)}`,

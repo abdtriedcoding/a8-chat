@@ -33,7 +33,7 @@ read -rs MCP_TOKEN && export MCP_TOKEN && bun run probe linear   # paste a token
 
 `read -rs` keeps the token out of the command text. `--token <token>` and `MCP_TOKEN=<token> bun run probe ...` also work, but your shell history keeps the token.
 
-With a token, or when `initialize` works without one, it prints every tool with its annotations, its description length and its input schema size, then the tool count and the size of all definitions together.
+With a token, or when `initialize` works without one, it prints every tool with its annotations, its description length and its input schema size, then the tool count and the size of all definitions together. For a catalog connector, each allowlisted tool also shows its `kind`, `read` or `action`.
 
 ### Checking a catalog connector
 
@@ -51,8 +51,8 @@ Each failed check prints a `FAIL` line, and the script exits with code 1. A vend
 
 1. Run the probe on the vendor's MCP URL. Record the URL, every origin, whether there's a registration endpoint, the scopes, the tools and their annotations.
 2. Do a real registration with a8's redirect URI before writing code. The probe's `--sign-in` uses a localhost redirect URI, so it doesn't prove the vendor accepts a8's.
-3. Write the catalog entry: the MCP URL, pinned origins, sign-in kind, allowlist and account label field.
-4. Pick the allowlist from the probe's tool list. Take the reads and the common actions, about 10 tools and never more than 15.
+3. Write the catalog entry: the MCP URL, pinned origins, sign-in kind, allowlist with a `kind` on each tool, and account label field.
+4. Pick the allowlist from the probe's tool list. Take the reads and the common actions, about 10 tools and never more than 15. Set each tool's `kind` to `read` or `action` by what it does, not by its annotations. A read only fetches. Anything that writes, sends or deletes is an action. The `kind` decides whether the tool asks for approval, and the server's `readOnlyHint: false` can only make a read ask too (ADR 0008).
 5. Add the logo under `public/connectors/`.
 6. Run the probe on the new connector's ID with `--sign-in`. Every check should print `ok`.
 7. Run the browser checks with the `browser-verify` skill and put the screenshots on the PR.
