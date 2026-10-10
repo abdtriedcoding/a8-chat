@@ -14,8 +14,8 @@ export const vAuthorizationServer = v.object({
   tokenEndpoint: v.string(),
 });
 
-/** The OAuth client a8 registered for a connector. */
-export const vConnectorClient = v.object({
+/** The OAuth client registration a8 made for a connector. */
+export const vClientRegistration = v.object({
   connectorId: v.string(),
   clientId: v.string(),
   encryptedClientSecret: v.optional(v.string()),
@@ -108,12 +108,13 @@ export default defineSchema({
     .index("by_state", ["state"])
     .index("by_expiresAt", ["expiresAt"])
     .index("by_userId", ["userId"]),
-  // The OAuth client a8 registered with a connector's authorization server.
-  // One row per connector per deployment, shared by every user. Notion
-  // orphans earlier grants when a client registers again, so a8 only
-  // registers again after the vendor rejects this client or its secret
-  // expires.
-  connectorClients: defineTable(vConnectorClient).index("by_connectorId", [
+  // OAuth client registrations: the client a8 registered with a connector's
+  // authorization server (convex/connectorStore.ts). The table keeps an
+  // older name, and has nothing to do with MCP clients. One row per
+  // connector per deployment, shared by every user. Notion orphans earlier
+  // grants when a client registers again, so a8 only registers again after
+  // the vendor rejects this client or its secret expires.
+  connectorClients: defineTable(vClientRegistration).index("by_connectorId", [
     "connectorId",
   ]),
 });

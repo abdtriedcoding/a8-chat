@@ -1,17 +1,17 @@
 // A connection's access token, refreshed when it's about to expire or the
 // vendor refused it. Refresh follows ADR 0003's lease: claimRefresh claims
-// it, this action asks the vendor for new tokens, and settleRefresh commits
+// it, this action asks the vendor for new tokens, and settleTokens commits
 // them only if the token version still matches. Replies that find the lease
 // taken wait and read the committed tokens.
 
 import { auth, type OAuthTokens } from "@ai-sdk/mcp";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-import type { ConnectionTokens } from "../connectors";
+import type { ConnectionTokens } from "../connectorStore";
 import {
+  classifyOAuthError,
   ConnectorOAuthProvider,
-  forgetConnectorClient,
-  oauthErrorCode,
+  forgetClientRegistration,
   pinnedFetch,
 } from "./connectorAuth";
 import type { Connector } from "./connectors";
@@ -37,13 +37,6 @@ export const REFRESH_LEASE_MS = 2 * REFRESH_TIMEOUT_MS;
 
 /** How long a reply waits before claiming a lease another reply holds again. */
 const LEASE_POLL_MS = 500;
-
-/** The OAuth errors that mean the user has to sign in again. */
-const REJECTED_ERRORS = new Set([
-  "invalid_grant",
-  "invalid_client",
-  "unauthorized_client",
-]);
 
 export type AccessTokenResult =
   | { accessToken: string; tokens: ConnectionTokens }
@@ -71,9 +64,10 @@ export async function connectionAccessToken(
   if (!fresh) return { needsReconnect: true };
   const accessToken = await decryptOrUndefined(key, fresh.encryptedAccessToken);
   if (accessToken === undefined) {
-    await ctx.runMutation(internal.connectors.markNeedsReconnect, {
+    await ctx.runMutation(internal.connectorStore.settleTokens, {
       connectionId: fresh._id,
       tokenVersion: fresh.tokenVersion,
+      outcome: { kind: "rejected" },
     });
     return { needsReconnect: true };
   }
@@ -115,7 +109,10 @@ async function refresh(
 ): Promise<ConnectionTokens | null> {
   const args = { connectionId: seen._id, tokenVersion: seen.tokenVersion };
   for (;;) {
-    const claim = await ctx.runMutation(internal.connectors.claimRefresh, args);
+    const claim = await ctx.runMutation(
+      internal.connectorStore.claimRefresh,
+      args,
+    );
     if (claim.kind === "needsReconnect") return null;
     if (claim.kind === "changed") return claim.tokens;
     if (claim.kind === "claimed") break;
@@ -138,7 +135,7 @@ async function refresh(
     // connection. a8 can't tell that apart from a request that never landed.
     outcome = { kind: "failed", error };
   }
-  const settled = await ctx.runMutation(internal.connectors.settleRefresh, {
+  const settled = await ctx.runMutation(internal.connectorStore.settleTokens, {
     ...args,
     outcome:
       outcome.kind === "refreshed"
@@ -186,28 +183,26 @@ async function requestTokens(
   // grants of earlier clients. The refresh token belongs to the lost client
   // anyway.
   if (!(await provider.clientInformation())) return null;
+  let rejectedError: unknown;
   try {
     await auth(provider, {
       serverUrl: connector.mcpServerUrl,
       fetchFn: provider.fetch,
     });
   } catch (error) {
-    const code = oauthErrorCode(error);
-    if (!code || !REJECTED_ERRORS.has(code)) throw error;
-    provider.refreshError = code;
+    if (classifyOAuthError(error) === "other") throw error;
+    rejectedError = error;
   }
   if (provider.savedTokens) return provider.savedTokens;
-  const { refreshError } = provider;
-  if (
-    refreshError === "invalid_client" ||
-    refreshError === "unauthorized_client"
-  ) {
-    await forgetConnectorClient(ctx, connector);
-  }
   // auth() swallows some refresh errors and goes on to build a sign-in URL,
   // which a8 drops. Only an OAuth error from the vendor means the refresh
   // was refused, not a rate limit or an outage.
-  if (refreshError && REJECTED_ERRORS.has(refreshError)) return null;
+  const rejection = classifyOAuthError(rejectedError ?? provider.refreshError);
+  if (rejection === "rejectedClient") {
+    await forgetClientRegistration(ctx, connector);
+  }
+  if (rejection !== "other") return null;
+  const { refreshError } = provider;
   throw new Error(
     `Refreshing the ${connector.name} token failed${refreshError ? `: ${refreshError}` : ""}.`,
   );

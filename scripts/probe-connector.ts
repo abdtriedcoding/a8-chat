@@ -2,8 +2,9 @@
  * Prints what a catalog entry needs from a vendor's MCP server: its OAuth
  * metadata, every origin the sign-in touches, scopes and tools. Given a
  * catalog connector's ID, it also checks that entry against the live server.
- * A dev helper, not a test. USAGE below lists the options, and
- * docs/connectors/README.md explains the output.
+ * Metadata discovery is a8's own (convex/lib/connectorAuth.ts), without the
+ * pinned origins. A dev helper, not a test. USAGE below lists the options,
+ * and docs/connectors/README.md explains the output.
  */
 import { createServer } from "node:http";
 import { parseArgs } from "node:util";
@@ -17,6 +18,12 @@ import {
   type OAuthClientProvider,
   type OAuthTokens,
 } from "@ai-sdk/mcp";
+import {
+  authorizationServerMetadataUrls,
+  authorizationServersIn,
+  fetchMetadata,
+  protectedResourceMetadataUrls,
+} from "../convex/lib/connectorAuth";
 import {
   findConnector,
   modelToolName,
@@ -95,18 +102,18 @@ console.log(anonymous.summary);
 heading("Protected resource metadata");
 const resource = await firstJson(
   findings.origins,
-  protectedResourceUrls(mcpUrl, anonymous.challenge.resource_metadata),
+  protectedResourceMetadataUrls(mcpUrl, anonymous.challenge.resource_metadata),
   "protected resource metadata",
 );
 printJson(resource);
 
 heading("Authorization server metadata");
 const serverMetadata: Json[] = [];
-for (const server of authorizationServers(resource, mcpUrl)) {
+for (const server of authorizationServersIn(resource, mcpUrl)) {
   console.log(`${server}:`);
   const metadata = await firstJson(
     findings.origins,
-    authorizationServerUrls(server),
+    authorizationServerMetadataUrls(server),
     "authorization server metadata",
   );
   printJson(metadata);
@@ -245,76 +252,37 @@ function parseChallenge(header: string | undefined): Record<string, string> {
 }
 
 /**
- * Where the protected resource metadata may be (RFC 9728), in the order an
- * MCP client tries them: the challenge's URL, the path-specific well-known
- * URL, then the root one.
- */
-function protectedResourceUrls(url: string, fromChallenge?: string): string[] {
-  const { origin, pathname } = new URL(url);
-  const path = pathname.replace(/\/$/, "");
-  const wellKnown = `${origin}/.well-known/oauth-protected-resource`;
-  return unique([fromChallenge, path && `${wellKnown}${path}`, wellKnown]);
-}
-
-/**
- * The authorization servers the resource metadata names. Without resource
- * metadata, MCP clients fall back to the MCP server's origin.
- */
-function authorizationServers(resource: Json | undefined, url: string): string[] {
-  const named = resource?.authorization_servers;
-  if (Array.isArray(named)) {
-    const servers = named.filter((server) => typeof server === "string");
-    if (servers.length > 0) return servers;
-  }
-  return [new URL(url).origin];
-}
-
-/**
- * Where an authorization server's metadata may be, in the order an MCP
- * client tries them: RFC 8414, then OpenID Connect discovery.
- */
-function authorizationServerUrls(server: string): string[] {
-  const { origin, pathname } = new URL(server);
-  const path = pathname.replace(/\/$/, "");
-  return unique([
-    `${origin}/.well-known/oauth-authorization-server${path}`,
-    `${origin}/.well-known/openid-configuration${path}`,
-    path && `${origin}${path}/.well-known/openid-configuration`,
-  ]);
-}
-
-/**
  * Fetches each URL in turn and returns the first JSON object, printing a
- * line per attempt. Notes the origin of the one that answered, and of any
- * redirect it followed.
+ * line per attempt (fetchMetadata). Notes the origin of the one that
+ * answered, and of any redirect it followed.
  */
 async function firstJson(
   origins: Origins,
   urls: string[],
   use: string,
 ): Promise<Json | undefined> {
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      const redirect = response.redirected ? ` (redirected to ${response.url})` : "";
-      console.log(`  ${response.status}  ${url}${redirect}`);
-      if (!response.ok) continue;
-      const body: unknown = await response.json().catch(() => undefined);
-      if (!isJsonObject(body)) {
-        console.log("       not a JSON object");
-        continue;
-      }
-      noteOrigin(origins, url, use);
-      if (response.redirected) noteOrigin(origins, response.url, `${use} (redirect)`);
-      return body;
-    } catch (error) {
-      console.log(`  ---  ${url}: ${describeError(error)}`);
-    }
-  }
-  return undefined;
+  const found = await fetchMetadata(
+    (url, init) =>
+      fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) }),
+    urls,
+    {
+      onAttempt: (attempt) => {
+        if ("error" in attempt) {
+          console.log(`  ---  ${attempt.url}: ${describeError(attempt.error)}`);
+          return;
+        }
+        const { url, response, outcome } = attempt;
+        const redirect = response.redirected ? ` (redirected to ${response.url})` : "";
+        console.log(`  ${response.status}  ${url}${redirect}`);
+        if (outcome === "notJson") console.log("       not a JSON object");
+      },
+    },
+  );
+  if (!found) return undefined;
+  const { url, response } = found;
+  noteOrigin(origins, url, use);
+  if (response.redirected) noteOrigin(origins, response.url, `${use} (redirect)`);
+  return found.metadata;
 }
 
 /** Every scope the server advertises, and where each list came from. */
@@ -658,14 +626,6 @@ function formatValues(serverMetadata: Json[], field: string): string {
           : String(value),
     );
   return stated.length > 0 ? stated.join("; ") : "not stated";
-}
-
-function isJsonObject(value: unknown): value is Json {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function unique(urls: (string | undefined)[]): string[] {
-  return [...new Set(urls.filter((url): url is string => Boolean(url)))];
 }
 
 function printJson(value: unknown) {

@@ -21,13 +21,13 @@ import {
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import type { ConnectionTokens } from "../connectors";
+import type { ConnectionTokens } from "../connectorStore";
 import { limitConnectorToolCall } from "../rateLimits";
 import {
   connectionAccessToken,
   type AccessTokenResult,
 } from "./connectionTokens";
-import { createConnectorClient } from "./connectorAuth";
+import { openMcpClient } from "./connectorAuth";
 import type { McpTool } from "./connectorToolList";
 import {
   findConnector,
@@ -277,10 +277,7 @@ class ReplyConnection {
     this.tokens = token.tokens;
     const { tokenVersion } = token.tokens;
     try {
-      const mcp = await createConnectorClient(
-        this.connector,
-        token.accessToken,
-      );
+      const mcp = await openMcpClient(this.connector, token.accessToken);
       return { tokenVersion, mcp };
     } catch (error) {
       throw asRefusedToken(error, tokenVersion);
@@ -294,9 +291,10 @@ class ReplyConnection {
   private async markNeedsReconnect(
     tokenVersion: number,
   ): Promise<ReconnectError> {
-    await this.ctx.runMutation(internal.connectors.markNeedsReconnect, {
+    await this.ctx.runMutation(internal.connectorStore.settleTokens, {
       connectionId: this.tokens._id,
       tokenVersion,
+      outcome: { kind: "rejected" },
     });
     return this.giveUp();
   }

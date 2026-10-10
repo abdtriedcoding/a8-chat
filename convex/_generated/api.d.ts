@@ -13,6 +13,7 @@ import type * as agents_webSearch from "../agents/webSearch.js";
 import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as connectorStore from "../connectorStore.js";
 import type * as connectors from "../connectors.js";
 import type * as crons from "../crons.js";
 import type * as emails from "../emails.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   attachments: typeof attachments;
   auth: typeof auth;
   chat: typeof chat;
+  connectorStore: typeof connectorStore;
   connectors: typeof connectors;
   crons: typeof crons;
   emails: typeof emails;
