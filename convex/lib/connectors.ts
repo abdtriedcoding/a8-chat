@@ -183,6 +183,33 @@ export const CONNECTORS: Connector[] = [
       { name: "update_records_for_table", kind: "action", label: "Updating Airtable records" },
     ],
   },
+  {
+    id: "calendly",
+    name: "Calendly",
+    handle: "calendly",
+    logo: "/connectors/calendly.svg",
+    description: "See your Calendly event types and meetings, and book or cancel meetings.",
+    examplePrompt: "@calendly what meetings do I have this week?",
+    cardNote: { text: "Booking needs a paid Calendly plan." },
+    mcpServerUrl: "https://mcp.calendly.com",
+    pinnedOrigins: ["https://mcp.calendly.com", "https://calendly.com"],
+    signIn: { kind: "dynamicRegistration" },
+    toolAllowlist: [
+      { name: "users-get_current_user", kind: "read", label: "Reading the Calendly account" },
+      { name: "event_types-list_event_types", kind: "read", label: "Finding Calendly event types" },
+      { name: "event_types-get_event_type", kind: "read", label: "Reading a Calendly event type" },
+      { name: "event_types-list_event_type_available_times", kind: "read", label: "Finding open Calendly times" },
+      { name: "availability-list_user_busy_times", kind: "read", label: "Checking Calendly busy times" },
+      { name: "meetings-list_events", kind: "read", label: "Finding Calendly meetings" },
+      { name: "meetings-get_event", kind: "read", label: "Reading a Calendly meeting" },
+      { name: "meetings-list_event_invitees", kind: "read", label: "Finding Calendly invitees" },
+      { name: "locations-list_user_meeting_locations", kind: "read", label: "Finding Calendly meeting locations" },
+      { name: "meetings-create_invitee", kind: "action", label: "Booking a Calendly meeting" },
+      { name: "meetings-cancel_event", kind: "action", label: "Cancelling a Calendly meeting" },
+      { name: "scheduling_links-create_single_use_scheduling_link", kind: "action", label: "Creating a Calendly scheduling link" },
+    ],
+    accountLabel: { from: "tool", tool: "users-get_current_user", field: "resource.email" },
+  },
 ];
 
 /**
