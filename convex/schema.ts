@@ -88,6 +88,9 @@ export default defineSchema({
     // because JSON Schema keys like "$schema" aren't valid Convex field names.
     toolList: v.string(),
     toolListFetchedAt: v.number(),
+    // When a reply last scheduled refreshToolList. Until the cooldown ends,
+    // requestToolListRefresh schedules no other refresh.
+    toolListRefreshRequestedAt: v.optional(v.number()),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
   // One row per sign-in in progress (convex/connectors.ts). finishConnect
