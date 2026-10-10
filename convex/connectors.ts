@@ -321,7 +321,7 @@ export const disconnect = action({
     }
     await ctx.runMutation(internal.connectors.deleteConnection, {
       connectionId: connection._id,
-      tokenVersion: connection.tokenVersion,
+      connectedAt: connection.connectedAt,
     });
     return { revoked };
   },
@@ -423,19 +423,21 @@ export const getConnection = internalQuery({
 });
 
 /**
- * Deletes the signed-in user's connection, unless its tokens changed since
- * `tokenVersion`. A reconnect from another tab during disconnect replaces
- * the row and bumps the version, and that new connection stays.
+ * Deletes the signed-in user's connection, unless it was replaced since the
+ * caller read it. A reconnect from another tab during disconnect replaces the
+ * row with a later `connectedAt`, and that new connection stays. A token
+ * refresh or a reply marking it as needing reconnecting keeps `connectedAt`,
+ * so neither stops the delete.
  */
 export const deleteConnection = internalMutation({
-  args: { connectionId: v.id("connections"), tokenVersion: v.number() },
+  args: { connectionId: v.id("connections"), connectedAt: v.number() },
   returns: v.null(),
-  handler: async (ctx, { connectionId, tokenVersion }) => {
+  handler: async (ctx, { connectionId, connectedAt }) => {
     const user = await requireUser(ctx);
     const connection = await ctx.db.get("connections", connectionId);
     if (
       connection?.userId === user._id &&
-      connection.tokenVersion === tokenVersion
+      connection.connectedAt === connectedAt
     ) {
       await ctx.db.delete("connections", connectionId);
     }
@@ -573,7 +575,9 @@ export const saveConnection = internalMutation({
       status: "connected" as const,
       tokenVersion: (existing?.tokenVersion ?? 0) + 1,
       toolListFetchedAt: now,
-      connectedAt: now,
+      // Always later than the replaced row's, even within one millisecond,
+      // so deleteConnection can tell a reconnect happened.
+      connectedAt: Math.max(now, (existing?.connectedAt ?? 0) + 1),
     };
     if (existing) {
       await ctx.db.replace("connections", existing._id, connection);
