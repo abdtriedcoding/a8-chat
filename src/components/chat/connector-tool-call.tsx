@@ -35,6 +35,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
     if (!part.type.startsWith("tool-")) return [];
     const found = findConnectorTool(part.type.slice("tool-".length));
     if (!found) return [];
+    const { connector, label } = found;
     // The UI message doesn't know the tool's types, so this reads the
     // fields every tool part has.
     const call = part as unknown as {
@@ -55,7 +56,8 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
     return [
       {
         id: call.toolCallId,
-        ...found,
+        connector,
+        label,
         state: savedError ? "output-error" : call.state,
         input: call.input,
         output: call.output,

@@ -21,8 +21,31 @@ export type ConnectorTool = {
   label: string;
 };
 
+/**
+ * Where the account label on a connected card comes from:
+ * - `tokenResponse`: a field of the vendor's token response, like Notion's
+ *   `workspace_name`.
+ * - `tool`: a read tool a8 calls once after sign-in, like a "who am I" tool.
+ *   `field` is a dot path into its result, like `organization.name`. a8
+ *   reads the result's structured content, or else its first text part as
+ *   JSON.
+ */
+export type AccountLabelSource =
+  | { from: "tokenResponse"; field: string }
+  | {
+      from: "tool";
+      tool: string;
+      arguments?: Record<string, unknown>;
+      field: string;
+    };
+
 /** One entry in a8's catalog: an app a8 can work with through MCP. */
 export type Connector = {
+  /**
+   * Lowercase letters and digits. It starts the model's name for each of
+   * the connector's tools, so changing it makes old threads lose their
+   * tool rows.
+   */
   id: string;
   name: string;
   /** Typed after @ to mention the connector, like `notion`. */
@@ -34,18 +57,21 @@ export type Connector = {
   examplePrompt: string;
   mcpServerUrl: string;
   /**
-   * The only origins a8 talks to for this connector. Any other MCP server
-   * or authorization server origin is refused (ADR 0003).
+   * Every origin a8 talks to for this connector: the MCP server's, and each
+   * one its sign-in uses, like a separate authorization server or token
+   * host. a8 refuses any other origin, and refuses an authorization server
+   * whose origin isn't listed here (ADR 0003).
    */
-  pinnedOrigins: { mcpServer: string; authorizationServer: string };
+  pinnedOrigins: string[];
   signIn: ConnectorSignIn;
   /** The MCP tools a8 offers the model. Every other tool stays hidden. */
   toolAllowlist: ConnectorTool[];
   /**
-   * The field of the vendor's token response that names the signed-in
-   * account, like Notion's `workspace_name`. The card shows it once connected.
+   * Where the name of the signed-in account comes from. A label tool must
+   * be a `read` on the allowlist, because a8 calls it without asking. The card shows it
+   * once connected, and shows nothing when the source gives no label.
    */
-  accountLabelField?: string;
+  accountLabel?: AccountLabelSource;
 };
 
 /** Every connector a8 ships with. */
@@ -59,10 +85,7 @@ export const CONNECTORS: Connector[] = [
     examplePrompt:
       "@notion find my notes from this week and list the action items",
     mcpServerUrl: "https://mcp.notion.com/mcp",
-    pinnedOrigins: {
-      mcpServer: "https://mcp.notion.com",
-      authorizationServer: "https://mcp.notion.com",
-    },
+    pinnedOrigins: ["https://mcp.notion.com"],
     signIn: { kind: "dynamicRegistration" },
     toolAllowlist: [
       { name: "notion-search", kind: "read", label: "Searching Notion" },
@@ -78,7 +101,7 @@ export const CONNECTORS: Connector[] = [
       { name: "notion-create-database", kind: "action", label: "Creating a Notion database" },
       { name: "notion-create-comment", kind: "action", label: "Commenting in Notion" },
     ],
-    accountLabelField: "workspace_name",
+    accountLabel: { from: "tokenResponse", field: "workspace_name" },
   },
 ];
 
@@ -124,32 +147,62 @@ export function findMentions(text: string): Connector[] {
   return CONNECTORS.filter((connector) => handles.has(connector.handle));
 }
 
-/**
- * The model's name for a connector's tool, `<handle>__<tool>`. The handle
- * prefix Notion puts on its own names is dropped, so `notion-search`
- * becomes `notion__search`.
- */
-export function modelToolName(connector: Connector, mcpName: string): string {
-  const prefix = `${connector.handle}-`;
-  const tool = mcpName.startsWith(prefix) ? mcpName.slice(prefix.length) : mcpName;
-  return `${connector.handle}__${tool}`;
-}
+/** The longest tool name Anthropic accepts. */
+const MAX_TOOL_NAME_LENGTH = 64;
 
 /**
- * The connector behind a model tool name, and the label its row shows.
- * Undefined for a8's own tools, like webSearch. A tool since dropped from
- * the allowlist gets a generic label, so old threads still show it.
+ * The model's name for a connector's tool, `<connector id>__<tool>`. A
+ * prefix of the connector's ID that the vendor puts on its own names is
+ * dropped, so `notion-search` becomes `notion__search`. Characters outside
+ * `[a-zA-Z0-9_-]` become `_`, and a name over 64 characters is cut short.
+ * Either way the name then ends in a hash of the vendor's name, so `a.b`
+ * and `a_b` still get different names.
+ */
+export function modelToolName(connector: Connector, mcpName: string): string {
+  const tool =
+    mcpName.startsWith(connector.id) &&
+    ["-", "_", "."].includes(mcpName.charAt(connector.id.length))
+      ? mcpName.slice(connector.id.length + 1)
+      : mcpName;
+  const full = `${connector.id}__${tool}`;
+  const name = full.replace(/[^a-zA-Z0-9_-]/g, "_");
+  if (name === full && name.length <= MAX_TOOL_NAME_LENGTH) return name;
+  const hash = fnv1a(`${connector.id}__${mcpName}`);
+  const kept = Math.min(name.length, MAX_TOOL_NAME_LENGTH - hash.length - 1);
+  return `${name.slice(0, kept)}_${hash}`;
+}
+
+/** The 32-bit FNV-1a hash of the text, as 8 hex digits. */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash = Math.imul(hash ^ byte, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/** Every allowlisted tool by its model name. */
+const TOOLS_BY_MODEL_NAME = new Map(
+  CONNECTORS.flatMap((connector) =>
+    connector.toolAllowlist.map(
+      (tool) => [modelToolName(connector, tool.name), { connector, tool }] as const,
+    ),
+  ),
+);
+
+/**
+ * The connector and allowlist entry behind a model tool name, and the label
+ * its row shows. Undefined for a8's own tools, like webSearch. A tool since
+ * dropped from the allowlist has no entry and gets a generic label, so old
+ * threads still show it.
  */
 export function findConnectorTool(
   modelName: string,
-): { connector: Connector; label: string } | undefined {
-  const separator = modelName.indexOf("__");
-  if (separator === -1) return undefined;
-  const handle = modelName.slice(0, separator);
-  const connector = CONNECTORS.find((entry) => entry.handle === handle);
-  if (!connector) return undefined;
-  const tool = connector.toolAllowlist.find(
-    (entry) => modelToolName(connector, entry.name) === modelName,
+): { connector: Connector; tool?: ConnectorTool; label: string } | undefined {
+  const found = TOOLS_BY_MODEL_NAME.get(modelName);
+  if (found) return { ...found, label: found.tool.label };
+  const connector = CONNECTORS.find((entry) =>
+    modelName.startsWith(`${entry.id}__`),
   );
-  return { connector, label: tool?.label ?? `Using ${connector.name}` };
+  return connector && { connector, label: `Using ${connector.name}` };
 }

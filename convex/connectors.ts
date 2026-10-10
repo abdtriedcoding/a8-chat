@@ -11,7 +11,7 @@
 // sign-in the signed-in user started, so a stranger who sends someone their
 // authorize URL can't link that person's Notion to their own account.
 
-import { auth, type ListToolsResult } from "@ai-sdk/mcp";
+import { auth, type MCPClient } from "@ai-sdk/mcp";
 import { getThreadMetadata } from "@convex-dev/agent";
 import { ConvexError, v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
@@ -33,8 +33,10 @@ import {
   createConnectorClient,
   forgetConnectorClient,
   oauthErrorCode,
+  readAccountLabel,
   revokeConnection,
 } from "./lib/connectorAuth";
+import { storedToolList, type McpTool } from "./lib/connectorToolList";
 import {
   connectionAccessToken,
   REFRESH_LEASE_MS,
@@ -242,7 +244,15 @@ export const finishConnect = action({
       });
       const tokens = provider.savedTokens;
       if (!tokens) throw new Error("auth() returned without tokens.");
-      const toolList = await fetchToolList(connector, tokens.access_token);
+      const client = await createConnectorClient(connector, tokens.access_token);
+      let toolList: string;
+      let accountLabel = provider.accountLabel;
+      try {
+        toolList = await fetchToolList(connector, client);
+        accountLabel ??= await readAccountLabel(connector, client);
+      } finally {
+        await client.close();
+      }
       await ctx.runMutation(internal.connectors.saveConnection, {
         userId: pending.userId,
         connectorId: connector.id,
@@ -258,8 +268,8 @@ export const finishConnect = action({
           tokens.expires_in === undefined
             ? undefined
             : Date.now() + tokens.expires_in * 1000,
-        accountLabel: provider.accountLabel,
-        toolList: JSON.stringify(toolList),
+        accountLabel,
+        toolList,
       });
       return { connected: connector.id };
     } catch (error) {
@@ -530,11 +540,15 @@ export const refreshToolList = internalAction({
     if (connection?.status !== "connected" || !connector) return null;
     const token = await connectionAccessToken(ctx, connector, connection);
     if ("needsReconnect" in token) return null;
-    const toolList = await fetchToolList(connector, token.accessToken);
-    await ctx.runMutation(internal.connectors.saveToolList, {
-      connectionId,
-      toolList: JSON.stringify(toolList),
-    });
+    const client = await createConnectorClient(connector, token.accessToken);
+    try {
+      await ctx.runMutation(internal.connectors.saveToolList, {
+        connectionId,
+        toolList: await fetchToolList(connector, client),
+      });
+    } finally {
+      await client.close();
+    }
     return null;
   },
 });
@@ -754,26 +768,24 @@ async function requireIdentity(ctx: ActionCtx) {
   }
 }
 
-/** Every tool the connector's MCP server lists, across all pages. */
+/**
+ * Every tool the connector's MCP server lists, across all pages, as a8
+ * stores them (storedToolList).
+ */
 async function fetchToolList(
   connector: Connector,
-  accessToken: string,
-): Promise<ListToolsResult["tools"]> {
-  const client = await createConnectorClient(connector, accessToken);
-  try {
-    const tools: ListToolsResult["tools"] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await client.listTools({
-        params: cursor === undefined ? undefined : { cursor },
-      });
-      tools.push(...page.tools);
-      cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    return tools;
-  } finally {
-    await client.close();
-  }
+  client: MCPClient,
+): Promise<string> {
+  const tools: McpTool[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await client.listTools({
+      params: cursor === undefined ? undefined : { cursor },
+    });
+    tools.push(...page.tools);
+    cursor = page.nextCursor;
+  } while (cursor !== undefined);
+  return storedToolList(connector, tools);
 }
 
 function isRejectedClient(oauthError: string) {

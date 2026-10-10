@@ -1,5 +1,6 @@
 import {
   createMCPClient,
+  type CallToolResult,
   type MCPClient,
   type OAuthAuthorizationServerInformation,
   type OAuthClientInformation,
@@ -39,7 +40,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   savedCodeVerifier?: string;
   savedAuthorizationServer?: OAuthAuthorizationServerInformation;
   savedTokens?: OAuthTokens;
-  /** Read from the token response's `connector.accountLabelField`. */
+  /** Read from the token response, for a `tokenResponse` label source. */
   accountLabel?: string;
 
   constructor(
@@ -121,8 +122,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
     authorizationServerUrl: string | URL,
   ) {
     const origin = new URL(authorizationServerUrl).origin;
-    const pinned = new URL(this.connector.pinnedOrigins.authorizationServer);
-    if (origin !== pinned.origin) {
+    if (!pinnedOrigins(this.connector).includes(origin)) {
       throw new Error(
         `${this.connector.name}'s MCP server named an authorization server a8 doesn't trust: ${origin}`,
       );
@@ -195,9 +195,9 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
     init?: RequestInit,
   ): Promise<Response> => {
     const response = await pinnedFetch(this.connector)(input, init);
-    const field = this.connector.accountLabelField;
+    const source = this.connector.accountLabel;
     if (
-      field &&
+      source?.from === "tokenResponse" &&
       response.ok &&
       init?.body instanceof URLSearchParams &&
       init.body.get("grant_type") === "authorization_code"
@@ -206,12 +206,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
         .clone()
         .json()
         .catch(() => undefined);
-      if (typeof body === "object" && body !== null && field in body) {
-        const label: unknown = (body as Record<string, unknown>)[field];
-        if (typeof label === "string" && label.trim()) {
-          this.accountLabel = label.trim();
-        }
-      }
+      this.accountLabel = labelAt(body, source.field);
     }
     return response;
   };
@@ -260,13 +255,82 @@ function assertPinnedOrigin(
   input: string | URL | Request,
 ) {
   const origin = new URL(input instanceof Request ? input.url : input).origin;
-  const pinned = [
-    connector.pinnedOrigins.mcpServer,
-    connector.pinnedOrigins.authorizationServer,
-  ].map((url) => new URL(url).origin);
-  if (!pinned.includes(origin)) {
+  if (!pinnedOrigins(connector).includes(origin)) {
     throw new Error(`a8 doesn't contact ${origin} for ${connector.name}.`);
   }
+}
+
+function pinnedOrigins(connector: Connector): string[] {
+  return connector.pinnedOrigins.map((url) => new URL(url).origin);
+}
+
+/** How long the account label tool can take before a8 gives up on it. */
+const ACCOUNT_LABEL_TIMEOUT_MS = 15_000;
+
+/**
+ * Calls the connector's account label tool once, right after sign-in, and
+ * returns the label from its result. Undefined if the connector's label
+ * doesn't come from a tool, the tool isn't an allowlisted read, or the call
+ * or its result fails.
+ */
+export async function readAccountLabel(
+  connector: Connector,
+  client: MCPClient,
+): Promise<string | undefined> {
+  const source = connector.accountLabel;
+  if (source?.from !== "tool") return undefined;
+  // a8 calls it without asking, so only an allowlisted read qualifies.
+  const entry = connector.toolAllowlist.find((tool) => tool.name === source.tool);
+  if (entry?.kind !== "read") {
+    console.error(
+      `${connector.name}'s account label tool ${source.tool} isn't an allowlisted read.`,
+    );
+    return undefined;
+  }
+  try {
+    const result = await client.callTool({
+      name: source.tool,
+      arguments: source.arguments ?? {},
+      options: { timeout: ACCOUNT_LABEL_TIMEOUT_MS },
+    });
+    if (result.isError) throw new Error(JSON.stringify(result));
+    return labelAt(resultData(result), source.field);
+  } catch (error) {
+    console.error(`Reading the ${connector.name} account label failed`, error);
+    return undefined;
+  }
+}
+
+/** A tool result's structured content, or its first text part as JSON. */
+function resultData(result: CallToolResult): unknown {
+  if ("structuredContent" in result && result.structuredContent) {
+    return result.structuredContent;
+  }
+  const content = "content" in result ? result.content : undefined;
+  const text = Array.isArray(content)
+    ? (content as Array<{ type: string; text?: unknown }>).find(
+        (part) => part.type === "text" && typeof part.text === "string",
+      )?.text
+    : undefined;
+  if (typeof text !== "string") return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The non-blank string at a dot path like `organization.name`, trimmed, or
+ * undefined.
+ */
+function labelAt(data: unknown, path: string): string | undefined {
+  let value = data;
+  for (const key of path.split(".")) {
+    if (typeof value !== "object" || value === null) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 /**
@@ -323,7 +387,8 @@ export async function revokeConnection(
   const fetchPinned = pinnedFetch(connector);
   const endpoint = await findRevocationEndpoint(
     fetchPinned,
-    client.authorization_server ?? connector.pinnedOrigins.authorizationServer,
+    client.authorization_server ??
+      (await findAuthorizationServer(fetchPinned, connector.mcpServerUrl)),
   );
   if (!endpoint) return false;
 
@@ -359,6 +424,41 @@ export async function revokeConnection(
     );
   }
   return true;
+}
+
+/**
+ * The authorization server the MCP server names in its protected resource
+ * metadata (RFC 9728), or the MCP server's own origin if it names none. A
+ * pre-registered client has no stored authorization server, so revocation
+ * looks it up here.
+ */
+async function findAuthorizationServer(
+  fetchPinned: ReturnType<typeof pinnedFetch>,
+  mcpServerUrl: string,
+): Promise<string> {
+  const server = new URL(mcpServerUrl);
+  const path = server.pathname === "/" ? "" : server.pathname.replace(/\/$/, "");
+  // One deadline for both attempts.
+  const signal = AbortSignal.timeout(REVOKE_TIMEOUT_MS);
+  for (const suffix of path ? [path, ""] : [""]) {
+    const response = await fetchPinned(
+      new URL(`/.well-known/oauth-protected-resource${suffix}`, server.origin),
+      { signal },
+    ).catch((error: unknown) => {
+      console.error("Reading the protected resource metadata failed", error);
+      return undefined;
+    });
+    if (!response?.ok) continue;
+    const metadata: unknown = await response.json().catch(() => undefined);
+    const servers: unknown =
+      typeof metadata === "object" && metadata !== null
+        ? (metadata as Record<string, unknown>).authorization_servers
+        : undefined;
+    if (Array.isArray(servers) && typeof servers[0] === "string") {
+      return servers[0];
+    }
+  }
+  return server.origin;
 }
 
 /**

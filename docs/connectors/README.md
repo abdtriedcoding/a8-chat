@@ -40,18 +40,26 @@ With a token, or when `initialize` works without one, it prints every tool with 
 Given a connector ID, the probe ends with a catalog check against the live server. It checks the same things a8 does when it signs in and calls tools:
 
 - a `dynamicRegistration` connector's server has a registration endpoint
-- the MCP URL's origin is `pinnedOrigins.mcpServer`
-- the probe found authorization server metadata, and each authorization server's origin is `pinnedOrigins.authorizationServer`
+- the MCP URL's origin is in `pinnedOrigins`
+- the probe found authorization server metadata, and each authorization server's origin is in `pinnedOrigins`
 - every origin a8's server contacts is pinned. The check skips the authorization endpoint, because only the browser opens it.
+- no two allowlisted tools get the same model tool name
 - every tool in `toolAllowlist` is on the server's live tool list
+- an account label tool, if the entry names one, is an allowlisted `read` and is on the server's live tool list
 
 Each failed check prints a `FAIL` line, and the script exits with code 1. A vendor that renames a tool shows up as an allowlisted tool missing from the server. The allowlist check needs a tool list, so a run without a token fails it too.
+
+## What a8 does with the entry
+
+The model's name for each tool is `<connector id>__<tool>`, like `notion__search`. a8 drops a prefix of the connector ID on the vendor's name, rewrites any character outside `[a-zA-Z0-9_-]` to `_`, and cuts a name over 64 characters short. A rewritten or cut name ends in a hash of the vendor's name, so two names stay different. Old threads find their rows by this name, so never change a connector's ID.
+
+Before a8 stores a server's tool list on a connection, it cuts each description to 2,048 characters, turns each input schema into an object schema with no `anyOf`, `oneOf` or `allOf` at the top, and keeps at most 100 tools and 500 KB, allowlisted tools first.
 
 ## Checklist for a new connector
 
 1. Run the probe on the vendor's MCP URL. Record the URL, every origin, whether there's a registration endpoint, the scopes, the tools and their annotations.
 2. Do a real registration with a8's redirect URI before writing code. The probe's `--sign-in` uses a localhost redirect URI, so it doesn't prove the vendor accepts a8's.
-3. Write the catalog entry: the MCP URL, pinned origins, sign-in kind, allowlist with a `kind` on each tool, and account label field.
+3. Write the catalog entry: the MCP URL, pinned origins, sign-in kind, allowlist with a `kind` on each tool, and account label source. `pinnedOrigins` lists every origin the probe's catalog check needs: the MCP server's, and each authorization server, token or registration host the sign-in uses. The account label comes from a field of the token response, like Notion's `workspace_name`, or from a tool a8 calls once after sign-in, with a dot path to the label in its result. a8 calls that tool without asking, so it must be a `read` on the allowlist.
 4. Pick the allowlist from the probe's tool list. Take the reads and the common actions, about 10 tools and never more than 15. Set each tool's `kind` to `read` or `action` by what it does, not by its annotations. A read only fetches. Anything that writes, sends or deletes is an action. The `kind` decides whether the tool asks for approval, and the server's `readOnlyHint: false` can only make a read ask too (ADR 0008).
 5. Add the logo under `public/connectors/`.
 6. Run the probe on the new connector's ID with `--sign-in`. Every check should print `ok`.
