@@ -159,6 +159,30 @@ export const CONNECTORS: Connector[] = [
     ],
     accountLabel: { from: "tool", tool: "user-info", field: "email" },
   },
+  {
+    id: "airtable",
+    name: "Airtable",
+    handle: "airtable",
+    logo: "/connectors/airtable.svg",
+    description: "Read your Airtable bases, and add or update records.",
+    examplePrompt: "@airtable list my bases and the tables in each",
+    mcpServerUrl: "https://mcp.airtable.com/mcp",
+    pinnedOrigins: ["https://mcp.airtable.com", "https://airtable.com"],
+    signIn: { kind: "dynamicRegistration" },
+    toolAllowlist: [
+      { name: "list_workspaces", kind: "read", label: "Finding Airtable workspaces" },
+      { name: "list_bases", kind: "read", label: "Finding Airtable bases" },
+      { name: "search_bases", kind: "read", label: "Searching Airtable bases" },
+      { name: "list_tables_for_base", kind: "read", label: "Reading an Airtable base" },
+      { name: "get_table_schema", kind: "read", label: "Reading an Airtable table" },
+      { name: "list_records_for_table", kind: "read", label: "Reading Airtable records" },
+      { name: "search_records", kind: "read", label: "Searching Airtable records" },
+      { name: "analyze_table", kind: "read", label: "Analyzing an Airtable table" },
+      { name: "list_record_comments", kind: "read", label: "Reading Airtable comments" },
+      { name: "create_records_for_table", kind: "action", label: "Adding Airtable records" },
+      { name: "update_records_for_table", kind: "action", label: "Updating Airtable records" },
+    ],
+  },
 ];
 
 /**

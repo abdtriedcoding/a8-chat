@@ -353,13 +353,18 @@ function isUnknownTool(text: string): boolean {
   return /unknown tool|tool\b.*\bnot found/i.test(text);
 }
 
-/** A tool result as text: its text parts, or JSON for anything else. */
+/**
+ * A tool result as text: its text parts, or JSON for anything else. A
+ * result with no content parts, like Airtable's, gives its structured
+ * content as JSON.
+ */
 function resultText(result: CallToolResult): string {
   const content = "content" in result ? result.content : undefined;
-  if (!Array.isArray(content)) {
-    const data =
-      "structuredContent" in result ? result.structuredContent : result;
-    return JSON.stringify(data);
+  const structured =
+    "structuredContent" in result ? result.structuredContent : undefined;
+  if (!Array.isArray(content)) return JSON.stringify(structured ?? result);
+  if (content.length === 0 && structured != null) {
+    return JSON.stringify(structured);
   }
   return (content as Array<{ type: string; text?: unknown }>)
     .map((part) => {
