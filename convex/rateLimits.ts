@@ -212,6 +212,28 @@ export async function limitConnectStart(
   return ok;
 }
 
+/**
+ * Deletes a deleted user's rate limit counters. The sign-in counter's key is
+ * the email. Better Auth's own counters are keyed by IP and path, not user.
+ */
+export async function resetUserLimits(
+  ctx: RunMutationCtx,
+  userId: string,
+  email: string,
+) {
+  const key = { key: userId };
+  await rateLimiter.reset(ctx, "userSends", key);
+  await rateLimiter.reset(ctx, "userDailySends", key);
+  await rateLimiter.reset(ctx, "userDailyWebSearches", key);
+  await rateLimiter.reset(ctx, "userUploadUrls", key);
+  await rateLimiter.reset(ctx, "userUploadRegistrations", key);
+  await rateLimiter.reset(ctx, "userConnectorToolCalls", key);
+  await rateLimiter.reset(ctx, "userConnectStarts", key);
+  await rateLimiter.reset(ctx, "signInByEmail", {
+    key: email.trim().toLowerCase(),
+  });
+}
+
 function rateLimited(message: string, retryAfter: number): RateLimited {
   return { code: "RATE_LIMITED", message, retryAfter };
 }
