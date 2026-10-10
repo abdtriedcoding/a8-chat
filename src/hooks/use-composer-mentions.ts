@@ -170,8 +170,9 @@ function mentionQueryAt(text: string, caret: number): MentionQuery | undefined {
 }
 
 /**
- * The connectors whose handle or name contains the query, connected ones
- * first, each group in catalog order.
+ * The connectors whose handle or name contains the query. Ones with a
+ * connection come first, as on the Connectors page, and each group keeps
+ * catalog order.
  */
 function menuOptions(
   connectors: ConnectorStatus[],
@@ -183,7 +184,7 @@ function menuOptions(
       handle.includes(lowered) || name.toLowerCase().includes(lowered),
   );
   return [
-    ...matches.filter(({ status }) => status === "connected"),
-    ...matches.filter(({ status }) => status !== "connected"),
+    ...matches.filter(({ status }) => status !== "disconnected"),
+    ...matches.filter(({ status }) => status === "disconnected"),
   ];
 }

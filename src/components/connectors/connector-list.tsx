@@ -1,15 +1,25 @@
 "use client";
 
 import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { api } from "../../../convex/_generated/api";
-import type { ConnectResult } from "../../../convex/connectors";
+import type {
+  ConnectorStatus,
+  ConnectResult,
+} from "../../../convex/connectors";
 import {
   CONNECTORS,
   findConnector,
   type ConnectError,
+  type Connector,
 } from "../../../convex/lib/connectors";
 import { ConnectorCard } from "./connector-card";
 
@@ -32,8 +42,11 @@ const ERROR_MESSAGES: Record<ConnectError, string> = {
 const TOAST_ID = "connector-sign-in";
 
 /**
- * The catalog with the user's connection status. Cards render from the
- * catalog right away and pick up their status when the query loads.
+ * The catalog with the user's connection status, under a search box that
+ * filters by name or handle. Cards with a connection, including ones that
+ * need reconnecting, go under Connected and the rest under Available.
+ * Until the query loads, every card renders from the catalog in one list
+ * with no heading.
  */
 export function ConnectorList({
   callbackParams,
@@ -43,19 +56,86 @@ export function ConnectorList({
   const { isLoading } = useConvexAuth();
   const connections = useQuery(api.connectors.list, isLoading ? "skip" : {});
   useFinishSignIn(callbackParams, isLoading);
+  const [search, setSearch] = useState("");
+
+  const cards = matchingConnectors(search).map((connector) => ({
+    connector,
+    connection: connections?.find(({ id }) => id === connector.id),
+  }));
+  const sections: { heading?: string; cards: typeof cards }[] = connections
+    ? [
+        {
+          heading: "Connected",
+          cards: cards.filter(({ connection }) => hasConnection(connection)),
+        },
+        {
+          heading: "Available",
+          cards: cards.filter(({ connection }) => !hasConnection(connection)),
+        },
+      ]
+    : [{ cards }];
 
   return (
-    <ul className="flex flex-col gap-4">
-      {CONNECTORS.map((connector) => (
-        <li key={connector.id}>
-          <ConnectorCard
-            connector={connector}
-            connection={connections?.find(({ id }) => id === connector.id)}
-          />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-6">
+      <InputGroup>
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
+        <InputGroupInput
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search connectors"
+          aria-label="Search connectors"
+        />
+      </InputGroup>
+      {cards.length === 0 && (
+        <p className="text-center text-muted-foreground">
+          No connectors match &ldquo;{search.trim()}&rdquo;.
+        </p>
+      )}
+      {sections.map(
+        ({ heading, cards }) =>
+          cards.length > 0 && (
+            <section key={heading ?? "all"} className="flex flex-col gap-3">
+              {heading && (
+                <h2 className="font-heading text-sm font-medium text-muted-foreground">
+                  {heading}
+                </h2>
+              )}
+              <ul className="flex flex-col gap-4">
+                {cards.map(({ connector, connection }) => (
+                  <li key={connector.id}>
+                    <ConnectorCard
+                      connector={connector}
+                      connection={connection}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ),
+      )}
+    </div>
   );
+}
+
+/**
+ * The connectors whose name or handle contains the search, in catalog
+ * order. A leading @ is ignored, so `@no` finds Notion.
+ */
+function matchingConnectors(search: string): Connector[] {
+  const query = search.trim().replace(/^@/, "").toLowerCase();
+  return CONNECTORS.filter(
+    ({ name, handle }) =>
+      name.toLowerCase().includes(query) ||
+      handle.toLowerCase().includes(query),
+  );
+}
+
+/** Whether the user has a connection, working or needing reconnecting. */
+function hasConnection(connection: ConnectorStatus | undefined): boolean {
+  return connection !== undefined && connection.status !== "disconnected";
 }
 
 /**
