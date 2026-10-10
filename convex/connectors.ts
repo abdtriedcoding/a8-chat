@@ -2,14 +2,17 @@
 // 1. The Connectors page calls connect, which returns the vendor's authorize
 //    URL, and the browser goes there.
 // 2. The vendor sends the browser to callback (/connectors/callback), which
-//    saves the code on the sign-in's pendingConnects row and redirects to
-//    the Connectors page with `?finish=<state>`.
-// 3. The page calls finishConnect, which exchanges the code and stores the
-//    connection.
+//    redirects to the Connectors page with the code in the URL fragment:
+//    `#finish=<state>&code=<code>&iss=<iss>`. A fragment never reaches a
+//    server or a Referer header, and callback saves nothing.
+// 3. The page calls finishConnect with the state, code and issuer, which
+//    exchanges the code and stores the connection.
 // The exchange waits for step 3 because the callback runs on the Convex
 // site and can't see who is signed in. finishConnect only finishes a
-// sign-in the signed-in user started, so a stranger who sends someone their
-// authorize URL can't link that person's Notion to their own account.
+// sign-in for the signed-in user who started it. The code goes only to the
+// browser that approved, so if an attacker sends a victim their authorize
+// URL, the victim's session doesn't match the starter. That fails the
+// sign-in and deletes it, and the attacker never sees the code.
 
 import { auth, type MCPClient } from "@ai-sdk/mcp";
 import { getThreadMetadata } from "@convex-dev/agent";
@@ -28,6 +31,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { requireUser } from "./auth";
+import { limitConnectStart } from "./rateLimits";
 import {
   ConnectorOAuthProvider,
   createConnectorClient,
@@ -129,7 +133,9 @@ export const connect = action({
   args: { connectorId: v.string() },
   returns: v.string(),
   handler: async (ctx, { connectorId }): Promise<string> => {
-    await requireIdentity(ctx);
+    // Checks the session and the rate limit before any outbound fetch, since
+    // discovery and client registration call the vendor.
+    await ctx.runMutation(internal.connectors.checkConnectStart, {});
     const connector = findConnector(connectorId);
     if (!connector) {
       throw new ConvexError({ code: "NOT_FOUND", message: "Unknown connector." });
@@ -179,10 +185,11 @@ export const connect = action({
 });
 
 /**
- * Where the vendor sends the browser after sign-in. Saves the code on the
- * sign-in named by `state` and redirects to the Connectors page with
- * `?finish=<state>`. If the user cancelled or the vendor refused, it
- * deletes the sign-in and redirects with `?error=<ConnectError>`.
+ * Where the vendor sends the browser after sign-in. Redirects to the
+ * Connectors page with `#finish=<state>&code=<code>` (and `&iss=<iss>` if
+ * the vendor sent one) and saves nothing. If the user cancelled or the
+ * vendor refused, it deletes the sign-in and redirects with
+ * `?error=<ConnectError>`.
  */
 export const callback = httpAction(async (ctx, request) => {
   const params = new URL(request.url).searchParams;
@@ -201,29 +208,27 @@ export const callback = httpAction(async (ctx, request) => {
 
   const code = params.get("code");
   if (!code) return redirectToConnectors({ error: "failed" });
-  const saved = await ctx.runMutation(internal.connectors.saveCallbackCode, {
-    state,
-    code,
-    callbackIssuer: params.get("iss") ?? undefined,
+  return redirectToConnectors({
+    finish: { state, code, iss: params.get("iss") ?? undefined },
   });
-  return redirectToConnectors(saved ? { finish: state } : { error: "expired" });
 });
 
 /**
  * Finishes the user's sign-in named by `state`: exchanges the code, then
- * stores the encrypted tokens and the tool list. The pendingConnects row is
- * gone once this returns, whatever the result.
+ * stores the encrypted tokens and the tool list. `code` and `iss` come from
+ * the callback's redirect. The pendingConnects row is gone once this
+ * returns, whatever the result.
  */
 export const finishConnect = action({
-  args: { state: v.string() },
+  args: { state: v.string(), code: v.string(), iss: v.optional(v.string()) },
   returns: vConnectResult,
-  handler: async (ctx, { state }): Promise<ConnectResult> => {
-    await requireIdentity(ctx);
+  handler: async (ctx, { state, code, iss }): Promise<ConnectResult> => {
+    // takePendingConnect checks the session before any outbound fetch.
     const pending = await ctx.runMutation(
       internal.connectors.takePendingConnect,
       { state },
     );
-    if (!pending?.code) return { error: "expired" };
+    if (!pending) return { error: "expired" };
     const connector = findConnector(pending.connectorId);
     if (!connector) return { error: "failed" };
 
@@ -237,9 +242,9 @@ export const finishConnect = action({
       );
       await auth(provider, {
         serverUrl: connector.mcpServerUrl,
-        authorizationCode: pending.code,
+        authorizationCode: code,
         callbackState: state,
-        callbackIssuer: pending.callbackIssuer,
+        callbackIssuer: iss,
         fetchFn: provider.fetch,
       });
       const tokens = provider.savedTokens;
@@ -396,6 +401,25 @@ export const deleteConnectorClient = internalMutation({
   },
 });
 
+/**
+ * Checks the session, then counts one sign-in start against the user's rate
+ * limit. Throws if either fails.
+ */
+export const checkConnectStart = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!(await limitConnectStart(ctx, user._id))) {
+      throw new ConvexError({
+        code: "RATE_LIMITED",
+        message: "Too many sign-in attempts. Try again in a minute.",
+      });
+    }
+    return null;
+  },
+});
+
 export const savePendingConnect = internalMutation({
   args: {
     state: v.string(),
@@ -412,33 +436,6 @@ export const savePendingConnect = internalMutation({
       expiresAt: Date.now() + PENDING_CONNECT_TTL_MS,
     });
     return null;
-  },
-});
-
-/**
- * Saves the vendor's code on the sign-in named by `state`. Returns false,
- * and saves nothing, if there's no such sign-in, it has expired, or it
- * already has a code.
- */
-export const saveCallbackCode = internalMutation({
-  args: {
-    state: v.string(),
-    code: v.string(),
-    callbackIssuer: v.optional(v.string()),
-  },
-  returns: v.boolean(),
-  handler: async (ctx, { state, code, callbackIssuer }) => {
-    const pending = await findPendingConnect(ctx, state);
-    if (!pending || pending.code !== undefined) return false;
-    if (pending.expiresAt <= Date.now()) {
-      await ctx.db.delete("pendingConnects", pending._id);
-      return false;
-    }
-    await ctx.db.patch("pendingConnects", pending._id, {
-      code,
-      callbackIssuer,
-    });
-    return true;
   },
 });
 
@@ -793,11 +790,19 @@ function isRejectedClient(oauthError: string) {
 }
 
 function redirectToConnectors(
-  result: { finish: string } | { error: ConnectError },
+  result:
+    | { finish: { state: string; code: string; iss?: string } }
+    | { error: ConnectError },
 ) {
   const url = new URL("/connectors", env.SITE_URL);
-  if ("finish" in result) url.searchParams.set("finish", result.finish);
-  else url.searchParams.set("error", result.error);
+  if ("finish" in result) {
+    const { state, code, iss } = result.finish;
+    const fragment = new URLSearchParams({ finish: state, code });
+    if (iss !== undefined) fragment.set("iss", iss);
+    url.hash = fragment.toString();
+  } else {
+    url.searchParams.set("error", result.error);
+  }
   return new Response(null, {
     status: 302,
     headers: { Location: url.href },
