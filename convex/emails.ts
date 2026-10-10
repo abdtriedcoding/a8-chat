@@ -4,8 +4,8 @@ import { components } from "./_generated/api";
 import { env, internalMutation } from "./_generated/server";
 import { resetPasswordEmail, verificationEmail } from "./lib/authEmails";
 
-// Resend only delivers to its own test addresses while testMode is on.
-// Production sets RESEND_TEST_MODE to "false" once a sending domain is verified.
+// Resend only delivers to its own test addresses while testMode is on, which
+// RESEND_TEST_MODE="true" turns on. Unset, a8 sends to real addresses.
 const resend = new Resend(components.resend, {
   apiKey: env.RESEND_API_KEY,
   testMode: env.RESEND_TEST_MODE === "true",
