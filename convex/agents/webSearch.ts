@@ -15,8 +15,9 @@ export type WebSearchOutput = WebSearchResult[] | string;
 
 /**
  * The model's web search tool. Each call counts against the daily search
- * cap first. Over the cap, the tool returns WEB_SEARCH_OFF instead of
- * failing, so the model can still answer and tell the user.
+ * caps first, the user's and everyone's. Over a cap, the tool returns
+ * WEB_SEARCH_OFF instead of failing, so the model can still answer and tell
+ * the user.
  */
 export const webSearch = createTool({
   description:
@@ -27,8 +28,12 @@ export const webSearch = createTool({
       .string()
       .describe("What to search for, written like a search engine query."),
   }),
-  execute: async (ctx, { query }, { abortSignal }): Promise<WebSearchOutput> => {
-    if (!(await limitWebSearch(ctx))) return WEB_SEARCH_OFF;
+  execute: async (
+    ctx,
+    { query },
+    { abortSignal },
+  ): Promise<WebSearchOutput> => {
+    if (!(await limitWebSearch(ctx, ctx.userId))) return WEB_SEARCH_OFF;
     return await searchWeb(query, abortSignal);
   },
 });

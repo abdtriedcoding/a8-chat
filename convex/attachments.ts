@@ -14,6 +14,7 @@ import {
 } from "./_generated/server";
 import { chatModel } from "./agents/chat";
 import { requireUser } from "./auth";
+import { limitUploadRegistration, limitUploadUrl } from "./rateLimits";
 import {
   checkAttachmentCount,
   cleanFilename,
@@ -64,12 +65,86 @@ export const capabilities = query({
   },
 });
 
+/** How long an upload grant can wait before registerUpload can't spend it. */
+const UPLOAD_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Gives the browser a URL to upload one file to. It records an upload grant
+ * for the user, which registerUpload spends to claim the file. Convex can't
+ * say who uploaded a file, so a grant, and the claim that follows it, are how
+ * a file gets tied to its uploader.
+ */
 export const generateUploadUrl = mutation({
   args: {},
   returns: v.string(),
   handler: async (ctx) => {
-    await requireUser(ctx);
+    const user = await requireUser(ctx);
+    if (!(await limitUploadUrl(ctx, user._id))) {
+      throw new ConvexError({
+        code: "RATE_LIMITED",
+        message: "Too many uploads. Try again later.",
+      });
+    }
+    await ctx.db.insert("uploadGrants", { userId: user._id });
     return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/**
+ * Ties an uploaded file to the user registering it, or refuses. A user can
+ * claim a file if:
+ * - nobody has claimed it, and the user has a grant from the last 24 hours
+ *   that's older than the file, which the claim then spends, or
+ * - the user already claimed it, as on a retry.
+ *
+ * It returns a refusal, and registerUpload deletes nothing, when the file
+ * doesn't exist, someone else claimed it, or the user has no grant for it.
+ * A refusal looks the same for each, so it doesn't reveal that a file
+ * exists. It also refuses a user over their limit.
+ *
+ * A user who learns another user's storage ID in the seconds between that
+ * user's upload and registration could still claim it first. Storage IDs
+ * are random and only the uploader's browser sees one, so a8 accepts that.
+ */
+export const claimUpload = internalMutation({
+  args: { storageId: v.id("_storage") },
+  returns: v.union(v.null(), vUploadRejected),
+  handler: async (ctx, { storageId }): Promise<UploadRejected | null> => {
+    const user = await requireUser(ctx);
+    if (!(await limitUploadRegistration(ctx, user._id))) {
+      return {
+        code: "INVALID_ATTACHMENT",
+        message: "Too many uploads. Try again later.",
+      };
+    }
+    const notFound: UploadRejected = {
+      code: "INVALID_ATTACHMENT",
+      message: "Upload not found.",
+    };
+    const storedFile = await ctx.db.system.get("_storage", storageId);
+    if (!storedFile) return notFound;
+
+    const claim = await ctx.db
+      .query("uploadGrants")
+      .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
+      .first();
+    if (claim) {
+      return claim.userId === user._id ? null : notFound;
+    }
+
+    const grant = await ctx.db
+      .query("uploadGrants")
+      .withIndex("by_userId_and_storageId", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("storageId", undefined)
+          .gte("_creationTime", Date.now() - UPLOAD_GRANT_MAX_AGE_MS)
+          .lte("_creationTime", storedFile._creationTime),
+      )
+      .first();
+    if (!grant) return notFound;
+    await ctx.db.patch("uploadGrants", grant._id, { storageId });
+    return null;
   },
 });
 
@@ -100,12 +175,20 @@ export const registerUpload = action({
         message: "Please sign in to continue.",
       });
     }
+    // Nothing below deletes a file until the user has claimed it.
+    const refusal = await ctx.runMutation(internal.attachments.claimUpload, {
+      storageId,
+    });
+    if (refusal) return refusal;
     const storageMetadata = await ctx.runQuery(
       internal.attachments.getStorageMetadata,
       { storageId },
     );
     if (!storageMetadata) {
-      throw new ConvexError({ code: "NOT_FOUND", message: "Upload not found." });
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "Upload not found.",
+      });
     }
     const safeFilename = cleanFilename(filename);
     const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
@@ -127,7 +210,11 @@ export const registerUpload = action({
     // An empty type, for bytes that match no type a8 takes, is refused here.
     const detectedMediaType = (await readMediaType(ctx, storageId)) ?? "";
     const detectedTypeRejection = getAttachmentRejectionReason(
-      { name: safeFilename, type: detectedMediaType, size: storageMetadata.size },
+      {
+        name: safeFilename,
+        type: detectedMediaType,
+        size: storageMetadata.size,
+      },
       acceptedMediaTypes,
     );
     if (detectedTypeRejection) {
@@ -227,7 +314,10 @@ export const saveUpload = internalMutation({
     }
     const fileUrl = await ctx.storage.getUrl(savedStorageId);
     if (!fileUrl) {
-      throw new ConvexError({ code: "NOT_FOUND", message: "Upload not found." });
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "Upload not found.",
+      });
     }
     return { fileId: agentFile.fileId, fileUrl };
   },
@@ -318,10 +408,114 @@ async function cleanUpUploadsBatch(
   }
 
   if (!isDone) {
-    await ctx.scheduler.runAfter(0, internal.attachments.continueUploadCleanUp, {
-      cutoff,
-      cursor: continueCursor,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.attachments.continueUploadCleanUp,
+      {
+        cutoff,
+        cursor: continueCursor,
+      },
+    );
+  }
+}
+
+/** How many storage files one orphan cleanup transaction checks. */
+const ORPHAN_BATCH_SIZE = 100;
+/**
+ * How far back cleanUpOrphanedStorage looks. It runs daily, so a file it
+ * passes over once has an attachments row, and later runs skip it.
+ */
+const ORPHAN_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * How long an upload grant row stays. Twice UPLOAD_GRANT_MAX_AGE_MS, so a
+ * claim row outlives every grant that could still claim its file.
+ */
+const UPLOAD_GRANT_RETENTION_MS = 2 * UPLOAD_GRANT_MAX_AGE_MS;
+/** How many upload grant rows one cleanup transaction deletes. */
+const GRANT_DELETE_BATCH_SIZE = 500;
+
+/**
+ * Deletes storage files nobody registered: uploads older than 24 hours with
+ * no attachments row. registerUpload fails for a file this old unless its
+ * grant is still valid, and saveUpload writes the attachments row in the
+ * transaction that adds the file to the Agent, so a file with no row isn't
+ * used by a message. Files with a row are never deleted here, whether or
+ * not a message uses them. cleanUpUnsentUploads handles those.
+ *
+ * The Agent also stores a file, with no row, when a message holds inline
+ * bytes over 64 KB. a8's prompts hold file URLs (loadPromptAttachments), so
+ * that doesn't happen. A change that saves inline bytes must keep this job
+ * from deleting those files.
+ *
+ * It also deletes old upload grant rows. Runs daily (convex/crons.ts).
+ */
+export const cleanUpOrphanedStorage = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const oldGrants = await ctx.db
+      .query("uploadGrants")
+      .withIndex("by_creation_time", (q) =>
+        q.lt("_creationTime", now - UPLOAD_GRANT_RETENTION_MS),
+      )
+      .take(GRANT_DELETE_BATCH_SIZE);
+    for (const grant of oldGrants) {
+      await ctx.db.delete("uploadGrants", grant._id);
+    }
+    await cleanUpOrphansBatch(
+      ctx,
+      now - UNSENT_UPLOAD_MAX_AGE_MS,
+      now - ORPHAN_LOOKBACK_MS,
+      null,
+    );
+    return null;
+  },
+});
+
+/** Checks the next batch for cleanUpOrphanedStorage, with the same window. */
+export const continueOrphanCleanUp = internalMutation({
+  args: { cutoff: v.number(), since: v.number(), cursor: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { cutoff, since, cursor }) => {
+    await cleanUpOrphansBatch(ctx, cutoff, since, cursor);
+    return null;
+  },
+});
+
+/**
+ * Deletes the orphans among one batch of storage files created from `since`
+ * to `cutoff`, then schedules the next batch.
+ */
+async function cleanUpOrphansBatch(
+  ctx: MutationCtx,
+  cutoff: number,
+  since: number,
+  cursor: string | null,
+) {
+  const { page, isDone, continueCursor } = await ctx.db.system
+    .query("_storage")
+    .withIndex("by_creation_time", (q) =>
+      q.gte("_creationTime", since).lt("_creationTime", cutoff),
+    )
+    .paginate({ numItems: ORPHAN_BATCH_SIZE, cursor });
+  for (const storedFile of page) {
+    const attachment = await ctx.db
+      .query("attachments")
+      .withIndex("by_storageId", (q) => q.eq("storageId", storedFile._id))
+      .first();
+    if (!attachment) await ctx.storage.delete(storedFile._id);
+  }
+  if (!isDone) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.attachments.continueOrphanCleanUp,
+      {
+        cutoff,
+        since,
+        cursor: continueCursor,
+      },
+    );
   }
 }
 
@@ -403,6 +597,9 @@ export async function loadPromptAttachments(
         });
       }
       const filename = agentFile.filename ?? UNNAMED_FILE;
+      // Keep these parts URLs. The Agent stores inline bytes over 64 KB as
+      // its own file, with no attachments row, and cleanUpOrphanedStorage
+      // would delete it a day later.
       const part: ImagePart | FilePart =
         getAttachmentKind(mediaType) === "image"
           ? { type: "image", image: new URL(fileUrl), mediaType }
