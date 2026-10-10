@@ -17,7 +17,11 @@ import {
   type OAuthClientProvider,
   type OAuthTokens,
 } from "@ai-sdk/mcp";
-import { findConnector, type Connector } from "../convex/lib/connectors";
+import {
+  findConnector,
+  modelToolName,
+  type Connector,
+} from "../convex/lib/connectors";
 
 /** How long each request to the vendor can take. */
 const TIMEOUT_MS = 15_000;
@@ -563,12 +567,13 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     );
   }
 
-  const pinnedMcpServer = new URL(connector.pinnedOrigins.mcpServer).origin;
-  const pinnedServer = new URL(connector.pinnedOrigins.authorizationServer)
-    .origin;
+  const pinned = new Set(
+    connector.pinnedOrigins.map((url) => new URL(url).origin),
+  );
+  const mcpOrigin = new URL(connector.mcpServerUrl).origin;
   report(
-    new URL(connector.mcpServerUrl).origin === pinnedMcpServer,
-    `the MCP URL's origin is pinnedOrigins.mcpServer, ${pinnedMcpServer}`,
+    pinned.has(mcpOrigin),
+    `the MCP URL's origin, ${mcpOrigin}, ${pinned.has(mcpOrigin) ? "is" : "isn't"} pinned`,
   );
   report(
     findings.authorizationServers.length > 0,
@@ -577,11 +582,10 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
   for (const server of findings.authorizationServers) {
     const origin = new URL(server).origin;
     report(
-      origin === pinnedServer,
-      `authorization server ${origin} ${origin === pinnedServer ? "is" : "isn't"} pinnedOrigins.authorizationServer`,
+      pinned.has(origin),
+      `authorization server ${origin} ${pinned.has(origin) ? "is" : "isn't"} pinned`,
     );
   }
-  const pinned = new Set([pinnedMcpServer, pinnedServer]);
   for (const [origin, uses] of findings.origins) {
     if ([...uses].every((use) => use === BROWSER_ONLY)) continue;
     report(
@@ -589,6 +593,21 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
       `${origin} ${pinned.has(origin) ? "is" : "isn't"} pinned`,
     );
   }
+
+  const modelNames = new Map<string, string[]>();
+  for (const tool of connector.toolAllowlist) {
+    const name = modelToolName(connector, tool.name);
+    modelNames.set(name, [...(modelNames.get(name) ?? []), tool.name]);
+  }
+  for (const [name, tools] of modelNames) {
+    if (tools.length > 1) {
+      report(false, `allowlisted tools ${tools.join(", ")} share the model name ${name}`);
+    }
+  }
+  report(
+    modelNames.size === connector.toolAllowlist.length,
+    `every allowlisted tool has its own model name`,
+  );
 
   if (!findings.tools) {
     report(false, `allowlist not checked: ${findings.noToolsReason}`);
@@ -604,6 +623,20 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     missing.length === 0,
     `${listed - missing.length} of ${listed} allowlisted tools are on the server`,
   );
+  const labelSource = connector.accountLabel;
+  if (labelSource?.from === "tool") {
+    const entry = connector.toolAllowlist.find(
+      (tool) => tool.name === labelSource.tool,
+    );
+    report(
+      entry?.kind === "read",
+      `account label tool ${labelSource.tool} ${entry?.kind === "read" ? "is" : "isn't"} an allowlisted read`,
+    );
+    report(
+      live.has(labelSource.tool),
+      `account label tool ${labelSource.tool} ${live.has(labelSource.tool) ? "is" : "isn't"} on the server`,
+    );
+  }
   return failures;
 }
 

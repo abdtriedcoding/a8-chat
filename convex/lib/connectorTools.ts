@@ -7,7 +7,6 @@
 import {
   MCPClientError,
   type CallToolResult,
-  type ListToolsResult,
   type MCPClient,
 } from "@ai-sdk/mcp";
 import {
@@ -24,6 +23,7 @@ import type { ConnectionTokens } from "../connectors";
 import { limitConnectorToolCall } from "../rateLimits";
 import { connectionAccessToken } from "./connectionTokens";
 import { createConnectorClient } from "./connectorAuth";
+import type { McpTool } from "./connectorToolList";
 import {
   findConnector,
   findConnectorTool,
@@ -49,10 +49,8 @@ const UNTRUSTED_TAG = "untrusted-data";
 const DAILY_LIMIT_REACHED =
   "The user has reached today's limit for connector tools. Tell them it resets at 00:00 UTC, and answer without connector tools.";
 
-type McpTool = ListToolsResult["tools"][number];
-
 export type ConnectorTools = {
-  /** The tools of every connected connection, named `<handle>__<tool>`. */
+  /** The tools of every connected connection, named by modelToolName. */
   tools: ToolSet;
   /**
    * The reply's `toolApproval` option. It makes every action wait for the
@@ -94,6 +92,8 @@ export async function createConnectorTools(
       if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
       tools[name] = tool({
         description: mcpTool.description,
+        // storedToolList adds `properties`, but a list stored before it
+        // existed may lack them until its next refresh.
         inputSchema: jsonSchema<Record<string, unknown>>({
           ...mcpTool.inputSchema,
           properties: mcpTool.inputSchema.properties ?? {},

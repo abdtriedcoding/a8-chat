@@ -30,7 +30,7 @@ const WEB_SEARCH =
 
 // Only added when the catalog has connectors (convex/lib/connectors.ts).
 const CONNECTOR_GUIDE =
-  "Connectors link a8 to the user's apps. A tool named <handle>__<tool>, " +
+  "Connectors link a8 to the user's apps. A tool named <connector>__<tool>, " +
   "like notion__search, works in that connector's app. When a question is " +
   "about the user's own content in an app that's connected, use its tools " +
   "without waiting to be asked.\n" +
