@@ -106,7 +106,8 @@ export default defineSchema({
     expiresAt: v.number(),
   })
     .index("by_state", ["state"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("by_expiresAt", ["expiresAt"])
+    .index("by_userId", ["userId"]),
   // The OAuth client a8 registered with a connector's authorization server.
   // One row per connector per deployment, shared by every user. Notion
   // orphans earlier grants when a client registers again, so a8 only

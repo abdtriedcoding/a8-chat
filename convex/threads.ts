@@ -5,8 +5,9 @@ import {
   paginationResultValidator,
 } from "convex/server";
 import { ConvexError, v } from "convex/values";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import {
+  internalMutation,
   mutation,
   query,
   type MutationCtx,
@@ -183,22 +184,61 @@ export const remove = mutation({
   returns: v.null(),
   handler: async (ctx, { threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
-    await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
-      threadId,
-    });
-    // A thread has at most one row per turn, so one transaction can delete
-    // them all.
-    const stopped = ctx.db
-      .query("stoppedReplies")
-      .withIndex("by_threadId_and_order", (q) => q.eq("threadId", threadId));
-    for await (const row of stopped) {
-      await ctx.db.delete("stoppedReplies", row._id);
+    await deleteThread(ctx, threadId);
+    return null;
+  },
+});
+
+async function deleteThread(ctx: MutationCtx, threadId: string) {
+  await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
+    threadId,
+  });
+  // A thread has at most one row per turn, so one transaction can delete
+  // them all.
+  const stopped = ctx.db
+    .query("stoppedReplies")
+    .withIndex("by_threadId_and_order", (q) => q.eq("threadId", threadId));
+  for await (const row of stopped) {
+    await ctx.db.delete("stoppedReplies", row._id);
+  }
+  const deferred = await ctx.db
+    .query("deferredToolThreads")
+    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .unique();
+  if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
+}
+
+/** How many of a user's threads one account cleanup transaction deletes. */
+const PURGE_THREAD_BATCH_SIZE = 25;
+
+/**
+ * Deletes a batch of a deleted user's threads the way remove does, then
+ * schedules the next batch. It takes the user ID, not the session, since the
+ * account is already gone. Scheduled by purgeAccount (convex/auth.ts).
+ */
+export const purgeUserThreads = internalMutation({
+  args: { userId: v.string(), cursor: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { userId, cursor }): Promise<null> => {
+    const { page, isDone, continueCursor } = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      {
+        userId,
+        paginationOpts: {
+          numItems: PURGE_THREAD_BATCH_SIZE,
+          cursor: cursor ?? null,
+        },
+      },
+    );
+    for (const thread of page) {
+      await deleteThread(ctx, thread._id);
     }
-    const deferred = await ctx.db
-      .query("deferredToolThreads")
-      .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
-      .unique();
-    if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
+    if (!isDone) {
+      await ctx.scheduler.runAfter(0, internal.threads.purgeUserThreads, {
+        userId,
+        cursor: continueCursor,
+      });
+    }
     return null;
   },
 });
