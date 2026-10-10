@@ -1,11 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, MailCheckIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
-import { useTransition } from "react";
+import { useState } from "react";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -34,8 +33,9 @@ const formSchema = z.object({
 });
 
 export function SignUpForm() {
-  const router = useRouter();
-  const [navigating, startNavigation] = useTransition();
+  // Set once the form is accepted. It shows the same screen for a new and a
+  // registered email, so the form doesn't reveal which emails have accounts.
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -45,23 +45,41 @@ export function SignUpForm() {
       password: "",
     },
   });
-  
-  // `navigating` clears when the redirect settles, so a bounced redirect
-  // leaves the form usable.
-  const pending = form.formState.isSubmitting || navigating;
+
+  const pending = form.formState.isSubmitting;
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
-    const { error } = await authClient.signUp.email(data);
-    if (error) {
+    const { error } = await authClient.signUp.email({
+      ...data,
+      callbackURL: `${window.location.origin}/chat`,
+    });
+    // Better Auth answers a registered email with success when verification
+    // is required. This also covers the older error, in case that changes.
+    if (error && error.code !== "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
       form.setError("root", {
         message: error.message ?? "Couldn't create your account. Please try again.",
       });
       return;
     }
-    startNavigation(() => {
-      router.replace("/chat");
-      router.refresh();
-    });
+    setSentTo(data.email);
+  }
+
+  if (sentTo) {
+    return (
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-2">
+          <MailCheckIcon className="size-8 text-muted-foreground" />
+          <h1 className="text-3xl font-bold tracking-tight">Check your email</h1>
+          <p className="text-muted-foreground">
+            If {sentTo} can be used for a new account, we sent a link to it.
+            Open the link to verify your email and sign in.
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Already verified? <Link href="/sign-in">Sign in</Link>
+        </p>
+      </div>
+    );
   }
 
   return (
