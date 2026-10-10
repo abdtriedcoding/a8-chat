@@ -22,14 +22,16 @@ Without a token, it prints:
 - the scopes named in the challenge, the resource metadata and the authorization server metadata
 - every origin it reached or found in the metadata, with what uses each one
 
-To list tools, it needs an access token. There are two ways to get one:
+To list tools from a server that needs sign-in, it needs an access token. There are two ways to give it one:
 
 ```bash
-bun run probe linear --sign-in            # sign in through the browser
-MCP_TOKEN=<token> bun run probe linear    # a token you already have
+bun run probe linear --sign-in                             # sign in through the browser
+read -rs MCP_TOKEN && export MCP_TOKEN && bun run probe linear   # paste a token you already have
 ```
 
-`--sign-in` registers a new client named "a8 probe" with the vendor on each run, prints the authorize URL and waits on `http://localhost:8976/callback` for you to approve. It needs a registration endpoint. `--scope <scope>` sets the scope it asks for. `--token <token>` works in place of `MCP_TOKEN`, but leaves the token in your shell history.
+`--sign-in` registers a new client named "a8 probe" with the vendor on each run, prints the authorize URL and waits on `http://localhost:8976/callback` for you to approve. It needs a registration endpoint. `--scope <scope>` sets the scope it asks for.
+
+`read -rs` keeps the token out of the command text. `--token <token>` and `MCP_TOKEN=<token> bun run probe ...` also work, but your shell history keeps the token.
 
 With a token, or when `initialize` works without one, it prints every tool with its annotations, its description length and its input schema size, then the tool count and the size of all definitions together.
 
