@@ -53,7 +53,18 @@ export default defineSchema({
     storageId: v.id("_storage"),
   })
     .index("by_userId_and_fileId", ["userId", "fileId"])
-    .index("by_fileId", ["fileId"]),
+    .index("by_fileId", ["fileId"])
+    .index("by_storageId", ["storageId"]),
+  // Who may register each storage upload (convex/attachments.ts).
+  // generateUploadUrl adds a row with no `storageId`, and registerUpload sets
+  // it when the user who got the URL claims the file. Nobody else can claim a
+  // file with a row. cleanUpOrphanedStorage deletes old rows.
+  uploadGrants: defineTable({
+    userId: v.string(),
+    storageId: v.optional(v.id("_storage")),
+  })
+    .index("by_userId_and_storageId", ["userId", "storageId"])
+    .index("by_storageId", ["storageId"]),
   // One user's signed-in link to a connector (convex/connectors.ts). At most
   // one row per user and connector. lib/encryption.ts encrypts the tokens,
   // and no public function returns them.

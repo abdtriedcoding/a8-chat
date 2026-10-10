@@ -1,5 +1,6 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
 import { ConvexError } from "convex/values";
 import { components } from "./_generated/api";
@@ -11,6 +12,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import authConfig from "./auth.config";
+import { limitSignIn } from "./rateLimits";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -27,6 +29,38 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       },
     },
     account: { accountLinking: { enabled: false } },
+    // Better Auth's default is in-memory counters, on only in production.
+    // Convex runs each request in a fresh isolate, so memory counts nothing.
+    // The database storage uses the component's rateLimit table.
+    //
+    // Counts are per IP and path. If Better Auth can't read a client IP (a
+    // proxy chain with several addresses and no trustedProxies), all clients
+    // share one bucket per path, so the limits stay loose enough for that.
+    rateLimit: {
+      enabled: true,
+      storage: "database",
+      customRules: {
+        "/sign-in/email": { window: 60, max: 10 },
+        "/sign-up/email": { window: 60, max: 5 },
+      },
+    },
+    hooks: {
+      // Limits sign-ins by email, which works without a client IP and stops
+      // one IP spreading guesses over many accounts.
+      before: createAuthMiddleware(async (authCtx) => {
+        if (authCtx.path !== "/sign-in/email") return;
+        // Sign-ins arrive over HTTP, in an action. A query can't count.
+        if (!("runMutation" in ctx)) return;
+        const email = authCtx.body?.email;
+        if (typeof email !== "string") return;
+        const retryAfter = await limitSignIn(ctx, email);
+        if (retryAfter !== null) {
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 1000)}s.`,
+          });
+        }
+      }),
+    },
     plugins: [
       convex({
         authConfig,

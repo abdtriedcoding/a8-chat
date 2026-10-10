@@ -11,6 +11,14 @@ crons.cron(
   {},
 );
 
+// Daily at 03:30 UTC.
+crons.cron(
+  "clean up orphaned storage",
+  "30 3 * * *",
+  internal.attachments.cleanUpOrphanedStorage,
+  {},
+);
+
 // Sign-ins expire after 10 minutes, so an hourly sweep keeps the table small.
 crons.interval(
   "clean up expired connects",
