@@ -1,7 +1,7 @@
 "use client";
 
 import { useAction } from "convex/react";
-import { MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
+import { InfoIcon, MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -27,7 +27,7 @@ import type { Connector } from "../../../convex/lib/connectors";
  * browser to the vendor's sign-in, and turning it off disconnects. The
  * example prompt opens a new chat with that prompt in the composer, unsent.
  * A connection that needs reconnecting shows a Reconnect button, which
- * signs in again.
+ * signs in again. A catalog card note shows under the description.
  *
  * `connection` is undefined until the user's connections load.
  */
@@ -38,7 +38,8 @@ export function ConnectorCard({
   connector: Connector;
   connection: ConnectorStatus | undefined;
 }) {
-  const { id, name, handle, logo, description, examplePrompt } = connector;
+  const { id, name, handle, logo, description, examplePrompt, cardNote } =
+    connector;
   const { connecting, startConnect } = useConnectConnector(id);
   const disconnect = useAction(api.connectors.disconnect);
   // connectedAt of the connection being disconnected. The toggle shows off
@@ -79,7 +80,7 @@ export function ConnectorCard({
           <Image src={logo} alt="" width={24} height={24} />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="font-heading font-medium">{name}</h2>
+          <h3 className="font-heading font-medium">{name}</h3>
           <p className="truncate text-muted-foreground">
             @{handle}
             {connected && !disconnecting && (
@@ -117,7 +118,30 @@ export function ConnectorCard({
             </AlertAction>
           </Alert>
         )}
-        <p>{description}</p>
+        <div className="flex flex-col gap-1">
+          <p>{description}</p>
+          {cardNote && (
+            <p className="flex items-start gap-1.5 text-muted-foreground">
+              <InfoIcon className="mt-0.5 size-4 shrink-0" />
+              <span className="min-w-0 break-words">
+                {cardNote.text}
+                {cardNote.link && (
+                  <>
+                    {" "}
+                    <a
+                      href={cardNote.link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-foreground underline underline-offset-4"
+                    >
+                      {cardNote.link.label}
+                    </a>
+                  </>
+                )}
+              </span>
+            </p>
+          )}
+        </div>
         <Link
           href={`/chat?prompt=${encodeURIComponent(examplePrompt)}`}
           className="flex items-start gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"

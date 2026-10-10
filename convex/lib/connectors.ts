@@ -55,6 +55,12 @@ export type Connector = {
   description: string;
   /** Shown on the card. Clicking it starts a new chat with this prompt. */
   examplePrompt: string;
+  /**
+   * One line under the card's description about what the user's own account
+   * needs first, like a paid plan, an admin step or a region. `link` goes to
+   * the vendor's page about it.
+   */
+  cardNote?: { text: string; link?: { label: string; url: string } };
   mcpServerUrl: string;
   /**
    * Every origin a8 talks to for this connector: the MCP server's, and each
