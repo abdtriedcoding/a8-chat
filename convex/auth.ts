@@ -2,17 +2,19 @@ import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
-import { ConvexError } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import {
   env,
+  internalAction,
+  internalMutation,
   query,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import authConfig from "./auth.config";
-import { limitSignIn } from "./rateLimits";
+import { limitSignIn, resetUserLimits } from "./rateLimits";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -63,6 +65,25 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
         clientSecret: env.GOOGLE_CLIENT_SECRET,
+      },
+    },
+    user: {
+      deleteUser: {
+        enabled: true,
+        // Runs before Better Auth deletes the user, and a throw stops the
+        // deletion. The cleanup is scheduled, not awaited: it can take many
+        // transactions, and an HTTP request can't wait for all of them.
+        beforeDelete: async (user): Promise<void> => {
+          if (!("scheduler" in ctx)) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+              message: "Couldn't delete your account. Please try again.",
+            });
+          }
+          await ctx.scheduler.runAfter(0, internal.auth.purgeAccount, {
+            userId: user.id,
+            email: user.email,
+          });
+        },
       },
     },
     account: {
@@ -120,6 +141,41 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth(createAuthOptions(ctx));
+
+/**
+ * Deletes everything a8 holds for a deleted user, except what Better Auth
+ * deletes itself: threads and their messages, stopped-reply and
+ * deferred-tool rows, uploads and their stored files, sign-ins in progress,
+ * rate limit counters, and connections (revoked at the vendor first). It
+ * takes the user ID because the session is gone by the time it runs.
+ * Scheduled by the deleteUser hook in createAuthOptions.
+ *
+ * The steps with more than a batch of rows schedule their own continuation.
+ * The vendor calls go last, so a slow vendor delays nothing else.
+ */
+export const purgeAccount = internalAction({
+  args: { userId: v.string(), email: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId, email }): Promise<null> => {
+    await ctx.runMutation(internal.threads.purgeUserThreads, { userId });
+    await ctx.runMutation(internal.attachments.purgeUserUploads, { userId });
+    await ctx.runMutation(internal.connectors.purgeUserPendingConnects, {
+      userId,
+    });
+    await ctx.runMutation(internal.auth.purgeAccountLimits, { userId, email });
+    await ctx.runAction(internal.connectors.purgeUserConnections, { userId });
+    return null;
+  },
+});
+
+export const purgeAccountLimits = internalMutation({
+  args: { userId: v.string(), email: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId, email }) => {
+    await resetUserLimits(ctx, userId, email);
+    return null;
+  },
+});
 
 export const getCurrentUser = query({
   args: {},

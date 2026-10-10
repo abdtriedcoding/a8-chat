@@ -7,6 +7,7 @@ import {
   KeyboardIcon,
   LogInIcon,
   LogOutIcon,
+  UserRoundCogIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -43,7 +44,14 @@ type CurrentUser = NonNullable<
  */
 export function NavUser() {
   const { isLoading } = useConvexAuth();
-  const user = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
+  const identity = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
+  // The identity comes from the Convex token, which keeps the old name until
+  // it refreshes. The session updates as soon as the name is saved.
+  const { data: session } = authClient.useSession();
+  const user =
+    identity && session
+      ? { ...identity, name: session.user.name }
+      : identity;
   const { isMobile } = useSidebar();
   const openShortcutsHelp = useOpenShortcutsHelp();
 
@@ -125,6 +133,12 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              <DropdownMenuItem asChild>
+                <Link href="/settings/account">
+                  <UserRoundCogIcon />
+                  Account settings
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void signOut()}>
                 <LogOutIcon />
                 Sign out

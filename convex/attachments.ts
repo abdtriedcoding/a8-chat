@@ -519,6 +519,77 @@ async function cleanUpOrphansBatch(
   }
 }
 
+/** How many attachments rows, then grants, one account cleanup step handles. */
+const PURGE_BATCH_SIZE = 50;
+
+/**
+ * Deletes a deleted user's uploads: their attachments rows and, where no
+ * other user has a row for the same file, the Agent's file and its storage
+ * object. Then their upload grants, and the storage objects they claimed
+ * that nothing else uses. It schedules itself until nothing is left, and
+ * takes the user ID, not the session, since the account is already gone.
+ * Scheduled by purgeAccount (convex/auth.ts).
+ *
+ * `force` skips the Agent's refcount check. The user's threads are deleted
+ * at the same time, so their prompts may still hold the file.
+ */
+export const purgeUserUploads = internalMutation({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId }) => {
+    const rows = await ctx.db
+      .query("attachments")
+      .withIndex("by_userId_and_fileId", (q) => q.eq("userId", userId))
+      .take(PURGE_BATCH_SIZE);
+    for (const row of rows) {
+      await ctx.db.delete("attachments", row._id);
+      const other = await ctx.db
+        .query("attachments")
+        .withIndex("by_fileId", (q) => q.eq("fileId", row.fileId))
+        .first();
+      // Another user who uploaded the same file shares the Agent's row.
+      if (other) continue;
+      await ctx.runMutation(components.agent.files.deleteFiles, {
+        fileIds: [row.fileId],
+        force: true,
+      });
+      if (await ctx.db.system.get("_storage", row.storageId)) {
+        await ctx.storage.delete(row.storageId);
+      }
+    }
+
+    const grants =
+      rows.length < PURGE_BATCH_SIZE
+        ? await ctx.db
+            .query("uploadGrants")
+            .withIndex("by_userId_and_storageId", (q) => q.eq("userId", userId))
+            .take(PURGE_BATCH_SIZE)
+        : [];
+    for (const grant of grants) {
+      await ctx.db.delete("uploadGrants", grant._id);
+      const { storageId } = grant;
+      if (!storageId) continue;
+      const used = await ctx.db
+        .query("attachments")
+        .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
+        .first();
+      if (!used && (await ctx.db.system.get("_storage", storageId))) {
+        await ctx.storage.delete(storageId);
+      }
+    }
+
+    if (
+      rows.length === PURGE_BATCH_SIZE ||
+      grants.length === PURGE_BATCH_SIZE
+    ) {
+      await ctx.scheduler.runAfter(0, internal.attachments.purgeUserUploads, {
+        userId,
+      });
+    }
+    return null;
+  },
+});
+
 /** Deletes the next batch of a deleted file's attachments rows. */
 export const continueAttachmentRowDeletion = internalMutation({
   args: { fileId: v.string() },

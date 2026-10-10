@@ -327,6 +327,91 @@ export const disconnect = action({
   },
 });
 
+/** How many of a user's connections one account cleanup step handles. */
+const PURGE_CONNECTION_BATCH_SIZE = 50;
+
+/**
+ * Revokes a deleted user's connections at the vendors, then deletes them.
+ * It takes the user ID, not the session, since the account is already gone.
+ * Like disconnect, it deletes a connection even if revoking failed.
+ * Scheduled by purgeAccount (convex/auth.ts).
+ */
+export const purgeUserConnections = internalAction({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId }): Promise<null> => {
+    const encryptionKey = await getEncryptionKey();
+    // Each pass deletes the connections it lists, so the loop ends.
+    for (;;) {
+      const connections = await ctx.runQuery(
+        internal.connectors.listUserConnections,
+        { userId },
+      );
+      if (connections.length === 0) return null;
+      for (const connection of connections) {
+        const connector = findConnector(connection.connectorId);
+        if (connector) {
+          try {
+            await revokeConnection(ctx, connector, encryptionKey, connection);
+          } catch (error) {
+            console.error(`Revoking a8's ${connector.name} access failed`, error);
+          }
+        }
+        await ctx.runMutation(internal.connectors.deleteConnectionById, {
+          connectionId: connection._id,
+        });
+      }
+    }
+  },
+});
+
+export const listUserConnections = internalQuery({
+  args: { userId: v.string() },
+  returns: v.array(schema.doc("connections")),
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("connections")
+      .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
+      .take(PURGE_CONNECTION_BATCH_SIZE);
+  },
+});
+
+export const deleteConnectionById = internalMutation({
+  args: { connectionId: v.id("connections") },
+  returns: v.null(),
+  handler: async (ctx, { connectionId }) => {
+    await ctx.db.delete("connections", connectionId);
+    return null;
+  },
+});
+
+/**
+ * Deletes a deleted user's sign-ins in progress, and schedules itself again
+ * if there were more than a batch. Scheduled by purgeAccount
+ * (convex/auth.ts).
+ */
+export const purgeUserPendingConnects = internalMutation({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId }) => {
+    const pending = await ctx.db
+      .query("pendingConnects")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .take(CLEANUP_BATCH_SIZE);
+    for (const row of pending) {
+      await ctx.db.delete("pendingConnects", row._id);
+    }
+    if (pending.length === CLEANUP_BATCH_SIZE) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.connectors.purgeUserPendingConnects,
+        { userId },
+      );
+    }
+    return null;
+  },
+});
+
 /** The signed-in user's connection to the connector, tokens included. */
 export const getConnection = internalQuery({
   args: { connectorId: v.string() },
