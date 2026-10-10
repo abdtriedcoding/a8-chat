@@ -23,7 +23,10 @@ import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { ConnectionTokens } from "../connectors";
 import { limitConnectorToolCall } from "../rateLimits";
-import { connectionAccessToken } from "./connectionTokens";
+import {
+  connectionAccessToken,
+  type AccessTokenResult,
+} from "./connectionTokens";
 import { createConnectorClient } from "./connectorAuth";
 import type { McpTool } from "./connectorToolList";
 import {
@@ -128,9 +131,7 @@ export async function createConnectorTools(
           }
           const text = resultText(result);
           if (!result.isError) return wrapResult(connector, text);
-          if (isUnknownTool(text)) {
-            await scheduleToolListRefresh(ctx, connection);
-          }
+          await refreshIfUnknownTool(ctx, connection, text);
           throw new Error(
             `${connector.name} returned an error.\n${wrapResult(connector, text)}`,
           );
@@ -179,13 +180,16 @@ class RefusedTokenError extends Error {
  * refuses the token with a 401, it refreshes it and tries the call once
  * more. If the refresh is refused, the vendor refuses the new token too, or
  * it answers 403, the connection needs reconnecting, and every later call
- * throws ReconnectError.
+ * throws ReconnectError. If the vendor couldn't be reached for the refresh,
+ * every later call in the reply fails without trying it again.
  */
 class ReplyConnection {
   private tokens: ConnectionTokens;
   private client?: Promise<VersionedClient>;
   private readonly opened: Promise<VersionedClient>[] = [];
   private needsReconnect = false;
+  /** Whether getting the access token threw, like when a refresh failed. */
+  private tokenFailed = false;
 
   constructor(
     private readonly ctx: ActionCtx,
@@ -245,16 +249,30 @@ class ReplyConnection {
 
   /**
    * Opens a client. A client that fails to open throws on every call that
-   * shares it, and the next call opens another.
+   * shares it, and the next call opens another. If getting the access token
+   * failed, every later call throws without trying again.
    */
   private async connect(refusedVersion?: number): Promise<VersionedClient> {
     if (this.needsReconnect) throw new ReconnectError(this.connector);
-    const token = await connectionAccessToken(
-      this.ctx,
-      this.connector,
-      this.tokens,
-      { refused: this.tokens.tokenVersion === refusedVersion },
-    );
+    if (this.tokenFailed) {
+      throw new Error(
+        `Getting the ${this.connector.name} access token failed earlier in this reply.`,
+      );
+    }
+    let token: AccessTokenResult;
+    try {
+      token = await connectionAccessToken(
+        this.ctx,
+        this.connector,
+        this.tokens,
+        { refused: this.tokens.tokenVersion === refusedVersion },
+      );
+    } catch (error) {
+      // Trying again on every step would claim the refresh lease and call
+      // the vendor each time, so later calls in the reply fail at once.
+      this.tokenFailed = true;
+      throw error;
+    }
     if ("needsReconnect" in token) throw this.giveUp();
     this.tokens = token.tokens;
     const { tokenVersion } = token.tokens;
@@ -335,13 +353,32 @@ function isRead(entry: ConnectorTool, mcpTool: McpTool): boolean {
   return entry.kind === "read" && mcpTool.annotations?.readOnlyHint !== false;
 }
 
+/**
+ * Asks for the connection's tool list to be fetched again in the
+ * background. requestToolListRefresh does nothing if a refresh was asked
+ * for in the last few minutes.
+ */
 async function scheduleToolListRefresh(
   ctx: ActionCtx,
   connection: Doc<"connections">,
 ) {
-  await ctx.scheduler.runAfter(0, internal.connectors.refreshToolList, {
+  await ctx.runMutation(internal.connectors.requestToolListRefresh, {
     connectionId: connection._id,
   });
+}
+
+/**
+ * Whether an error from the server says it doesn't know the tool. If so,
+ * the cached tool list is out of date, and this schedules a refresh.
+ */
+async function refreshIfUnknownTool(
+  ctx: ActionCtx,
+  connection: Doc<"connections">,
+  errorText: string,
+): Promise<boolean> {
+  if (!/unknown tool|tool\b.*\bnot found/i.test(errorText)) return false;
+  await scheduleToolListRefresh(ctx, connection);
+  return true;
 }
 
 /**
@@ -354,17 +391,12 @@ async function callFailedMessage(
   connection: Doc<"connections">,
   error: unknown,
 ): Promise<string> {
-  if (isUnknownTool(error instanceof Error ? error.message : String(error))) {
-    await scheduleToolListRefresh(ctx, connection);
+  const message = error instanceof Error ? error.message : String(error);
+  if (await refreshIfUnknownTool(ctx, connection, message)) {
     return `${connector.name} no longer has this tool. Answer without it.`;
   }
   console.error(`Calling a ${connector.name} tool failed`, error);
   return `Calling ${connector.name} failed. Tell the user ${connector.name} couldn't be reached, and answer without it.`;
-}
-
-/** Whether an error says the server doesn't know the tool. */
-function isUnknownTool(text: string): boolean {
-  return /unknown tool|tool\b.*\bnot found/i.test(text);
 }
 
 /**
