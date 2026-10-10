@@ -15,8 +15,9 @@ export type WebSearchOutput = WebSearchResult[] | string;
 
 /**
  * The model's web search tool. Each call counts against the daily search
- * caps first, the user's and everyone's. Over a cap, the tool returns WEB_SEARCH_OFF instead of
- * failing, so the model can still answer and tell the user.
+ * caps first, the user's and everyone's. Over a cap, the tool returns
+ * WEB_SEARCH_OFF instead of failing, so the model can still answer and tell
+ * the user.
  */
 export const webSearch = createTool({
   description:

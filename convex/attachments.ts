@@ -442,6 +442,11 @@ const GRANT_DELETE_BATCH_SIZE = 500;
  * used by a message. Files with a row are never deleted here, whether or
  * not a message uses them. cleanUpUnsentUploads handles those.
  *
+ * The Agent also stores a file, with no row, when a message holds inline
+ * bytes over 64 KB. a8's prompts hold file URLs (loadPromptAttachments), so
+ * that doesn't happen. A change that saves inline bytes must keep this job
+ * from deleting those files.
+ *
  * It also deletes old upload grant rows. Runs daily (convex/crons.ts).
  */
 export const cleanUpOrphanedStorage = internalMutation({
@@ -592,6 +597,9 @@ export async function loadPromptAttachments(
         });
       }
       const filename = agentFile.filename ?? UNNAMED_FILE;
+      // Keep these parts URLs. The Agent stores inline bytes over 64 KB as
+      // its own file, with no attachments row, and cleanUpOrphanedStorage
+      // would delete it a day later.
       const part: ImagePart | FilePart =
         getAttachmentKind(mediaType) === "image"
           ? { type: "image", image: new URL(fileUrl), mediaType }
