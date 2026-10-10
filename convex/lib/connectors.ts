@@ -11,6 +11,12 @@ export type ConnectorSignIn =
 export type ConnectorTool = {
   /** The tool's name on the MCP server, like `notion-search`. */
   name: string;
+  /**
+   * Whether a8 counts the tool as a read or an action. A read runs without
+   * asking, unless the server marks the tool not read-only. An action always
+   * waits on an action card (ADR 0008).
+   */
+  kind: "read" | "action";
   /** What the tool's row in a reply says, like "Searching Notion". */
   label: string;
 };
@@ -35,8 +41,6 @@ export type Connector = {
   signIn: ConnectorSignIn;
   /** The MCP tools a8 offers the model. Every other tool stays hidden. */
   toolAllowlist: ConnectorTool[];
-  /** Tools that ask for approval even when the server marks them read-only. */
-  toolsNeedingApproval: string[];
   /**
    * The field of the vendor's token response that names the signed-in
    * account, like Notion's `workspace_name`. The card shows it once connected.
@@ -61,20 +65,19 @@ export const CONNECTORS: Connector[] = [
     },
     signIn: { kind: "dynamicRegistration" },
     toolAllowlist: [
-      { name: "notion-search", label: "Searching Notion" },
-      { name: "notion-fetch", label: "Reading Notion" },
-      { name: "notion-query-data-sources", label: "Reading a Notion database" },
-      { name: "notion-get-comments", label: "Reading Notion comments" },
-      { name: "notion-get-users", label: "Finding Notion users" },
-      { name: "notion-get-teams", label: "Finding Notion teamspaces" },
-      { name: "notion-create-pages", label: "Creating Notion pages" },
-      { name: "notion-update-page", label: "Updating a Notion page" },
-      { name: "notion-move-pages", label: "Moving Notion pages" },
-      { name: "notion-duplicate-page", label: "Duplicating a Notion page" },
-      { name: "notion-create-database", label: "Creating a Notion database" },
-      { name: "notion-create-comment", label: "Commenting in Notion" },
+      { name: "notion-search", kind: "read", label: "Searching Notion" },
+      { name: "notion-fetch", kind: "read", label: "Reading Notion" },
+      { name: "notion-query-data-sources", kind: "read", label: "Reading a Notion database" },
+      { name: "notion-get-comments", kind: "read", label: "Reading Notion comments" },
+      { name: "notion-get-users", kind: "read", label: "Finding Notion users" },
+      { name: "notion-get-teams", kind: "read", label: "Finding Notion teamspaces" },
+      { name: "notion-create-pages", kind: "action", label: "Creating Notion pages" },
+      { name: "notion-update-page", kind: "action", label: "Updating a Notion page" },
+      { name: "notion-move-pages", kind: "action", label: "Moving Notion pages" },
+      { name: "notion-duplicate-page", kind: "action", label: "Duplicating a Notion page" },
+      { name: "notion-create-database", kind: "action", label: "Creating a Notion database" },
+      { name: "notion-create-comment", kind: "action", label: "Commenting in Notion" },
     ],
-    toolsNeedingApproval: [],
     accountLabelField: "workspace_name",
   },
 ];
