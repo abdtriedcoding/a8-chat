@@ -24,6 +24,22 @@ export function errorMessage(error: unknown): string {
   return GENERIC_MESSAGE;
 }
 
+/**
+ * Whether the backend refused because the session is gone, such as after
+ * signing out in another tab. The Convex token can outlive the session by up
+ * to 15 minutes, so this error can arrive before the client sees the sign-out.
+ */
+export function isUnauthenticated(error: unknown): boolean {
+  if (!(error instanceof ConvexError)) return false;
+  const data: unknown = error.data;
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "code" in data &&
+    data.code === "UNAUTHENTICATED"
+  );
+}
+
 /** Why a Send was refused: a rate limit, or an attachment that's gone. */
 type SendRefused = RateLimited | AttachmentNotFound;
 

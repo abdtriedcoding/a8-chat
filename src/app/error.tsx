@@ -11,6 +11,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { useSignInOnUnauthenticated } from "@/components/session-guard";
 import { errorMessage } from "@/lib/errors";
 
 export default function RootError({
@@ -20,6 +21,7 @@ export default function RootError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  if (useSignInOnUnauthenticated(error)) return null;
   return (
     <Empty className="min-h-svh">
       <EmptyHeader>

@@ -12,6 +12,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { useSignInOnUnauthenticated } from "@/components/session-guard";
 import { errorMessage } from "@/lib/errors";
 
 export default function ThreadError({
@@ -21,6 +22,7 @@ export default function ThreadError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  if (useSignInOnUnauthenticated(error)) return null;
   return (
     <>
       <ChatHeader />
