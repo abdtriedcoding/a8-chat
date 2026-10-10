@@ -8,7 +8,7 @@ import {
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import {
   findConnectorTool,
-  needsReconnectError,
+  isReconnectError,
   type Connector,
 } from "../../../convex/lib/connectors";
 
@@ -46,22 +46,15 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
       errorText?: string;
       approval?: { id: string; approved?: boolean };
     };
-    // A saved reply loses the error state: the Agent shows the AI SDK's
-    // "Error: ..." text as a result. A connector tool's own results always
-    // start with its untrusted-data tag, so that text means the call failed.
-    const savedError =
-      call.state === "output-available" &&
-      typeof call.output === "string" &&
-      call.output.startsWith("Error: ");
     return [
       {
         id: call.toolCallId,
         connector,
         label,
-        state: savedError ? "output-error" : call.state,
+        state: call.state,
         input: call.input,
         output: call.output,
-        errorText: savedError ? (call.output as string) : call.errorText,
+        errorText: call.errorText,
         approval: call.approval && {
           id: call.approval.id,
           approved: call.approval.approved,
@@ -90,11 +83,7 @@ export function isWaitingForApproval(call: ConnectorToolCall): boolean {
 
 /** Whether a call failed because its connection needs reconnecting. */
 export function failedNeedingReconnect(call: ConnectorToolCall): boolean {
-  return (
-    call.state === "output-error" &&
-    call.errorText?.replace(/^Error: /, "") ===
-      needsReconnectError(call.connector)
-  );
+  return call.state === "output-error" && isReconnectError(call.errorText);
 }
 
 /**
