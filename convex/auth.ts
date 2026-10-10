@@ -16,9 +16,17 @@ import { limitSignIn } from "./rateLimits";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
+function parseOrigins(value: string | undefined) {
+  return (value ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
     baseURL: env.SITE_URL,
+    trustedOrigins: [env.SITE_URL, ...parseOrigins(env.TRUSTED_ORIGINS)],
     secret: env.BETTER_AUTH_SECRET,
     database: authComponent.adapter(ctx),
     emailAndPassword: { enabled: true, requireEmailVerification: false },
@@ -28,7 +36,10 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
         clientSecret: env.GOOGLE_CLIENT_SECRET,
       },
     },
-    account: { accountLinking: { enabled: false } },
+    account: {
+      accountLinking: { enabled: false },
+      encryptOAuthTokens: true,
+    },
     // Better Auth's default is in-memory counters, on only in production.
     // Convex runs each request in a fresh isolate, so memory counts nothing.
     // The database storage uses the component's rateLimit table.

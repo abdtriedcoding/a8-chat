@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { ChatHeader } from "@/components/chat/chat-header";
 import {
   ConnectorList,
   type CallbackParams,
 } from "@/components/connectors/connector-list";
-import { isAuthenticated } from "@/lib/auth-server";
 import {
   CONNECT_ERRORS,
   type ConnectError,
@@ -14,7 +12,6 @@ import {
 export const metadata: Metadata = { title: "Connectors" };
 
 export default async function ConnectorsPage(props: PageProps<"/connectors">) {
-  if (!(await isAuthenticated())) redirect("/sign-in");
   return (
     <>
       <ChatHeader>
@@ -35,12 +32,11 @@ export default async function ConnectorsPage(props: PageProps<"/connectors">) {
   );
 }
 
-/** The sign-in callback's redirect adds `?finish=<state>` or `?error=<code>`. */
+/** The sign-in callback's redirect adds `?error=<code>` if the sign-in ended early. */
 function parseCallbackParams(
   params: Record<string, string | string[] | undefined>,
 ): CallbackParams {
-  const { finish, error } = params;
-  if (typeof finish === "string") return { finish };
+  const { error } = params;
   if (isConnectError(error)) return { error };
   return undefined;
 }

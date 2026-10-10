@@ -90,9 +90,8 @@ export default defineSchema({
     toolListFetchedAt: v.number(),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
-  // One row per sign-in in progress (convex/connectors.ts). The callback
-  // adds the vendor's code, and finishConnect deletes the row.
-  // cleanUpExpiredConnects deletes the ones nobody finished.
+  // One row per sign-in in progress (convex/connectors.ts). finishConnect
+  // deletes the row. cleanUpExpiredConnects deletes the ones nobody finished.
   pendingConnects: defineTable({
     state: v.string(),
     codeVerifier: v.string(),
@@ -100,7 +99,8 @@ export default defineSchema({
     connectorId: v.string(),
     // finishConnect checks that the code exchange goes to this server.
     authorizationServer: vAuthorizationServer,
-    // Set by the callback. `callbackIssuer` is the `iss` it got, if any.
+    // No longer written. Rows saved before the callback stopped storing the
+    // code may still have these. Remove them once those rows have expired.
     code: v.optional(v.string()),
     callbackIssuer: v.optional(v.string()),
     expiresAt: v.number(),

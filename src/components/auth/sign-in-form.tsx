@@ -5,6 +5,7 @@ import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
+import { useTransition } from "react";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ const formSchema = z.object({
 
 export function SignInForm({ oauthError }: { oauthError?: string }) {
   const router = useRouter();
+  const [navigating, startNavigation] = useTransition();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -38,7 +40,9 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
     },
   });
 
-  const pending = form.formState.isSubmitting || form.formState.isSubmitSuccessful;
+  // `navigating` clears when the redirect settles, so a bounced redirect
+  // leaves the form usable.
+  const pending = form.formState.isSubmitting || navigating;
   // The OAuth error from the URL shows until the first email attempt.
   const error =
     form.formState.errors.root?.message ??
@@ -54,8 +58,10 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
       });
       return;
     }
-    router.replace("/chat");
-    router.refresh();
+    startNavigation(() => {
+      router.replace("/chat");
+      router.refresh();
+    });
   }
 
   return (
