@@ -4,12 +4,12 @@ Each reply offers the model the curated tools of every connection the user has, 
 
 Tool count is still the risk, because tool choice gets worse past 30 to 50 tools. Each connector's curated list keeps its count down. When the curated tools across all connections pass 40, only mentioned connectors load. The system prompt still names every connection, so the model can ask the user to mention the one it needs.
 
-A tool skips approval only when the server marks it `readOnlyHint` and the connector's list doesn't force approval on it. ADR 0004 let a8's own label decide alone.
+A tool skips approval only when the server marks it `readOnlyHint` and the connector's list doesn't force approval on it. ADR 0004 let a8's own label decide alone. ADR 0008 replaced this rule.
 
 ## Open for v2
 
-- **What happens above the 40-tool cap.** The proposal is that unmentioned connectors each get one line in the system prompt, plus a `load_connector(handle)` tool that adds that connector's tools from the next step on (`prepareStep` with `activeTools`). The model then reaches a connector without asking the user to mention it, and it works on any model. v1 ships Notion alone, about 15 tools, so it can't reach the cap.
-- **Whether `readOnlyHint` can skip approval.** The proposal is to go back to ADR 0004's rule: a8's label alone decides, and the server's hint can only make a tool stricter. The allowlist already has an entry for every exposed tool, so a read or action label on each entry is one more field. The MCP spec calls annotations untrusted, Notion doesn't document its annotations, and a write tool the vendor wrongly marks read-only would run without asking.
+- **What happens above the 40-tool cap.** Settled by ADR 0006: above a budget of about 10k tokens of tool definitions, unmentioned connectors' tools are deferred and found by tool search. The earlier proposal was that unmentioned connectors each get one line in the system prompt, plus a `load_connector(handle)` tool that adds that connector's tools from the next step on (`prepareStep` with `activeTools`). The model then reaches a connector without asking the user to mention it, and it works on any model. v1 ships Notion alone, about 15 tools, so it can't reach the cap.
+- **Whether `readOnlyHint` can skip approval.** Settled by ADR 0008: a8's label decides, and the hint can only make a tool stricter. The earlier proposal was to go back to ADR 0004's rule: a8's label alone decides, and the server's hint can only make a tool stricter. The allowlist already has an entry for every exposed tool, so a read or action label on each entry is one more field. The MCP spec calls annotations untrusted, Notion doesn't document its annotations, and a write tool the vendor wrongly marks read-only would run without asking.
 
 ## Considered options
 

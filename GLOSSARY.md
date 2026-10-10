@@ -37,8 +37,12 @@ A third-party product a person already uses, like Gmail or Notion.
 _Avoid_: integration, service, tool (for the product)
 
 **Connector**:
-An entry in a8's catalog for one app, with a handle, a logo and the tools a8 exposes. UI copy says "connector". A custom MCP server a user adds becomes a connector only they see.
+An entry in a8's catalog for one app, with a handle, a logo and the tools a8 exposes. UI copy says "connector".
 _Avoid_: plugin, integration, connected app, MCP server (for the catalog entry)
+
+**Custom connector**:
+A connector a user adds themselves from an MCP server's URL, seen only by that user. It has a handle and a connection like any other connector, but each of its tools asks for approval the first time it's used in a thread.
+_Avoid_: custom MCP, custom server, my connector
 
 **Connection**:
 One user's signed-in link to a connector. A user has at most one connection per connector.
