@@ -479,8 +479,9 @@ async function listToolsWithToken(
 
 /**
  * Why finishing a sign-in failed: this deployment or the catalog entry is
- * set up wrong, the vendor rejected a8's client registration, or the
- * vendor couldn't be reached. Anything else is `failed`.
+ * set up wrong, the vendor rejected a8's client registration, the vendor
+ * refused the code because it expired or was already used, or the vendor
+ * couldn't be reached. Anything else is `failed`.
  */
 function finishConnectError(error: unknown): ConnectError {
   if (
@@ -489,7 +490,9 @@ function finishConnectError(error: unknown): ConnectError {
   ) {
     return "misconfigured";
   }
-  if (classifyOAuthError(error) === "rejectedClient") return "rejected_client";
+  const oauthError = classifyOAuthError(error);
+  if (oauthError === "rejectedClient") return "rejected_client";
+  if (oauthError === "rejectedGrant") return "expired";
   if (isVendorUnreachable(error)) return "unreachable";
   return "failed";
 }
