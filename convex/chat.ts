@@ -1000,7 +1000,7 @@ export const listThreadMessages = query({
       ...paginated,
       page: toUIMessages<MessageMetadata>(
         paginated.page.map((message) => ({
-          ...message,
+          ...withToolErrors(message),
           metadata: turnMetadata.get(message.order),
         })),
       ),
@@ -1012,6 +1012,27 @@ export const listThreadMessages = query({
     };
   },
 });
+
+/**
+ * The message with each failed tool call's result flagged as an error. The
+ * AI SDK saves a tool's error as an `error-text` result without the
+ * `isError` flag toUIMessages reads, so the client would see a result. With
+ * the flag, the call's `errorText` is the error, like "Error: <message>".
+ */
+function withToolErrors(message: MessageDoc): MessageDoc {
+  if (message.message?.role !== "tool") return message;
+  return {
+    ...message,
+    message: {
+      ...message.message,
+      content: message.message.content.map((part) =>
+        part.type === "tool-result" && part.output?.type === "error-text"
+          ? { ...part, isError: true }
+          : part,
+      ),
+    },
+  };
+}
 
 /**
  * syncStreams' result with no streams in it. useUIMessages reads

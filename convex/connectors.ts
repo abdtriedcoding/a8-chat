@@ -747,7 +747,8 @@ export const settleRefresh = internalMutation({
 /**
  * Marks the connection as needing reconnecting, unless its tokens changed
  * since `tokenVersion`. A reply calls this when the vendor refuses a token
- * it just refreshed.
+ * it just refreshed or answers 403, and a8 calls it when it can't decrypt
+ * the access token.
  */
 export const markNeedsReconnect = internalMutation({
   args: { connectionId: v.id("connections"), tokenVersion: v.number() },

@@ -224,12 +224,30 @@ export function connectorHandle(connector: Connector): string {
 }
 
 /**
- * The tool error a connector's tool returns once its connection needs
- * reconnecting. The reply shows a Reconnect chip for a call that failed
- * with it, so the text has to stay exactly this.
+ * The code a connector tool's error starts with once its connection needs
+ * reconnecting. The reply shows a Reconnect chip for a call that failed with
+ * it. Saved replies hold it, so never change it.
  */
-export function needsReconnectError(connector: Connector): string {
-  return `${connector.name} needs reconnecting. Tell the user to reconnect ${connector.name}, and answer without it.`;
+export const RECONNECT_ERROR_CODE = "NEEDS_RECONNECT";
+
+/**
+ * What a connector's tool throws once its connection needs reconnecting.
+ * The AI SDK turns a tool's error into "<name>: <message>" for the model
+ * and the saved reply, so the text starts with RECONNECT_ERROR_CODE and the
+ * message is what the model tells the user.
+ */
+export class ReconnectError extends Error {
+  constructor(connector: Connector) {
+    super(
+      `${connector.name} needs reconnecting. Tell the user to reconnect ${connector.name}, and answer without it.`,
+    );
+    this.name = RECONNECT_ERROR_CODE;
+  }
+}
+
+/** Whether a tool call's error text is a ReconnectError's. */
+export function isReconnectError(errorText: string | undefined): boolean {
+  return errorText?.startsWith(`${RECONNECT_ERROR_CODE}: `) ?? false;
 }
 
 /**
