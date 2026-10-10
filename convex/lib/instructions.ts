@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import { CONNECTORS, type Connector } from "./connectors";
+import { TOOL_SEARCH_KEY, type ToolLoading } from "./toolLoading";
 
 const INSTRUCTIONS =
   "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
@@ -47,6 +48,14 @@ const CONNECTOR_GUIDE =
   "reconnecting, tell them to connect it on the Connectors page. Don't " +
   "guess what's in it.";
 
+// Only added when the reply defers connector tools to tool search (ADR 0006).
+// Without it, Haiku sometimes calls a tool name it guessed.
+const TOOL_SEARCH =
+  "Some connector tools aren't loaded yet. Before you call a connector " +
+  `tool that isn't in your tool list, find it with the ${TOOL_SEARCH_KEY} ` +
+  "tool. Search for the app and the task, like \"Linear issues assigned to " +
+  "me\". Never call a connector tool you haven't seen.";
+
 /** What the instructions need from one of the user's connections. */
 type ConnectionSummary = Pick<
   Doc<"connections">,
@@ -61,6 +70,7 @@ type ConnectionSummary = Pick<
  * @param canSearchWeb Whether the model has the web search tool.
  * @param connections The user's connections.
  * @param mentioned The connectors the prompt mentions (findMentions).
+ * @param loading How the reply offers connector tools (arrangeReplyTools).
  */
 export function replyInstructions({
   timeZone,
@@ -68,12 +78,14 @@ export function replyInstructions({
   canSearchWeb,
   connections,
   mentioned,
+  loading,
 }: {
   timeZone: string;
   now: Date;
   canSearchWeb: boolean;
   connections: ConnectionSummary[];
   mentioned: Connector[];
+  loading: ToolLoading;
 }): string {
   return [
     INSTRUCTIONS,
@@ -84,6 +96,10 @@ export function replyInstructions({
           [
             CONNECTOR_GUIDE,
             connectorStatusLine(connections),
+            ...(loading === "search" ? [TOOL_SEARCH] : []),
+            ...(loading === "mentions"
+              ? [mentionsOnlyInstruction(connections)]
+              : []),
             ...mentioned.map((connector) =>
               mentionInstruction(connector, connections),
             ),
@@ -111,6 +127,24 @@ function mentionInstruction(
     return `${mention}, so answer it with ${connector.name}'s tools. Use them before web search or your own knowledge.`;
   }
   return `${mention}, but ${connector.name} ${status === "needs_reconnect" ? "needs reconnecting" : "isn't connected"}. Tell them to fix that on the Connectors page.`;
+}
+
+/**
+ * Tells the model only mentioned connectors' tools are loaded, and how the
+ * user mentions the others. For a model without tool search, above the
+ * tool budget (ADR 0006).
+ */
+function mentionsOnlyInstruction(connections: ConnectionSummary[]): string {
+  const handles = CONNECTORS.filter((connector) =>
+    connections.some(
+      (row) => row.connectorId === connector.id && row.status === "connected",
+    ),
+  ).map((connector) => `@${connector.handle}`);
+  return (
+    "Only the tools of connectors the user mentions are loaded in this " +
+    "reply. If the question needs another connected app, ask the user to " +
+    `mention it and send the question again. Their connected apps' mentions are ${handles.join(", ")}.`
+  );
 }
 
 /**

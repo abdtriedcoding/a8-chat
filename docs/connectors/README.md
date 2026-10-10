@@ -55,6 +55,10 @@ The model's name for each tool is `<connector id>__<tool>`, like `notion__search
 
 Before a8 stores a server's tool list on a connection, it cuts each description to 2,048 characters, turns each input schema into an object schema with no `anyOf`, `oneOf` or `allOf` at the top, and keeps at most 100 tools and 500 KB, allowlisted tools first.
 
+Each reply estimates the size of every connector tool it would offer, at 4 characters of JSON a token. At 35k tokens or under, every tool loads. Above that, the thread defers connector tools from then on (ADR 0006). The first 3 mentioned connectors load, and every other connector tool is sent with Anthropic's `deferLoading` and a description that starts with the connector's name in brackets, like `[Linear]`. The model finds those with the `toolSearch` tool. On a model without tool search, only the mentioned connectors load. Each reply logs a `reply tools` line with whether the thread defers, the loading mode, the estimate, each search's query and found tools, the tools called and connector errors.
+
+A long allowlist, or a vendor with long descriptions, moves users past the budget sooner. Keep allowlists short.
+
 ## Checklist for a new connector
 
 1. Run the probe on the vendor's MCP URL. Record the URL, every origin, whether there's a registration endpoint, the scopes, the tools and their annotations.
