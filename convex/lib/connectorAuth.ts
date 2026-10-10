@@ -1,5 +1,10 @@
+// The OAuth side of connectors (ADR 0003): the provider auth() signs in
+// with, the fetch that only reaches a connector's pinned origins, metadata
+// discovery, revocation, and what an OAuth error from the vendor means.
+
 import {
   createMCPClient,
+  MCPClientError,
   type CallToolResult,
   type MCPClient,
   type OAuthAuthorizationServerInformation,
@@ -122,7 +127,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   ) {
     const origin = new URL(authorizationServerUrl).origin;
     if (!pinnedOrigins(this.connector).includes(origin)) {
-      throw new Error(
+      throw new UntrustedOriginError(
         `${this.connector.name}'s MCP server named an authorization server a8 doesn't trust: ${origin}`,
       );
     }
@@ -133,37 +138,40 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {
-    const client = await this.ctx.runQuery(
-      internal.connectors.getConnectorClient,
+    const registration = await this.ctx.runQuery(
+      internal.connectorStore.getClientRegistration,
       { connectorId: this.connector.id },
     );
-    if (!client) return undefined;
+    if (!registration) return undefined;
     // The vendor rejects a client whose secret expired, so a8 forgets it
     // now. A sign-in then registers again, and a refresh needs a reconnect.
     if (
-      client.encryptedClientSecret !== undefined &&
-      client.clientSecretExpiresAt &&
-      client.clientSecretExpiresAt * 1000 <= Date.now()
+      registration.encryptedClientSecret !== undefined &&
+      registration.clientSecretExpiresAt &&
+      registration.clientSecretExpiresAt * 1000 <= Date.now()
     ) {
-      await forgetConnectorClient(this.ctx, this.connector);
+      await forgetClientRegistration(this.ctx, this.connector);
       return undefined;
     }
     return {
-      client_id: client.clientId,
+      client_id: registration.clientId,
       client_secret:
-        client.encryptedClientSecret === undefined
+        registration.encryptedClientSecret === undefined
           ? undefined
-          : await decryptSecret(this.encryptionKey, client.encryptedClientSecret),
-      client_id_issued_at: client.clientIdIssuedAt,
-      client_secret_expires_at: client.clientSecretExpiresAt,
-      issuer: client.issuer,
-      authorization_server: client.authorizationServerUrl,
-      token_endpoint: client.tokenEndpoint,
+          : await decryptSecret(
+              this.encryptionKey,
+              registration.encryptedClientSecret,
+            ),
+      client_id_issued_at: registration.clientIdIssuedAt,
+      client_secret_expires_at: registration.clientSecretExpiresAt,
+      issuer: registration.issuer,
+      authorization_server: registration.authorizationServerUrl,
+      token_endpoint: registration.tokenEndpoint,
     };
   }
 
   async saveClientInformation(information: OAuthClientInformation) {
-    await this.ctx.runMutation(internal.connectors.saveConnectorClient, {
+    await this.ctx.runMutation(internal.connectorStore.saveClientRegistration, {
       connectorId: this.connector.id,
       clientId: information.client_id,
       encryptedClientSecret: await encryptOptionalSecret(
@@ -182,7 +190,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   // registration makes the next sign-in register again.
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier") {
     if (scope === "all" || scope === "client") {
-      await forgetConnectorClient(this.ctx, this.connector);
+      await forgetClientRegistration(this.ctx, this.connector);
     }
   }
 
@@ -225,15 +233,51 @@ export function pinnedFetch(connector: Connector) {
     // metadata discovery asks for "manual" and follows redirects itself,
     // through this function, so each hop is still checked.
     const redirect = init?.redirect === "manual" ? "manual" : "error";
-    return await fetch(input, { ...init, redirect });
+    try {
+      return await fetch(input, { ...init, redirect });
+    } catch (error) {
+      // Callers check aborts and timeouts by name, so they pass through.
+      if (
+        error instanceof Error &&
+        (error.name === "AbortError" || error.name === "TimeoutError")
+      ) {
+        throw error;
+      }
+      throw new VendorUnreachableError(connector, error);
+    }
   };
+}
+
+/**
+ * Thrown by pinnedFetch when a request got no answer, like when DNS or the
+ * connection failed. fetch throws a TypeError for that, and auth()'s
+ * metadata discovery skips a URL that fails with one, so this is a
+ * TypeError too.
+ */
+class VendorUnreachableError extends TypeError {
+  constructor(connector: Connector, cause: unknown) {
+    super(`a8 couldn't reach ${connector.name}.`, { cause });
+    this.name = "VendorUnreachableError";
+  }
+}
+
+/**
+ * Thrown when a connector's server or its metadata points a8 at an origin
+ * the catalog entry doesn't pin. Either the entry is wrong or the vendor
+ * moved, so trying again won't help.
+ */
+class UntrustedOriginError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UntrustedOriginError";
+  }
 }
 
 /**
  * An MCP client for the connector's server, sending `accessToken`. It only
  * reaches the pinned origins. Close it when done.
  */
-export async function createConnectorClient(
+export async function openMcpClient(
   connector: Connector,
   accessToken: string,
 ): Promise<MCPClient> {
@@ -253,7 +297,9 @@ function assertPinnedOrigin(
 ) {
   const origin = new URL(input instanceof Request ? input.url : input).origin;
   if (!pinnedOrigins(connector).includes(origin)) {
-    throw new Error(`a8 doesn't contact ${origin} for ${connector.name}.`);
+    throw new UntrustedOriginError(
+      `a8 doesn't contact ${origin} for ${connector.name}.`,
+    );
   }
 }
 
@@ -335,26 +381,192 @@ function labelAt(data: unknown, path: string): string | undefined {
  * registers again. Only for a client the vendor rejected or whose secret
  * expired.
  */
-export async function forgetConnectorClient(
+export async function forgetClientRegistration(
   ctx: ActionCtx,
   connector: Connector,
 ) {
-  await ctx.runMutation(internal.connectors.deleteConnectorClient, {
+  await ctx.runMutation(internal.connectorStore.deleteClientRegistration, {
     connectorId: connector.id,
   });
+}
+
+/**
+ * What an OAuth error from the vendor means for a8:
+ * - `rejectedClient`: the vendor doesn't accept a8's client registration
+ *   (`invalid_client` or `unauthorized_client`). Forget it, so the next
+ *   sign-in registers again.
+ * - `rejectedGrant`: the vendor refused the code or refresh token
+ *   (`invalid_grant`). The user has to sign in again.
+ * - `other`: anything else, like an outage, a rate limit or a bug.
+ *
+ * Takes the error auth() threw, or an OAuth error code from a token
+ * endpoint's answer.
+ */
+export function classifyOAuthError(
+  error: unknown,
+): "rejectedClient" | "rejectedGrant" | "other" {
+  const code = typeof error === "string" ? error : oauthErrorCode(error);
+  if (code === "invalid_client" || code === "unauthorized_client") {
+    return "rejectedClient";
+  }
+  if (code === "invalid_grant") return "rejectedGrant";
+  return "other";
 }
 
 /**
  * The OAuth error code auth() failed with, like `invalid_client`, or
  * undefined for any other error.
  */
-export function oauthErrorCode(error: unknown): string | undefined {
+function oauthErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   // `@ai-sdk/mcp` keeps the code on the error's class, like
   // InvalidClientError.errorCode.
   const code: unknown = (error.constructor as { errorCode?: unknown })
     .errorCode;
   return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * Whether a8 failed because the vendor couldn't be reached: a request got
+ * no answer or timed out, an MCP request got a 5xx, or the token endpoint
+ * answered `server_error`.
+ */
+export function isVendorUnreachable(error: unknown): boolean {
+  return causes(error).some(
+    (cause) =>
+      cause instanceof VendorUnreachableError ||
+      (cause instanceof Error && cause.name === "TimeoutError") ||
+      (MCPClientError.isInstance(cause) && (cause.statusCode ?? 0) >= 500) ||
+      oauthErrorCode(cause) === "server_error",
+  );
+}
+
+/**
+ * Whether a8 failed because the connector named an origin its catalog
+ * entry doesn't pin.
+ */
+export function isUntrustedOrigin(error: unknown): boolean {
+  return causes(error).some((cause) => cause instanceof UntrustedOriginError);
+}
+
+/** The error and the errors in its `cause` chain, at most 5 deep. */
+function causes(error: unknown): unknown[] {
+  const chain: unknown[] = [];
+  for (
+    let cause = error;
+    cause !== undefined && chain.length < 5;
+    cause = cause instanceof Error ? cause.cause : undefined
+  ) {
+    chain.push(cause);
+  }
+  return chain;
+}
+
+/** A JSON object from OAuth metadata. */
+export type Metadata = Record<string, unknown>;
+
+/** One request metadata discovery made, and how it went. */
+export type MetadataAttempt = { url: string } & (
+  | { response: Response; outcome: "found" | "notOk" | "notJson" }
+  | { error: unknown }
+);
+
+/**
+ * Where an MCP server's protected resource metadata may be (RFC 9728), in
+ * the order an MCP client tries them: the URL from the server's
+ * WWW-Authenticate challenge, the path-specific well-known URL, then the
+ * root one.
+ */
+export function protectedResourceMetadataUrls(
+  mcpServerUrl: string,
+  fromChallenge?: string,
+): string[] {
+  const { origin, pathname } = new URL(mcpServerUrl);
+  const path = pathname.replace(/\/$/, "");
+  const wellKnown = `${origin}/.well-known/oauth-protected-resource`;
+  return unique([fromChallenge, path && `${wellKnown}${path}`, wellKnown]);
+}
+
+/**
+ * The authorization servers protected resource metadata names. Without
+ * any, MCP clients fall back to the MCP server's origin.
+ */
+export function authorizationServersIn(
+  resourceMetadata: Metadata | undefined,
+  mcpServerUrl: string,
+): string[] {
+  const named = resourceMetadata?.authorization_servers;
+  if (Array.isArray(named)) {
+    const servers = named.filter((server) => typeof server === "string");
+    if (servers.length > 0) return servers;
+  }
+  return [new URL(mcpServerUrl).origin];
+}
+
+/**
+ * Where an authorization server's metadata may be, in the order an MCP
+ * client tries them: RFC 8414, then OpenID Connect discovery.
+ */
+export function authorizationServerMetadataUrls(
+  authorizationServerUrl: string,
+): string[] {
+  const { origin, pathname } = new URL(authorizationServerUrl);
+  const path = pathname.replace(/\/$/, "");
+  return unique([
+    `${origin}/.well-known/oauth-authorization-server${path}`,
+    `${origin}/.well-known/openid-configuration${path}`,
+    path && `${origin}${path}/.well-known/openid-configuration`,
+  ]);
+}
+
+/**
+ * Fetches each URL in turn and returns the first JSON object, with the URL
+ * and response it came from. A URL that fails, answers an error status or
+ * isn't a JSON object is skipped. `onAttempt` hears how each request went.
+ */
+export async function fetchMetadata(
+  fetchFn: (url: string, init: RequestInit) => Promise<Response>,
+  urls: string[],
+  {
+    signal,
+    onAttempt,
+  }: {
+    signal?: AbortSignal;
+    onAttempt?: (attempt: MetadataAttempt) => void;
+  } = {},
+): Promise<{ metadata: Metadata; url: string; response: Response } | undefined> {
+  for (const url of urls) {
+    let response: Response;
+    try {
+      response = await fetchFn(url, {
+        headers: { Accept: "application/json" },
+        signal,
+      });
+    } catch (error) {
+      onAttempt?.({ url, error });
+      continue;
+    }
+    if (!response.ok) {
+      onAttempt?.({ url, response, outcome: "notOk" });
+      continue;
+    }
+    const metadata: unknown = await response.json().catch(() => undefined);
+    if (
+      typeof metadata !== "object" ||
+      metadata === null ||
+      Array.isArray(metadata)
+    ) {
+      onAttempt?.({ url, response, outcome: "notJson" });
+      continue;
+    }
+    onAttempt?.({ url, response, outcome: "found" });
+    return { metadata: metadata as Metadata, url, response };
+  }
+  return undefined;
+}
+
+function unique(urls: (string | undefined)[]): string[] {
+  return [...new Set(urls.filter((url): url is string => Boolean(url)))];
 }
 
 /** How long each revocation request can take before a8 gives up on it. */
@@ -375,16 +587,16 @@ export async function revokeConnection(
     "encryptedAccessToken" | "encryptedRefreshToken"
   >,
 ): Promise<boolean> {
-  const client = await new ConnectorOAuthProvider(
+  const registration = await new ConnectorOAuthProvider(
     ctx,
     connector,
     encryptionKey,
   ).clientInformation();
-  if (!client) return false;
+  if (!registration) return false;
   const fetchPinned = pinnedFetch(connector);
   const endpoint = await findRevocationEndpoint(
     fetchPinned,
-    client.authorization_server ??
+    registration.authorization_server ??
       (await findAuthorizationServer(fetchPinned, connector.mcpServerUrl)),
   );
   if (!endpoint) return false;
@@ -401,13 +613,13 @@ export async function revokeConnection(
     "Content-Type": "application/x-www-form-urlencoded",
   });
   // The same client authentication auth() uses at the token endpoint.
-  if (client.client_secret) {
+  if (registration.client_secret) {
     headers.set(
       "Authorization",
-      `Basic ${btoa(`${client.client_id}:${client.client_secret}`)}`,
+      `Basic ${btoa(`${registration.client_id}:${registration.client_secret}`)}`,
     );
   } else {
-    body.set("client_id", client.client_id);
+    body.set("client_id", registration.client_id);
   }
   const response = await fetchPinned(endpoint, {
     method: "POST",
@@ -424,61 +636,51 @@ export async function revokeConnection(
 }
 
 /**
- * The authorization server the MCP server names in its protected resource
- * metadata (RFC 9728), or the MCP server's own origin if it names none. For
- * a client stored without its authorization server.
+ * The first authorization server the MCP server names in its protected
+ * resource metadata, or the MCP server's own origin. For a client stored
+ * without its authorization server.
  */
 async function findAuthorizationServer(
   fetchPinned: ReturnType<typeof pinnedFetch>,
   mcpServerUrl: string,
 ): Promise<string> {
-  const server = new URL(mcpServerUrl);
-  const path = server.pathname === "/" ? "" : server.pathname.replace(/\/$/, "");
-  // One deadline for both attempts.
-  const signal = AbortSignal.timeout(REVOKE_TIMEOUT_MS);
-  for (const suffix of path ? [path, ""] : [""]) {
-    const response = await fetchPinned(
-      new URL(`/.well-known/oauth-protected-resource${suffix}`, server.origin),
-      { signal },
-    ).catch((error: unknown) => {
-      console.error("Reading the protected resource metadata failed", error);
-      return undefined;
-    });
-    if (!response?.ok) continue;
-    const metadata: unknown = await response.json().catch(() => undefined);
-    const servers: unknown =
-      typeof metadata === "object" && metadata !== null
-        ? (metadata as Record<string, unknown>).authorization_servers
-        : undefined;
-    if (Array.isArray(servers) && typeof servers[0] === "string") {
-      return servers[0];
-    }
-  }
-  return server.origin;
+  const found = await fetchMetadata(
+    fetchPinned,
+    protectedResourceMetadataUrls(mcpServerUrl),
+    {
+      // One deadline for every attempt.
+      signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS),
+      onAttempt: (attempt) => {
+        if ("error" in attempt) {
+          console.error(
+            "Reading the protected resource metadata failed",
+            attempt.error,
+          );
+        }
+      },
+    },
+  );
+  return authorizationServersIn(found?.metadata, mcpServerUrl)[0];
 }
 
 /**
- * The revocation endpoint from the authorization server's metadata
- * (RFC 8414), or undefined if it doesn't list one.
+ * The revocation endpoint from the authorization server's metadata, or
+ * undefined if it doesn't list one. Throws if a8 finds no metadata.
  */
 async function findRevocationEndpoint(
   fetchPinned: ReturnType<typeof pinnedFetch>,
   authorizationServerUrl: string,
 ): Promise<string | undefined> {
-  const server = new URL(authorizationServerUrl);
-  const path = server.pathname === "/" ? "" : server.pathname.replace(/\/$/, "");
-  const response = await fetchPinned(
-    new URL(`/.well-known/oauth-authorization-server${path}`, server.origin),
+  const found = await fetchMetadata(
+    fetchPinned,
+    authorizationServerMetadataUrls(authorizationServerUrl),
     { signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS) },
   );
-  if (!response.ok) {
+  if (!found) {
     throw new Error(
-      `Reading the authorization server's metadata failed: ${response.status}`,
+      `Reading ${authorizationServerUrl}'s authorization server metadata failed.`,
     );
   }
-  const metadata: unknown = await response.json();
-  if (typeof metadata !== "object" || metadata === null) return undefined;
-  const endpoint: unknown = (metadata as Record<string, unknown>)
-    .revocation_endpoint;
+  const endpoint = found.metadata.revocation_endpoint;
   return typeof endpoint === "string" ? endpoint : undefined;
 }
