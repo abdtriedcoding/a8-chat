@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { ChatHeader } from "@/components/chat/chat-header";
 import {
   ConnectorList,
   type CallbackParams,
 } from "@/components/connectors/connector-list";
-import { isAuthenticated } from "@/lib/auth-server";
 import {
   CONNECT_ERRORS,
   type ConnectError,
@@ -14,7 +12,6 @@ import {
 export const metadata: Metadata = { title: "Connectors" };
 
 export default async function ConnectorsPage(props: PageProps<"/connectors">) {
-  if (!(await isAuthenticated())) redirect("/sign-in");
   return (
     <>
       <ChatHeader>

@@ -1,14 +1,17 @@
+import { getSessionCookie } from "better-auth/cookies";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/landing/site-footer";
 import { SiteHeader } from "@/components/landing/site-header";
-import { isAuthenticated } from "@/lib/auth-server";
 
 export default async function MarketingLayout({
   children,
 }: {
   children: ReactNode;
 }) {
-  const signedIn = await isAuthenticated();
+  // Cookie presence only. It sets the header buttons, not access, so a stale
+  // cookie costs nothing and the page skips the Convex token call.
+  const signedIn = getSessionCookie(await headers()) !== null;
   return (
     <>
       <SiteHeader signedIn={signedIn} />
