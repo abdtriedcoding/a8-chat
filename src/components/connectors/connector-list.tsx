@@ -23,14 +23,21 @@ import {
 } from "../../../convex/lib/connectors";
 import { ConnectorCard } from "./connector-card";
 
-/**
- * What the sign-in callback's redirect put in the page's search params: a
- * sign-in to finish, or why it ended early.
- */
-export type CallbackParams =
-  | { finish: string }
-  | { error: ConnectError }
-  | undefined;
+/** Why the sign-in callback's redirect says the sign-in ended early, if it did. */
+export type CallbackParams = { error: ConnectError } | undefined;
+
+/** What the callback's redirect put in the URL fragment. */
+type Finish = { state: string; code: string; iss?: string };
+
+/** Reads the fragment, then removes it so the code leaves the URL and history. */
+function takeFinishFromHash(): Finish | null {
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const state = fragment.get("finish");
+  const code = fragment.get("code");
+  if (state === null || code === null) return null;
+  window.history.replaceState(null, "", window.location.pathname);
+  return { state, code, iss: fragment.get("iss") ?? undefined };
+}
 
 const ERROR_MESSAGES: Record<ConnectError, string> = {
   cancelled: "Sign-in was cancelled, so nothing was connected.",
@@ -140,27 +147,34 @@ function hasConnection(connection: ConnectorStatus | undefined): boolean {
 
 /**
  * Finishes the sign-in the callback sent the user back with, or shows why
- * it ended early. Then drops the params from the URL.
+ * it ended early. The code comes from the URL fragment, which is cleared
+ * on load.
  */
 function useFinishSignIn(callbackParams: CallbackParams, authLoading: boolean) {
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
   // finishConnect deletes the sign-in, so a second call would report it
-  // expired. React can run an effect twice in development.
-  const handled = useRef<CallbackParams>(undefined);
+  // expired. React can run an effect twice in development, and the first run
+  // clears the fragment, so the second must keep what the first read.
+  const finish = useRef<Finish | null>(null);
+  const handledError = useRef<CallbackParams>(undefined);
 
   useEffect(() => {
-    if (!callbackParams || authLoading || handled.current === callbackParams) {
-      return;
-    }
-    handled.current = callbackParams;
-    router.replace("/connectors");
-    if ("error" in callbackParams) {
+    finish.current ??= takeFinishFromHash();
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (callbackParams && handledError.current !== callbackParams) {
+      handledError.current = callbackParams;
+      router.replace("/connectors");
       toast.error(ERROR_MESSAGES[callbackParams.error], { id: TOAST_ID });
-      return;
     }
+    const pending = finish.current;
+    if (!pending) return;
+    finish.current = null;
     toast.loading("Connecting…", { id: TOAST_ID });
-    finishConnect({ state: callbackParams.finish })
+    finishConnect(pending)
       .catch((): ConnectResult => ({ error: "failed" }))
       .then(showResult);
   }, [callbackParams, authLoading, router, finishConnect]);

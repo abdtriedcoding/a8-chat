@@ -26,6 +26,15 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: DAY,
     start: 0,
   },
+  // Each user's connector sign-in starts. Each one calls the vendor for
+  // discovery and may register a client, so a script can't hammer the vendor
+  // through a8.
+  userConnectStarts: {
+    kind: "token bucket",
+    rate: 10,
+    period: MINUTE,
+    capacity: 10,
+  },
 });
 
 /** Why a Send was refused. The Send mutations return it instead of throwing. */
@@ -89,6 +98,20 @@ export async function limitConnectorToolCall(
   userId: string,
 ): Promise<boolean> {
   const { ok } = await rateLimiter.limit(ctx, "userConnectorToolCalls", {
+    key: userId,
+  });
+  return ok;
+}
+
+/**
+ * Counts one connector sign-in start against the user's limit. Returns
+ * false, and counts nothing, once the limit is hit.
+ */
+export async function limitConnectStart(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<boolean> {
+  const { ok } = await rateLimiter.limit(ctx, "userConnectStarts", {
     key: userId,
   });
   return ok;
