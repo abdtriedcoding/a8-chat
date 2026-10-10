@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useConnectConnector } from "@/hooks/use-connect-connector";
 import { api } from "../../../convex/_generated/api";
-import type { Connector } from "../../../convex/lib/connectors";
+import type { ConnectorView } from "../../../convex/lib/connectorView";
 
 /**
  * A button like "Reconnect Notion" that signs in to the connector again.
@@ -14,7 +14,7 @@ import type { Connector } from "../../../convex/lib/connectors";
  * reconnecting. The chip shows only while the connection still needs it,
  * so old replies stop asking once the user reconnects or disconnects.
  */
-export function ReconnectChip({ connector }: { connector: Connector }) {
+export function ReconnectChip({ connector }: { connector: ConnectorView }) {
   const { isLoading } = useConvexAuth();
   const connections = useQuery(api.connectors.list, isLoading ? "skip" : {});
   const { connecting, startConnect } = useConnectConnector(connector.id);

@@ -16,12 +16,11 @@ import type {
   ConnectResult,
 } from "../../../convex/connectors";
 import {
-  CONNECTORS,
-  connectorHandle,
-  findConnector,
+  CONNECTOR_VIEWS,
+  findConnectorView,
   type ConnectError,
-  type Connector,
-} from "../../../convex/lib/connectors";
+  type ConnectorView,
+} from "../../../convex/lib/connectorView";
 import { ConnectorCard } from "./connector-card";
 
 /** Why the sign-in callback's redirect says the sign-in ended early, if it did. */
@@ -132,12 +131,12 @@ export function ConnectorList({
  * The connectors whose name or handle contains the search, in catalog
  * order. A leading @ is ignored, so `@no` finds Notion.
  */
-function matchingConnectors(search: string): Connector[] {
+function matchingConnectors(search: string): ConnectorView[] {
   const query = search.trim().replace(/^@/, "").toLowerCase();
-  return CONNECTORS.filter(
+  return CONNECTOR_VIEWS.filter(
     (connector) =>
       connector.name.toLowerCase().includes(query) ||
-      connectorHandle(connector).toLowerCase().includes(query),
+      connector.handle.toLowerCase().includes(query),
   );
 }
 
@@ -186,7 +185,7 @@ function showResult(result: ConnectResult) {
     toast.error(ERROR_MESSAGES[result.error], { id: TOAST_ID });
     return;
   }
-  const name = findConnector(result.connected)?.name;
+  const name = findConnectorView(result.connected)?.name;
   toast.success(name ? `${name} is connected.` : "Connected.", {
     id: TOAST_ID,
   });
