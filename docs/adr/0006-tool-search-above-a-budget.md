@@ -16,7 +16,7 @@ The budget counts tokens, not tools, because one tool's schema can be ten times 
 ## Consequences
 
 - The MCP spec has no tool search of its own (October 2026), so a8 does the search on its side, as the MCP client best-practices doc recommends.
-- A deferred tool can't carry `cache_control`, and at least one tool must stay loaded. The search tool itself and native tools like web search always load.
+- A deferred tool can't carry `cache_control`, and at least one tool must stay loaded. Native tools like web search always load, and while connector tools are deferred the search tool loads with them. At or under the budget nothing is deferred, so the search tool isn't offered.
 - Native search stores tool references in the thread's history. Anthropic rejects a later reply whose tool list drops a referenced tool, after a disconnect or an allowlist change. The tool search spike confirmed this, so each reply drops references to tools it no longer offers before the model call.
 - AI SDK `toolSearch()` is not a drop-in fallback for other models. Its found tools last only for one `streamText` call, and each approval continuation (ADR 0002) is a new call. Stage 9 has to handle that.
 - Deferred actions still go in `toolApproval`, because the model can call them at any step.

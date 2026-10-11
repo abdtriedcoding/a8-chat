@@ -73,7 +73,7 @@ A connector's handle typed after @ in a prompt. It tells the model to use that c
 _Avoid_: tag, active app
 
 **Read**:
-A tool call that only fetches from an app, like searching email. Runs without asking.
+A tool call that only fetches from an app, like searching email, and that the catalog labels a read. Runs without asking. Calls to a custom connector's tools always ask, even when they only fetch.
 _Avoid_: query, lookup
 
 **Action**:
