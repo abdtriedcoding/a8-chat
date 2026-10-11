@@ -14,8 +14,8 @@ export const vAuthorizationServer = v.object({
   tokenEndpoint: v.string(),
 });
 
-/** The OAuth client a8 registered for a connector. */
-export const vConnectorClient = v.object({
+/** The OAuth client registration a8 made for a connector. */
+export const vClientRegistration = v.object({
   connectorId: v.string(),
   clientId: v.string(),
   encryptedClientSecret: v.optional(v.string()),
@@ -85,15 +85,24 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
-    // The MCP server's tools/list result, as JSON. Stored as a string
-    // because JSON Schema keys like "$schema" aren't valid Convex field names.
-    toolList: v.string(),
-    toolListFetchedAt: v.number(),
-    // When a reply last scheduled refreshToolList. Until the cooldown ends,
-    // requestToolListRefresh schedules no other refresh.
-    toolListRefreshRequestedAt: v.optional(v.number()),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
+  // The tools a8 stores for one connection (convex/toolLists.ts), apart from
+  // the connection so a token refresh doesn't rewrite them. One row per
+  // connection. saveConnection writes it, a reply refreshes it when it's a
+  // day old, and deleting the connection deletes it.
+  connectionToolLists: defineTable({
+    connectionId: v.id("connections"),
+    // The allowlisted tools, as JSON (lib/connectorToolList.ts).
+    tools: v.string(),
+    // About how many tokens the tools' definitions take, counted when they
+    // were fetched, so a reply doesn't measure them.
+    estimatedTokens: v.number(),
+    fetchedAt: v.number(),
+    // When a reply last scheduled refreshToolList. Until the cooldown ends,
+    // requestToolListRefresh schedules no other refresh.
+    refreshRequestedAt: v.optional(v.number()),
+  }).index("by_connectionId", ["connectionId"]),
   // One row per sign-in in progress (convex/connectors.ts). finishConnect
   // deletes the row. cleanUpExpiredConnects deletes the ones nobody finished.
   pendingConnects: defineTable({
@@ -108,12 +117,13 @@ export default defineSchema({
     .index("by_state", ["state"])
     .index("by_expiresAt", ["expiresAt"])
     .index("by_userId", ["userId"]),
-  // The OAuth client a8 registered with a connector's authorization server.
-  // One row per connector per deployment, shared by every user. Notion
-  // orphans earlier grants when a client registers again, so a8 only
-  // registers again after the vendor rejects this client or its secret
-  // expires.
-  connectorClients: defineTable(vConnectorClient).index("by_connectorId", [
+  // OAuth client registrations: the client a8 registered with a connector's
+  // authorization server (convex/connectorStore.ts). The table keeps an
+  // older name, and has nothing to do with MCP clients. One row per
+  // connector per deployment, shared by every user. Notion orphans earlier
+  // grants when a client registers again, so a8 only registers again after
+  // the vendor rejects this client or its secret expires.
+  connectorClients: defineTable(vClientRegistration).index("by_connectorId", [
     "connectorId",
   ]),
 });

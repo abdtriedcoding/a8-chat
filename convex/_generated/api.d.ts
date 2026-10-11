@@ -13,6 +13,7 @@ import type * as agents_webSearch from "../agents/webSearch.js";
 import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as connectorStore from "../connectorStore.js";
 import type * as connectors from "../connectors.js";
 import type * as crons from "../crons.js";
 import type * as emails from "../emails.js";
@@ -36,6 +37,7 @@ import type * as lib_toolLoading from "../lib/toolLoading.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as threads from "../threads.js";
 import type * as titles from "../titles.js";
+import type * as toolLists from "../toolLists.js";
 
 import type {
   ApiFromModules,
@@ -49,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   attachments: typeof attachments;
   auth: typeof auth;
   chat: typeof chat;
+  connectorStore: typeof connectorStore;
   connectors: typeof connectors;
   crons: typeof crons;
   emails: typeof emails;
@@ -72,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   rateLimits: typeof rateLimits;
   threads: typeof threads;
   titles: typeof titles;
+  toolLists: typeof toolLists;
 }>;
 
 /**
