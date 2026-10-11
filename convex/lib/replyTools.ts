@@ -1,13 +1,19 @@
-// Everything a reply needs from connectors, from one call: its tools, which
-// actions wait on a card, how the tools load, the connector instructions,
-// a log, and a close. streamReply calls createReplyTools before the model
+// Everything a reply needs for its tools, from one call: the tools, which
+// actions wait on a card, the step cap, the connector instructions, a log,
+// and a close. streamReply calls createReplyTools before the model
 // and close once the reply ends. connectorTools.ts builds the tools and
 // calls the vendors, and toolLoading.ts decides how they load.
 
-import type { ModelMessage, Tool, ToolApprovalStatus, ToolSet } from "ai";
+import type { ModelMessage, ToolApprovalStatus, ToolSet } from "ai";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import {
+  MAX_REPLY_STEPS,
+  MAX_STEPS_WITHOUT_CONNECTORS,
+  nativeTools,
+  toolSearch,
+} from "../agents/chat";
 import { createConnectorTools, type ConnectorTools } from "./connectorTools";
 import { findMentions } from "./connectorView";
 import { connectorInstructions } from "./instructions";
@@ -16,26 +22,28 @@ import {
   dropGoneToolReferences,
   ReplyToolLog,
   TOOL_BUDGET_TOKENS,
-  type ToolLoading,
 } from "./toolLoading";
 
 export type ReplyTools = {
-  /** The native tools and the connector tools, arranged by `loading`. */
+  /** The native tools and the connector tools, arranged by toolLoading.ts. */
   tools: ToolSet;
   /**
    * The reply's `toolApproval` option. Every connector action waits for the
    * user to approve it (ADR 0002, ADR 0008). Reads run at once.
    */
   toolApproval: Record<string, ToolApprovalStatus>;
-  /** How the reply offers connector tools. */
-  loading: ToolLoading;
   /**
    * The connector part of the instructions, for replyInstructions.
    * Undefined for a user with no connections.
    */
   connectorText: string | undefined;
-  /** Whether the reply offers any connector tools. */
-  hasConnectorTools: boolean;
+  /**
+   * The most model calls this part of the reply can make, at least 1. The
+   * cap counts steps across the whole reply. The Agent's count starts over
+   * when a reply continues after an action card (ADR 0002), so this
+   * subtracts stepsTaken. A native tool search adds no step.
+   */
+  maxSteps: number;
   /**
    * The history with each tool search result cut down to the tools this
    * reply offers (dropGoneToolReferences). For the Agent's contextHandler.
@@ -61,8 +69,8 @@ export type ReplyTools = {
  * @param connections The thread owner's connections, of any status.
  * @param threadDefersTools Whether the thread already defers connector
  *   tools.
- * @param nativeTools The tools a8 offers on every reply.
- * @param toolSearch The tool that finds deferred connector tools.
+ * @param stepsTaken The steps the reply took before it paused on action
+ *   cards. 0 for a new reply.
  */
 export async function createReplyTools(
   ctx: ActionCtx,
@@ -71,15 +79,13 @@ export async function createReplyTools(
     promptText,
     connections,
     threadDefersTools,
-    nativeTools,
-    toolSearch,
+    stepsTaken,
   }: {
     threadId: string;
     promptText: string;
     connections: Doc<"connections">[];
     threadDefersTools: boolean;
-    nativeTools: ToolSet;
-    toolSearch: Tool;
+    stepsTaken: number;
   },
 ): Promise<ReplyTools> {
   const mentioned = findMentions(promptText);
@@ -107,9 +113,13 @@ export async function createReplyTools(
   return {
     tools,
     toolApproval: connectorTools.toolApproval,
-    loading,
     connectorText: connectorInstructions({ connections, mentioned, loading }),
-    hasConnectorTools: connectorTools.groups.length > 0,
+    maxSteps: Math.max(
+      1,
+      (connectorTools.groups.length > 0
+        ? MAX_REPLY_STEPS
+        : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
+    ),
     fitHistory: (messages) => dropGoneToolReferences(messages, offered),
     log,
     close: async () => {

@@ -143,11 +143,11 @@ A tool added to the allowlist reaches a connection at its next refresh. A tool r
 
 ### A reply's tools
 
-`streamReply` in `convex/chat/reply.ts` runs one query, `getReplyStart`, for the prompt text, the thread owner's connections and whether the thread defers. It passes them to `createReplyTools`, which returns:
+`streamReply` in `convex/chat/reply.ts` runs one query, `getReplyStart`, for the prompt text, the thread owner's connections and whether the thread defers. It passes them and `stepsTaken` to `createReplyTools`, which returns:
 
 - the tool set: native tools like web search, and the connector tools of every connection that's connected
 - the `toolApproval` map, which makes each action wait on an action card
-- the loading mode, `all` or `search`
+- the step cap: `MAX_REPLY_STEPS` with connector tools, `MAX_STEPS_WITHOUT_CONNECTORS` without, counted across a continuation
 - the connector part of the system prompt, or none for a user with no connections
 - a history filter for the Agent's `contextHandler`, which drops tool search references to tools the reply no longer offers (ADR 0006)
 - the reply's log

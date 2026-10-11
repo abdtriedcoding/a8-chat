@@ -12,13 +12,7 @@ import {
   internalQuery,
   type QueryCtx,
 } from "../_generated/server";
-import {
-  chatAgent,
-  MAX_REPLY_STEPS,
-  MAX_STEPS_WITHOUT_CONNECTORS,
-  nativeTools,
-  toolSearch,
-} from "../agents/chat";
+import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connectorStore";
 import { replyInstructions } from "../lib/instructions";
 import { createReplyTools, type ReplyTools } from "../lib/replyTools";
@@ -85,19 +79,9 @@ export const streamReply = internalAction({
       replyTools = await createReplyTools(ctx, {
         threadId,
         ...start,
-        nativeTools,
-        toolSearch,
+        stepsTaken,
       });
-      const { log, fitHistory } = replyTools;
-      // The cap counts steps across the whole reply, but the Agent's count
-      // starts over when a reply continues after an action card (ADR 0002).
-      // A native tool search adds no step.
-      const maxSteps = Math.max(
-        1,
-        (replyTools.hasConnectorTools
-          ? MAX_REPLY_STEPS
-          : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
-      );
+      const { log, fitHistory, maxSteps } = replyTools;
       const result = await chatAgent.streamText(
         ctx,
         { threadId },
