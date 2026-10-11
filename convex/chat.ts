@@ -24,7 +24,6 @@ import {
   internalQuery,
   mutation,
   query,
-  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
@@ -37,23 +36,13 @@ import {
 } from "./agents/chat";
 import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
 import { requireUser } from "./auth";
-import {
-  createConnectorTools,
-  type ConnectorTools,
-} from "./lib/connectorTools";
 import { CONNECTORS } from "./lib/connectors";
-import { findMentions } from "./lib/connectorView";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";
+import { createReplyTools, type ReplyTools } from "./lib/replyTools";
 import { canSearchWeb } from "./lib/searchWeb";
 import { resolveTimeZone } from "./lib/timeZone";
-import {
-  arrangeReplyTools,
-  dropGoneToolReferences,
-  ReplyToolLog,
-  TOOL_BUDGET_TOKENS,
-} from "./lib/toolLoading";
 import { limitSend, vRateLimited } from "./rateLimits";
 import schema from "./schema";
 import { authorizeThreadAccess, getOwnThread } from "./threads";
@@ -636,8 +625,7 @@ export const streamReply = internalAction({
     { promptMessageId, threadId, order, timeZone, stepsTaken = 0 },
   ) => {
     const startedAt = Date.now();
-    let connectorTools: ConnectorTools | undefined;
-    let toolLog: ReplyToolLog | undefined;
+    let replyTools: ReplyTools | undefined;
     try {
       // Null if the user pressed Stop first, a regenerate or an edit
       // replaced this turn, or a new prompt came after the action cards
@@ -647,35 +635,19 @@ export const streamReply = internalAction({
         { threadId, promptMessageId, order, continuing: stepsTaken > 0 },
       );
       if (!start) return;
-      const { connections } = start;
-      const mentioned = findMentions(start.promptText);
-      connectorTools = await createConnectorTools(ctx, connections);
-      const deferred = await defersTools(ctx, {
+      replyTools = await createReplyTools(ctx, {
         threadId,
-        threadDefers: start.threadDefersTools,
-        connectorTools,
-      });
-      const { tools, loading } = arrangeReplyTools({
+        ...start,
         nativeTools,
-        groups: connectorTools.groups,
-        mentioned,
-        deferred,
         toolSearch,
       });
-      toolLog = new ReplyToolLog(
-        threadId,
-        connections.length,
-        deferred,
-        loading,
-        connectorTools.groups,
-      );
-      const offered = new Set(Object.keys(tools));
+      const { log, fitHistory } = replyTools;
       // The cap counts steps across the whole reply, but the Agent's count
       // starts over when a reply continues after an action card (ADR 0002).
       // A native tool search adds no step.
       const maxSteps = Math.max(
         1,
-        (connectorTools.groups.length > 0
+        (replyTools.hasConnectorTools
           ? MAX_REPLY_STEPS
           : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
       );
@@ -688,12 +660,10 @@ export const streamReply = internalAction({
             timeZone,
             now: new Date(),
             canSearchWeb,
-            connections,
-            mentioned,
-            loading,
+            connectorText: replyTools.connectorText,
           }),
-          tools,
-          toolApproval: connectorTools.toolApproval,
+          tools: replyTools.tools,
+          toolApproval: replyTools.toolApproval,
           stopWhen: stepCountIs(maxSteps),
           // The last step can't call tools, so a reply that hits the step
           // cap or runs long still ends with text. With no active tools,
@@ -706,8 +676,8 @@ export const streamReply = internalAction({
             Date.now() - startedAt >= REPLY_TIME_LIMIT_MS
               ? { activeTools: [] }
               : {},
-          onStepFinish: (step) => toolLog?.addStep(step),
-          onToolExecutionEnd: (event) => toolLog?.addToolRun(event),
+          onStepFinish: (step) => log.addStep(step),
+          onToolExecutionEnd: (event) => log.addToolRun(event),
         },
         {
           // more custom delta options (`true` uses defaults)
@@ -716,15 +686,14 @@ export const streamReply = internalAction({
           // continuation runs it again. Later steps add only tools this
           // reply offers. It changes what's sent, not what's saved.
           contextHandler: async (_ctx, { allMessages }) =>
-            dropGoneToolReferences(allMessages, offered),
+            fitHistory(allMessages),
         },
       );
       // We need to make sure the stream finishes - by awaiting each chunk
       // or using this call to consume it all.
       await result.consumeStream();
     } finally {
-      toolLog?.print();
-      await connectorTools?.close();
+      await replyTools?.close();
       // Runs even if the model call failed. Does nothing unless the user
       // stopped this reply.
       await ctx.runMutation(internal.chat.settleStop, {
@@ -748,7 +717,8 @@ const vReplyStart = v.union(
 type ReplyStart = Infer<typeof vReplyStart>;
 
 /**
- * Everything streamReply reads before it builds tools, in one query.
+ * Everything streamReply reads before it builds tools, in one query. The
+ * fields go to createReplyTools as they are.
  *
  * Null if streamReply shouldn't call the model. That's when the user pressed
  * Stop before the runner started, or the prompt is gone. A regenerate or an
@@ -766,7 +736,7 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   their tool lists. The reply runs from the scheduler with no signed-in
  *   user, so the thread names the user.
  * - `threadDefersTools`: whether the thread already defers connector tools
- *   (defersTools).
+ *   (deferThreadTools).
  */
 export const getReplyStart = internalQuery({
   args: {
@@ -807,31 +777,9 @@ export const getReplyStart = internalQuery({
 });
 
 /**
- * Whether the reply defers connector tools (ADR 0006). The thread starts to
- * once a reply's connector tools pass TOOL_BUDGET_TOKENS, and keeps on after
- * that, so the tool list stays the same and the prompt cache keeps working.
- * Only that first crossing writes. `threadDefers` comes from getReplyStart.
+ * Makes the thread defer connector tools from now on. A reply calls it when
+ * the thread first crosses the tool budget (lib/replyTools.ts).
  */
-async function defersTools(
-  ctx: ActionCtx,
-  {
-    threadId,
-    threadDefers,
-    connectorTools,
-  }: {
-    threadId: string;
-    threadDefers: boolean;
-    connectorTools: ConnectorTools;
-  },
-): Promise<boolean> {
-  if (connectorTools.groups.length === 0) return false;
-  if (threadDefers) return true;
-  if (connectorTools.estimatedTokens <= TOOL_BUDGET_TOKENS) return false;
-  await ctx.runMutation(internal.chat.deferThreadTools, { threadId });
-  return true;
-}
-
-/** Makes the thread defer connector tools from now on (defersTools). */
 export const deferThreadTools = internalMutation({
   args: { threadId: v.string() },
   returns: v.null(),

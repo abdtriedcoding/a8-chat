@@ -30,6 +30,7 @@ import type * as lib_encryption from "../lib/encryption.js";
 import type * as lib_instructions from "../lib/instructions.js";
 import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_replyFailure from "../lib/replyFailure.js";
+import type * as lib_replyTools from "../lib/replyTools.js";
 import type * as lib_searchWeb from "../lib/searchWeb.js";
 import type * as lib_snippet from "../lib/snippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   "lib/instructions": typeof lib_instructions;
   "lib/prompt": typeof lib_prompt;
   "lib/replyFailure": typeof lib_replyFailure;
+  "lib/replyTools": typeof lib_replyTools;
   "lib/searchWeb": typeof lib_searchWeb;
   "lib/snippet": typeof lib_snippet;
   "lib/timeZone": typeof lib_timeZone;

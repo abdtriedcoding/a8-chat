@@ -67,45 +67,54 @@ type ConnectionSummary = Pick<
  *
  * @param timeZone A time zone already checked by resolveTimeZone.
  * @param canSearchWeb Whether the model has the web search tool.
- * @param connections The user's connections, of any status.
- * @param mentioned The connectors the prompt mentions (findMentions).
- * @param loading How the reply offers connector tools (arrangeReplyTools).
+ * @param connectorText The reply's connector instructions
+ *   (connectorInstructions), or undefined for none.
  */
 export function replyInstructions({
   timeZone,
   now,
   canSearchWeb,
-  connections,
-  mentioned,
-  loading,
+  connectorText,
 }: {
   timeZone: string;
   now: Date;
   canSearchWeb: boolean;
-  connections: ConnectionSummary[];
-  mentioned: ConnectorView[];
-  loading: ToolLoading;
+  connectorText: string | undefined;
 }): string {
   return [
     INSTRUCTIONS,
     FORMATTING,
     ...(canSearchWeb ? [WEB_SEARCH] : []),
-    // A user with no connections gets no connector text, so the model isn't
-    // steered toward apps they never connected.
-    ...(connections.length > 0
-      ? [
-          [
-            CONNECTOR_GUIDE,
-            connectorStatusLine(connections),
-            ...(loading === "search" ? [TOOL_SEARCH] : []),
-            ...mentioned.map((connector) =>
-              mentionInstruction(connector, connections),
-            ),
-          ].join("\n"),
-        ]
-      : []),
+    ...(connectorText === undefined ? [] : [connectorText]),
     dateInstruction(timeZone, now),
   ].join("\n\n");
+}
+
+/**
+ * The connector part of a reply's instructions. Undefined for a user with
+ * no connections, so the model isn't steered toward apps they never
+ * connected.
+ *
+ * @param connections The user's connections, of any status.
+ * @param mentioned The connectors the prompt mentions (findMentions).
+ * @param loading How the reply offers connector tools (arrangeReplyTools).
+ */
+export function connectorInstructions({
+  connections,
+  mentioned,
+  loading,
+}: {
+  connections: ConnectionSummary[];
+  mentioned: ConnectorView[];
+  loading: ToolLoading;
+}): string | undefined {
+  if (connections.length === 0) return undefined;
+  return [
+    CONNECTOR_GUIDE,
+    connectorStatusLine(connections),
+    ...(loading === "search" ? [TOOL_SEARCH] : []),
+    ...mentioned.map((connector) => mentionInstruction(connector, connections)),
+  ].join("\n");
 }
 
 /**

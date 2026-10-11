@@ -33,9 +33,9 @@ import {
   isUntrustedOrigin,
   isVendorUnreachable,
   openMcpClient,
-  readAccountLabel,
 } from "./lib/connectorAuth";
 import type { StoredToolList } from "./lib/connectorToolList";
+import { readAccountLabel } from "./lib/connectorTools";
 import {
   CONNECTORS,
   findConnector,
