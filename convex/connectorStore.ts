@@ -37,6 +37,9 @@ const CLEANUP_BATCH_SIZE = 500;
 /** How many of a user's connections one account cleanup step handles. */
 const PURGE_CONNECTION_BATCH_SIZE = 50;
 
+/** How many of a user's connections readUserConnections reads. */
+const MAX_LISTED_CONNECTIONS = 100;
+
 const connectionFields = schema.tables.connections.validator.fields;
 
 /** The token fields of a connection, which a reply keeps up to date. */
@@ -317,6 +320,19 @@ export const listUserConnections = internalQuery({
       .take(PURGE_CONNECTION_BATCH_SIZE);
   },
 });
+
+/**
+ * The user's connections, tokens included, in connector id order. A user has
+ * at most one per connector id, but rows of connectors since removed from
+ * the catalog come back too, so callers match each row to the catalog
+ * themselves.
+ */
+export async function readUserConnections(ctx: QueryCtx, userId: string) {
+  return await ctx.db
+    .query("connections")
+    .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
+    .take(MAX_LISTED_CONNECTIONS);
+}
 
 /** The user's connection to the connector, tokens included. */
 export async function findConnection(

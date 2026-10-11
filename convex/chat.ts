@@ -36,7 +36,7 @@ import {
 } from "./agents/chat";
 import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
 import { requireUser } from "./auth";
-import { CONNECTORS } from "./lib/connectors";
+import { readUserConnections } from "./connectorStore";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
 import { replyFailureReason } from "./lib/replyFailure";
@@ -794,12 +794,7 @@ export const getReplyStart = internalQuery({
       threadId,
     }).catch(() => null);
     const userId = thread?.userId;
-    const connections = userId
-      ? await ctx.db
-          .query("connections")
-          .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
-          .take(CONNECTORS.length)
-      : [];
+    const connections = userId ? await readUserConnections(ctx, userId) : [];
     return {
       promptText: prompt?.text ?? "",
       connections,
