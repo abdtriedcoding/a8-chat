@@ -25,8 +25,9 @@ const TOO_LARGE_ERRORS = [
 
 /**
  * A short reason to show for a failed reply, or undefined if its error isn't
- * one we know. `error` is the error the Agent saved on the reply, which is
- * the model provider's error message.
+ * one we know. `error` is the error saved on the reply. That's the model
+ * provider's error message, or a generic one if the reply failed before the
+ * model call (failReplyStart).
  */
 export function replyFailureReason(
   error: string | undefined,

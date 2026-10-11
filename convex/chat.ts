@@ -60,6 +60,9 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
  */
 const STOPPED = "Stopped by the user";
 
+/** The error saved on a reply that failed before the model call. */
+const REPLY_START_FAILED = "The reply failed before the model call";
+
 /**
  * How long a reply can run before its next step has to be its last. Convex
  * stops an action at 10 minutes, so this leaves time for the final text.
@@ -724,6 +727,20 @@ export const streamReply = internalAction({
       // We need to make sure the stream finishes - by awaiting each chunk
       // or using this call to consume it all.
       await result.consumeStream();
+    } catch (error) {
+      // The Agent fails the reply it saved when the model call fails. If
+      // the error came before it saved one, the client would wait 60
+      // seconds for a reply that isn't coming. We rethrow the error so it
+      // reaches the logs, even if saving the failed reply fails too.
+      await ctx
+        .runMutation(internal.chat.failReplyStart, {
+          threadId,
+          promptMessageId,
+        })
+        .catch((saveError: unknown) =>
+          console.error("Couldn't save the failed reply", saveError),
+        );
+      throw error;
     } finally {
       await replyTools?.close();
       // Runs even if the model call failed. Does nothing unless the user
@@ -825,6 +842,36 @@ async function findDeferredToolThread(ctx: QueryCtx, threadId: string) {
     .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
     .unique();
 }
+
+/**
+ * Saves a failed reply to the prompt when streamReply fails before the
+ * Agent saves anything for it. The thread then shows the error and
+ * Regenerate, as it does when the model call fails. The message gets a
+ * generic error. The error the runner hit goes to the logs only.
+ *
+ * Does nothing unless the prompt is still the thread's newest message. If
+ * it isn't, the Agent saved the reply (and failed it itself), a regenerate
+ * or an edit deleted the prompt, or the user sent a new one.
+ */
+export const failReplyStart = internalMutation({
+  args: { threadId: v.string(), promptMessageId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, promptMessageId }) => {
+    const { page } = await listMessages(ctx, components.agent, {
+      threadId,
+      paginationOpts: { numItems: 1, cursor: null },
+    });
+    if (page[0]?._id !== promptMessageId) return null;
+    await chatAgent.saveMessage(ctx, {
+      threadId,
+      promptMessageId,
+      message: { role: "assistant", content: [] },
+      metadata: { status: "failed", error: REPLY_START_FAILED },
+      skipEmbeddings: true,
+    });
+    return null;
+  },
+});
 
 /**
  * Cleans up a stopped reply after the runner is done with it. streamReply
