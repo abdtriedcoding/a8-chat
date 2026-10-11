@@ -1,12 +1,13 @@
-import { useConvexAuth, useQuery } from "convex/react";
 import {
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
   type SyntheticEvent,
 } from "react";
 import { flushSync } from "react-dom";
-import { api } from "../../convex/_generated/api";
+import { isConnected, useConnections } from "@/hooks/use-connections";
+import { searchConnectors } from "@/lib/connector-search";
 import type { ConnectorStatus } from "../../convex/connectors";
 import {
   CONNECTOR_VIEWS,
@@ -23,11 +24,17 @@ export type MentionOption = ConnectorView & {
   status: ConnectorStatus["status"];
 };
 
+/** The id of the menu option for a connector, in the menu with this id. */
+export function mentionOptionId(menuId: string, connectorId: string): string {
+  return `${menuId}-${connectorId}`;
+}
+
 /**
  * The composer's @ mentions. Typing @ opens a menu of every connector,
  * connected ones first, filtered by what follows the @. ↑ and ↓ move
  * through it, Enter or Tab picks, and Esc closes it. Picking a connector
- * puts its handle in the text.
+ * puts its handle in the text. `comboboxProps` make the message box the
+ * menu's combobox, so a screen reader follows the selected option.
  *
  * `blockedMentions` lists the mentioned connectors that aren't connected.
  * `canSend` is false while there are any, or while the user's connections
@@ -41,14 +48,14 @@ export function useComposerMentions({
   text: string;
   setText: (text: string) => void;
 }) {
-  const { isLoading } = useConvexAuth();
-  const statuses = useQuery(api.connectors.list, isLoading ? "skip" : {});
+  const statuses = useConnections();
   const connectors = statuses && withStatus(statuses);
   const [mention, setMention] = useState<MentionQuery>();
   // The start of a mention Esc closed, so its menu stays closed while the
   // user keeps typing it.
   const [dismissedAt, setDismissedAt] = useState<number>();
   const [selectedId, setSelectedId] = useState("");
+  const menuId = useId();
   // syncCaret keeps this pointing at the message box. The menu only opens
   // from syncCaret, so pick always has it.
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -139,15 +146,27 @@ export function useComposerMentions({
     return true;
   }
 
+  const open = options.length > 0;
+
   return {
     /** The menu's connectors, or none while it's closed. */
     options,
+    menuId,
     selectedId: selected?.id ?? "",
     setSelectedId,
     pick,
     blockedMentions,
     canSend,
     syncCaret,
+    /** For the message box, which acts as the menu's combobox. */
+    comboboxProps: {
+      role: "combobox",
+      "aria-autocomplete": "list",
+      "aria-expanded": open,
+      "aria-controls": open ? menuId : undefined,
+      "aria-activedescendant":
+        open && selected ? mentionOptionId(menuId, selected.id) : undefined,
+    } as const,
     /**
      * For the message box, so the menu follows the caret. In testing,
      * React's onSelect alone missed caret moves made with the arrow keys.
@@ -190,7 +209,7 @@ function withStatus(statuses: ConnectorStatus[]): MentionOption[] {
 }
 
 /**
- * The connectors whose handle or name contains the query. Ones with a
+ * The connectors that match the query (searchConnectors). Ones with a
  * connection come first, as on the Connectors page, and each group keeps
  * catalog order.
  */
@@ -198,13 +217,9 @@ function menuOptions(
   connectors: MentionOption[],
   query: string,
 ): MentionOption[] {
-  const lowered = query.toLowerCase();
-  const matches = connectors.filter(
-    ({ handle, name }) =>
-      handle.includes(lowered) || name.toLowerCase().includes(lowered),
-  );
+  const matches = searchConnectors(connectors, query);
   return [
-    ...matches.filter(({ status }) => status !== "disconnected"),
-    ...matches.filter(({ status }) => status === "disconnected"),
+    ...matches.filter((connector) => isConnected(connector)),
+    ...matches.filter((connector) => !isConnected(connector)),
   ];
 }

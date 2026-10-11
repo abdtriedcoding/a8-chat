@@ -16,12 +16,13 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { ReplyStatus } from "@/hooks/use-reply-status";
 import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
-import type { DecideAction } from "./action-card";
+import { ActionCardAnnouncer } from "./action-card";
 import {
   AssistantMessage,
   StoppedMarker,
   ThinkingMessage,
 } from "./assistant-message";
+import { connectorToolCalls, isWaitingForApproval } from "./connector-tool-call";
 import { RegenerateButton } from "./regenerate-button";
 import { UserMessage } from "./user-message";
 
@@ -36,7 +37,6 @@ export function MessageList({
   replyStatus,
   onRegenerate,
   onEdit,
-  onDecideAction,
   editingLastPrompt,
   onEditingLastPromptChange,
 }: {
@@ -48,8 +48,6 @@ export function MessageList({
   onRegenerate?: () => Promise<void>;
   /** Set while the last prompt can be edited. Only that prompt shows it. */
   onEdit?: (prompt: string) => Promise<void>;
-  /** Approves or cancels an action waiting on its card. */
-  onDecideAction: DecideAction;
   /** Whether the last prompt's editor is open. */
   editingLastPrompt: boolean;
   onEditingLastPromptChange: (editing: boolean) => void;
@@ -63,6 +61,13 @@ export function MessageList({
   for (const message of messages) {
     if (message.role === "user") promptIds.set(message.order, message.id);
   }
+  // The actions whose cards show. A stopped reply shows its waiting actions
+  // as rows instead (AssistantMessage).
+  const waitingActions = messages.flatMap((message) =>
+    message.role === "assistant" && !stopped.has(message.order)
+      ? connectorToolCalls(message).filter(isWaitingForApproval)
+      : [],
+  );
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
@@ -133,7 +138,6 @@ export function MessageList({
                         replyStatus === "continuing"
                       }
                       onRegenerate={regenerate}
-                      onDecideAction={onDecideAction}
                     />
                   </MessageScrollerItem>
                 );
@@ -162,6 +166,7 @@ export function MessageList({
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton />
+        <ActionCardAnnouncer calls={waitingActions} />
       </MessageScroller>
     </MessageScrollerProvider>
   );

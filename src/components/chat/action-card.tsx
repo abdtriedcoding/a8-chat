@@ -1,19 +1,12 @@
 "use client";
 
-import Image from "next/image";
-import { useState } from "react";
+import { createContext, use, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/errors";
 import type { ConnectorToolCall } from "./connector-tool-call";
-
-/**
- * An argument that says where the action happens, like `parent`, `page_id`
- * or `page_or_database_ids`. The card shows these as the target and every
- * other argument as the content.
- */
-const TARGET_ARGUMENT = /(^|_)(parent|ids?)$/i;
 
 /** Approves or cancels the action waiting on the card with this approval ID. */
 export type DecideAction = (
@@ -21,30 +14,51 @@ export type DecideAction = (
   approve: boolean,
 ) => Promise<void>;
 
+const DecideActionContext = createContext<DecideAction | null>(null);
+
+/** Gives every ActionCard inside it the thread's DecideAction. */
+export function DecideActionProvider({
+  decide,
+  children,
+}: {
+  decide: DecideAction;
+  children: ReactNode;
+}) {
+  return <DecideActionContext value={decide}>{children}</DecideActionContext>;
+}
+
+function useDecideAction(): DecideAction {
+  const decide = use(DecideActionContext);
+  if (!decide) {
+    throw new Error("ActionCard must be inside a DecideActionProvider.");
+  }
+  return decide;
+}
+
 /**
  * The card for an action waiting in a reply (ADR 0002): the connector, the
  * target and the content, with Approve and Cancel. a8 sends nothing to the
  * app until the user approves. Once they decide, the reply shows the call as
- * a row instead.
+ * a row instead. It must be inside a DecideActionProvider.
+ *
+ * The catalog marks which arguments are the action's target. A tool without
+ * marked targets shows every argument under Details.
  */
-export function ActionCard({
-  call,
-  onDecide,
-}: {
-  call: ConnectorToolCall;
-  onDecide: DecideAction;
-}) {
+export function ActionCard({ call }: { call: ConnectorToolCall }) {
+  const decideAction = useDecideAction();
   const [deciding, setDeciding] = useState<"approve" | "cancel">();
   const args = Object.entries(isRecord(call.input) ? call.input : {});
-  const target = args.filter(([name]) => TARGET_ARGUMENT.test(name));
-  const content = args.filter(([name]) => !TARGET_ARGUMENT.test(name));
+  const isTarget = ([name]: [string, unknown]) =>
+    call.target?.includes(name) ?? false;
+  const target = args.filter(isTarget);
+  const content = args.filter((arg) => !isTarget(arg));
 
   // A second click before the call ends does nothing.
   async function decide(approve: boolean) {
     if (deciding || !call.approval) return;
     setDeciding(approve ? "approve" : "cancel");
     try {
-      await onDecide(call.approval.id, approve);
+      await decideAction(call.approval.id, approve);
     } catch (error) {
       toast.error(errorMessage(error));
     } finally {
@@ -58,26 +72,33 @@ export function ActionCard({
       className="flex w-full flex-col gap-3 rounded-xl bg-card p-3 text-sm shadow-xs ring-1 ring-foreground/10"
     >
       <header className="flex items-center gap-2">
-        {/* Logos are drawn for a light background, so they get a white one in both themes. */}
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-foreground/10">
-          <Image src={call.connector.logo} alt="" width={16} height={16} />
-        </span>
+        <ConnectorLogo connector={call.connector} size="md" />
         <h3 className="min-w-0 flex-1 truncate font-medium">{call.label}</h3>
         <span className="shrink-0 text-xs text-muted-foreground">
           Needs approval
         </span>
       </header>
-      <ActionDetail title="Target">
-        {target.length > 0 ? (
-          <ArgumentList entries={target} />
-        ) : (
-          <p>Default location in {call.connector.name}</p>
-        )}
-      </ActionDetail>
-      {content.length > 0 && (
-        <ActionDetail title="Content">
-          <ArgumentList entries={content} />
-        </ActionDetail>
+      {call.target ? (
+        <>
+          <ActionDetail title="Target">
+            {target.length > 0 ? (
+              <ArgumentList entries={target} />
+            ) : (
+              <p>Default location in {call.connector.name}</p>
+            )}
+          </ActionDetail>
+          {content.length > 0 && (
+            <ActionDetail title="Content">
+              <ArgumentList entries={content} />
+            </ActionDetail>
+          )}
+        </>
+      ) : (
+        args.length > 0 && (
+          <ActionDetail title="Details">
+            <ArgumentList entries={args} />
+          </ActionDetail>
+        )
       )}
       <footer className="flex justify-end gap-2">
         <Button
@@ -97,12 +118,26 @@ export function ActionCard({
   );
 }
 
+/**
+ * Tells a screen reader, without interrupting it, when an action card shows
+ * up. `calls` are the thread's waiting actions. The region stays in the page
+ * with or without cards, because a screen reader announces a change to a
+ * live region's text but not a region that's just been added.
+ */
+export function ActionCardAnnouncer({ calls }: { calls: ConnectorToolCall[] }) {
+  return (
+    <div role="status" className="sr-only">
+      {calls.map((call) => `${call.label}, waiting for approval.`).join(" ")}
+    </div>
+  );
+}
+
 function ActionDetail({
   title,
   children,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="flex min-w-0 flex-col gap-1">
