@@ -147,11 +147,10 @@ function connectorStatusLine(connections: ConnectionSummary[]): string {
     const connection = connections.find(
       (row) => row.connectorId === connector.id,
     );
+    const label = cleanAccountLabel(connection?.accountLabel);
     return {
       status: connection?.status ?? "disconnected",
-      name: connection?.accountLabel
-        ? `${connector.name} (${connection.accountLabel})`
-        : connector.name,
+      name: label ? `${connector.name} (${label})` : connector.name,
     };
   });
   const names = (status: ConnectionSummary["status"] | "disconnected") =>
@@ -160,6 +159,28 @@ function connectorStatusLine(connections: ConnectionSummary[]): string {
       .map((state) => state.name)
       .join(", ") || "none";
   return `Connected: ${names("connected")}. Needs reconnect: ${names("needs_reconnect")}. Not connected: ${names("disconnected")}.`;
+}
+
+const MAX_ACCOUNT_LABEL_LENGTH = 80;
+
+/**
+ * An account label cut to one short line for the instructions. The vendor
+ * sets it (a Notion workspace name, an email), so it can hold newlines and
+ * instructions. Turns control and format characters (newlines, bidi
+ * overrides, zero-width spaces) into spaces, collapses whitespace and keeps
+ * the first MAX_ACCOUNT_LABEL_LENGTH code points, so the cut never splits an
+ * emoji.
+ */
+function cleanAccountLabel(label: string | undefined): string {
+  if (!label) return "";
+  const oneLine = label
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Array.from(oneLine)
+    .slice(0, MAX_ACCOUNT_LABEL_LENGTH)
+    .join("")
+    .trim();
 }
 
 /**
