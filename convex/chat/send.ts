@@ -30,9 +30,9 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 // to the browser console. sendMessage also returns a refusal while a reply
 // is running.
 //
-// startThread and sendMessage load their attachments before the rate limits,
-// and sendMessage checks for a running reply first. limitSend counts the
-// Send, so a refusal after it would still be counted.
+// startThread and sendMessage load their attachments before the rate limits
+// (prepareSend), and sendMessage checks for a running reply first. limitSend
+// counts the Send, so a refusal after it would still be counted.
 
 /**
  * Why a Send was refused: the thread's reply is still running. sendMessage
@@ -63,15 +63,14 @@ export const startThread = mutation({
   ),
   handler: async (ctx, { prompt, attachmentFileIds = [], timeZone }) => {
     const user = await requireUser(ctx);
-    const text = checkPrompt(prompt, attachmentFileIds.length);
-    const attachments = await loadPromptAttachments(
+    const prepared = await prepareSend(
       ctx,
       user._id,
+      prompt,
       attachmentFileIds,
     );
-    if ("code" in attachments) return attachments;
-    const refused = await limitSend(ctx, user._id);
-    if (refused) return refused;
+    if ("code" in prepared) return prepared;
+    const { text, message, attachments } = prepared;
     // Shown until the generated title replaces it, and kept if that fails.
     // A prompt with no text is titled after its first attachment.
     const placeholder = titleFromPrompt(text || attachments.filenames[0]);
@@ -81,7 +80,7 @@ export const startThread = mutation({
     });
     await sendPrompt(ctx, {
       threadId,
-      message: buildPromptMessage(text, attachments.parts),
+      message,
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
@@ -115,24 +114,24 @@ export const sendMessage = mutation({
     { prompt, attachmentFileIds = [], threadId, timeZone },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
+    const lastTurn = await getLastTurn(ctx, threadId);
     // A second tab, or a direct call, can send while a reply is running. The
     // new prompt would close the reply's running actions (closeUnrunActions),
     // and a second runner would stream into the thread next to the first.
-    if (hasPendingReply(await getLastTurn(ctx, threadId))) {
-      return REPLY_IN_PROGRESS;
-    }
-    const text = checkPrompt(prompt, attachmentFileIds.length);
-    const attachments = await loadPromptAttachments(
+    if (hasPendingReply(lastTurn)) return REPLY_IN_PROGRESS;
+    const prepared = await prepareSend(
       ctx,
       user._id,
+      prompt,
       attachmentFileIds,
     );
-    if ("code" in attachments) return attachments;
-    const refused = await limitSend(ctx, user._id);
-    if (refused) return refused;
+    if ("code" in prepared) return prepared;
+    const { message, attachments } = prepared;
+    // Nothing above writes to the thread, so lastTurn is still current.
+    await closeUnrunActions(ctx, threadId, lastTurn);
     await sendPrompt(ctx, {
       threadId,
-      message: buildPromptMessage(text, attachments.parts),
+      message,
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
@@ -174,6 +173,34 @@ export const editPrompt = mutation({
     return null;
   },
 });
+
+/**
+ * Runs the steps startThread and sendMessage share before they save the
+ * prompt. Checks the prompt, loads its attachments and counts the Send
+ * (limitSend). Returns the checked text, the prompt's message and the
+ * attachments, or the refusal to return.
+ */
+async function prepareSend(
+  ctx: MutationCtx,
+  userId: string,
+  prompt: string,
+  attachmentFileIds: string[],
+) {
+  const text = checkPrompt(prompt, attachmentFileIds.length);
+  const attachments = await loadPromptAttachments(
+    ctx,
+    userId,
+    attachmentFileIds,
+  );
+  if ("code" in attachments) return attachments;
+  const refused = await limitSend(ctx, userId);
+  if (refused) return refused;
+  return {
+    text,
+    message: buildPromptMessage(text, attachments.parts),
+    attachments,
+  };
+}
 
 /**
  * Deletes the thread's last turn, the prompt and its reply, and then sends
@@ -238,7 +265,9 @@ async function redoLastTurn(
 
   // This sends the saved message rather than its text, so nothing else in
   // the prompt is lost. Its attachments go with it. Deleting the old prompt
-  // released them, and saving the new one claims them again.
+  // released them, and saving the new one claims them again. This skips
+  // closeUnrunActions. The Send that started the deleted turn already closed
+  // the turn before it.
   const newPrompt =
     newText === undefined
       ? prompt.message
@@ -253,7 +282,9 @@ async function redoLastTurn(
 
 /**
  * Saves a prompt and schedules the reply to it (streamReply). startThread,
- * sendMessage and redoLastTurn all send through here.
+ * sendMessage and redoLastTurn all send through here. It leaves the last
+ * turn's actions as they are. sendMessage closes them first
+ * (closeUnrunActions).
  *
  * `attachmentFileIds` are the files the prompt attaches. Saving them with
  * the prompt keeps the Agent from counting them as unused.
@@ -272,7 +303,6 @@ async function sendPrompt(
     timeZone: string | undefined;
   },
 ) {
-  await closeUnrunActions(ctx, threadId);
   const { messageId, message: savedPrompt } = await chatAgent.saveMessage(ctx, {
     threadId,
     message,

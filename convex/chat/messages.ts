@@ -19,15 +19,14 @@ import { isAwaitingContinuation } from "./approval";
 /**
  * Extra data listThreadMessages adds to every message in a turn. Messages
  * in other turns get none.
- * - `stopped`: the user stopped the turn's reply. `keepText` says whether
- *   the reply's text should still be shown.
+ * - `stopped`: the user stopped the turn's reply.
  * - `failureReason`: the reply failed for a reason we know, and this says
  *   what it is, such as attachments too large for the model.
  * - `continuing`: the user has decided on every action card in the reply,
  *   and the runner hasn't picked the reply up again yet.
  */
 export type MessageMetadata = {
-  stopped?: { keepText: boolean };
+  stopped?: true;
   failureReason?: string;
   continuing?: boolean;
 };
@@ -100,7 +99,7 @@ export const listThreadMessages = query({
         )
         .take(last - first + 1);
       for (const row of rows) {
-        turnMetadata.set(row.order, { stopped: { keepText: row.keepText } });
+        turnMetadata.set(row.order, { stopped: true });
       }
     }
     // The page is newest first, so the newest turn comes first.

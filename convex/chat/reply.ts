@@ -12,20 +12,14 @@ import {
   internalQuery,
   type QueryCtx,
 } from "../_generated/server";
-import {
-  chatAgent,
-  MAX_REPLY_STEPS,
-  MAX_STEPS_WITHOUT_CONNECTORS,
-  nativeTools,
-  toolSearch,
-} from "../agents/chat";
+import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connectorStore";
 import { replyInstructions } from "../lib/instructions";
 import { createReplyTools, type ReplyTools } from "../lib/replyTools";
 import { canSearchWeb } from "../lib/searchWeb";
 import schema from "../schema";
 import { getStoppedReply } from "./stop";
-import { listTurnUpTo } from "./turns";
+import { getContinuedTurn, listTurnUpTo } from "./turns";
 
 /** The error saved on a reply that failed before the model call. */
 const REPLY_START_FAILED = "The reply failed before the model call";
@@ -49,40 +43,45 @@ export const streamReply = internalAction({
     // The prompt's order. The reply gets the same one.
     order: v.number(),
     timeZone: v.string(),
+    // Whether the reply continues after action cards.
+    continuing: v.optional(v.boolean()),
     // The steps the reply took before it paused on action cards.
     stepsTaken: v.optional(v.number()),
   },
   handler: async (
     ctx,
-    { promptMessageId, threadId, order, timeZone, stepsTaken = 0 },
+    {
+      promptMessageId,
+      threadId,
+      order,
+      timeZone,
+      continuing = false,
+      stepsTaken = 0,
+    },
   ) => {
     const startedAt = Date.now();
     let replyTools: ReplyTools | undefined;
+    // Set when the reply's stream is aborted, which is how Stop reaches the
+    // runner (stopReply). The Agent then saves the partial reply as failed
+    // and returns without an error. A Stop that lands after the model's last
+    // word, while the Agent saves the final text, fails the reply without
+    // this. That reply keeps its text on screen, but the model doesn't see it.
+    let aborted = false;
     try {
       // Null if the user pressed Stop first, a regenerate or an edit
       // replaced this turn, or a new prompt came after the action cards
       // this reply continues from.
       const start: ReplyStart = await ctx.runQuery(
         internal.chat.reply.getReplyStart,
-        { threadId, promptMessageId, order, continuing: stepsTaken > 0 },
+        { threadId, promptMessageId, order, continuing },
       );
       if (!start) return;
       replyTools = await createReplyTools(ctx, {
         threadId,
         ...start,
-        nativeTools,
-        toolSearch,
+        stepsTaken,
       });
-      const { log, fitHistory } = replyTools;
-      // The cap counts steps across the whole reply, but the Agent's count
-      // starts over when a reply continues after an action card (ADR 0002).
-      // A native tool search adds no step.
-      const maxSteps = Math.max(
-        1,
-        (replyTools.hasConnectorTools
-          ? MAX_REPLY_STEPS
-          : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
-      );
+      const { log, fitHistory, maxSteps } = replyTools;
       const result = await chatAgent.streamText(
         ctx,
         { threadId },
@@ -110,6 +109,9 @@ export const streamReply = internalAction({
               : {},
           onStepFinish: (step) => log.addStep(step),
           onToolExecutionEnd: (event) => log.addToolRun(event),
+          onAbort: () => {
+            aborted = true;
+          },
         },
         {
           // more custom delta options (`true` uses defaults)
@@ -140,13 +142,13 @@ export const streamReply = internalAction({
       throw error;
     } finally {
       await replyTools?.close();
-      // Runs even if the model call failed. Does nothing unless the user
-      // stopped this reply.
-      await ctx.runMutation(internal.chat.stop.settleStop, {
-        threadId,
-        promptMessageId,
-        order,
-      });
+      if (aborted) {
+        await ctx.runMutation(internal.chat.stop.settleStop, {
+          threadId,
+          promptMessageId,
+          order,
+        });
+      }
     }
   },
 });
@@ -193,26 +195,23 @@ export const getReplyStart = internalQuery({
   },
   returns: vReplyStart,
   handler: async (ctx, { threadId, promptMessageId, order, continuing }) => {
-    const turn = await listTurnUpTo(ctx, { threadId, promptMessageId, order });
+    const turn = continuing
+      ? await getContinuedTurn(ctx, { threadId, promptMessageId, order })
+      : await listTurnUpTo(ctx, { threadId, promptMessageId, order });
     if (!turn) return null;
-    if (continuing) {
-      const { page } = await listMessages(ctx, components.agent, {
-        threadId,
-        paginationOpts: { numItems: 1, cursor: null },
-      });
-      if (page[0]?.order !== order) return null;
-    }
-    if (await getStoppedReply(ctx, threadId, order)) return null;
+    const [stopped, thread, deferredToolThread] = await Promise.all([
+      getStoppedReply(ctx, threadId, order),
+      getThreadMetadata(ctx, components.agent, { threadId }).catch(() => null),
+      findDeferredToolThread(ctx, threadId),
+    ]);
+    if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
-    const thread = await getThreadMetadata(ctx, components.agent, {
-      threadId,
-    }).catch(() => null);
     const userId = thread?.userId;
     const connections = userId ? await readUserConnections(ctx, userId) : [];
     return {
       promptText: prompt?.text ?? "",
       connections,
-      threadDefersTools: (await findDeferredToolThread(ctx, threadId)) !== null,
+      threadDefersTools: deferredToolThread !== null,
     };
   },
 });
