@@ -4,9 +4,8 @@
 // for a refresh when the list is a day old or the server didn't know a tool.
 
 import { MCPClientError, type MCPClient } from "@ai-sdk/mcp";
-import { getThreadMetadata } from "@convex-dev/agent";
-import { v, type Infer } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   internalAction,
@@ -22,7 +21,7 @@ import {
   type StoredToolList,
 } from "./lib/connectorToolList";
 import { connectionAccessToken } from "./lib/connectionTokens";
-import { CONNECTORS, findConnector, type Connector } from "./lib/connectors";
+import { findConnector, type Connector } from "./lib/connectors";
 import schema from "./schema";
 
 /**
@@ -37,39 +36,19 @@ export const vStoredToolList = v.object({
   estimatedTokens: v.number(),
 });
 
-const vConnectionWithToolList = v.object({
-  connection: schema.doc("connections"),
-  // Null if the connection has no stored list yet.
-  toolList: v.union(schema.doc("connectionToolLists"), v.null()),
-});
-
-/** A connection, tokens included, with its stored tool list. */
-export type ConnectionWithToolList = Infer<typeof vConnectionWithToolList>;
-
 /**
- * The connections of the thread's owner, tokens included, each with its
- * stored tool list. streamReply builds the reply's tools from them. It runs
- * from the scheduler with no signed-in user, so the thread names the user.
+ * The stored tool lists of the connections. A connection with no stored
+ * list is left out. A reply loads them for its `connected` connections
+ * (createConnectorTools).
  */
-export const listReplyConnections = internalQuery({
-  args: { threadId: v.string() },
-  returns: v.array(vConnectionWithToolList),
-  handler: async (ctx, { threadId }) => {
-    const thread = await getThreadMetadata(ctx, components.agent, {
-      threadId,
-    }).catch(() => null);
-    const userId = thread?.userId;
-    if (!userId) return [];
-    const connections = await ctx.db
-      .query("connections")
-      .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
-      .take(CONNECTORS.length);
-    return await Promise.all(
-      connections.map(async (connection) => ({
-        connection,
-        toolList: await findToolList(ctx, connection._id),
-      })),
+export const listToolLists = internalQuery({
+  args: { connectionIds: v.array(v.id("connections")) },
+  returns: v.array(schema.doc("connectionToolLists")),
+  handler: async (ctx, { connectionIds }) => {
+    const toolLists = await Promise.all(
+      connectionIds.map(async (id) => await findToolList(ctx, id)),
     );
+    return toolLists.filter((toolList) => toolList !== null);
   },
 });
 
