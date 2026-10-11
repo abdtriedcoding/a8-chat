@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import {
   BoxesIcon,
   CheckIcon,
@@ -17,7 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 
 type Feature = {
   icon: LucideIcon;

@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import {
   ArrowRightIcon,
   CalendarDaysIcon,
@@ -21,7 +22,6 @@ import { Pricing } from "@/components/landing/pricing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GITHUB_URL } from "@/lib/site";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: { absolute: "a8: the AI chat that does the work in your apps" },

@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { CheckIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { GITHUB_URL } from "@/lib/site";
-import { cn } from "@/lib/utils";
 
 type Plan = {
   name: string;

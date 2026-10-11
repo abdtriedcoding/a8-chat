@@ -1,11 +1,11 @@
 "use client";
 
+import { cn } from "cn";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
 import { checkTitle } from "../../convex/lib/prompt";
 
 /**
