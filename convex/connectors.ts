@@ -32,13 +32,14 @@ import {
   forgetClientRegistration,
   isUntrustedOrigin,
   isVendorUnreachable,
-  openMcpClient,
+  signInScope,
+  withMcpClients,
 } from "./lib/connectorAuth";
-import type { StoredToolList } from "./lib/connectorToolList";
 import { readAccountLabel } from "./lib/connectorTools";
 import {
   CONNECTORS,
   findConnector,
+  signInServer,
   vConnectorId,
 } from "./lib/connectors";
 import { CONNECT_ERRORS, type ConnectError } from "./lib/connectorView";
@@ -128,7 +129,8 @@ export const connect = action({
     const provider = new ConnectorOAuthProvider(ctx, connector, encryptionKey);
     try {
       await auth(provider, {
-        serverUrl: connector.mcpServerUrl,
+        serverUrl: signInServer(connector).url,
+        scope: signInScope(connector),
         fetchFn: provider.fetch,
       });
     } catch (error) {
@@ -157,6 +159,7 @@ export const connect = action({
       state: savedState,
       codeVerifier: savedCodeVerifier,
       connectorId: connector.id,
+      scope: authorizationUrl.searchParams.get("scope") ?? undefined,
       authorizationServer: {
         issuer: savedAuthorizationServer.issuer,
         authorizationServerUrl: savedAuthorizationServer.authorizationServerUrl,
@@ -201,9 +204,9 @@ export const callback = httpAction(async (ctx, request) => {
 
 /**
  * Finishes the user's sign-in named by `state`: exchanges the code, then
- * stores the encrypted tokens and the tool list. `code` and `iss` come from
- * the callback's redirect. The pendingConnects row is gone once this
- * returns, whatever the result.
+ * stores the encrypted tokens, the granted scopes and the tool list from
+ * every server. `code` and `iss` come from the callback's redirect. The
+ * pendingConnects row is gone once this returns, whatever the result.
  */
 export const finishConnect = action({
   args: { state: v.string(), code: v.string(), iss: v.optional(v.string()) },
@@ -227,7 +230,7 @@ export const finishConnect = action({
         pending,
       );
       await auth(provider, {
-        serverUrl: connector.mcpServerUrl,
+        serverUrl: signInServer(connector).url,
         authorizationCode: code,
         callbackState: state,
         callbackIssuer: iss,
@@ -235,15 +238,16 @@ export const finishConnect = action({
       });
       const tokens = provider.savedTokens;
       if (!tokens) throw new Error("auth() returned without tokens.");
-      const client = await openMcpClient(connector, tokens.access_token);
-      let toolList: StoredToolList;
-      let accountLabel = provider.accountLabel;
-      try {
-        toolList = await fetchToolList(connector, client);
-        accountLabel ??= await readAccountLabel(connector, client);
-      } finally {
-        await client.close();
-      }
+      const { toolList, accountLabel } = await withMcpClients(
+        connector,
+        tokens.access_token,
+        async (clients) => ({
+          toolList: await fetchToolList(connector, clients),
+          accountLabel:
+            provider.accountLabel ??
+            (await readAccountLabel(connector, clients)),
+        }),
+      );
       await ctx.runMutation(internal.connectorStore.saveConnection, {
         userId: pending.userId,
         connectorId: connector.id,
@@ -260,6 +264,7 @@ export const finishConnect = action({
             ? undefined
             : Date.now() + tokens.expires_in * 1000,
         accountLabel,
+        grantedScopes: grantedScopes(tokens.scope ?? pending.scope),
         toolList,
       });
       return { connected: connector.id };
@@ -335,6 +340,17 @@ function finishConnectError(error: unknown): ConnectError {
   if (oauthError === "rejectedGrant") return "expired";
   if (isVendorUnreachable(error)) return "unreachable";
   return "failed";
+}
+
+/**
+ * The scopes in a space-separated OAuth `scope`, or undefined if it names
+ * none. finishConnect passes the token response's `scope`, or else the one
+ * the authorize URL asked for, because RFC 6749 (section 5.1) lets a vendor
+ * leave `scope` out of its token response when it granted exactly that.
+ */
+function grantedScopes(scope: string | undefined): string[] | undefined {
+  const scopes = scope?.split(" ").filter((name) => name !== "");
+  return scopes?.length ? scopes : undefined;
 }
 
 function redirectToConnectors(

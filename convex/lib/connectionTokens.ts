@@ -14,7 +14,7 @@ import {
   forgetClientRegistration,
   pinnedFetch,
 } from "./connectorAuth";
-import type { Connector } from "./connectors";
+import { signInServer, type Connector } from "./connectors";
 import {
   decryptSecret,
   encryptOptionalSecret,
@@ -186,7 +186,7 @@ async function requestTokens(
   let rejectedError: unknown;
   try {
     await auth(provider, {
-      serverUrl: connector.mcpServerUrl,
+      serverUrl: signInServer(connector).url,
       fetchFn: provider.fetch,
     });
   } catch (error) {

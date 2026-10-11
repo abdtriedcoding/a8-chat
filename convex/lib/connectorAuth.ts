@@ -15,7 +15,11 @@ import {
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { env, type ActionCtx } from "../_generated/server";
-import type { Connector } from "./connectors";
+import {
+  signInServer,
+  type Connector,
+  type ConnectorServer,
+} from "./connectors";
 import { decryptSecret, encryptOptionalSecret } from "./encryption";
 
 /** Where the vendor sends the browser back after sign-in (convex/http.ts). */
@@ -28,6 +32,15 @@ type PendingConnect = Pick<
 >;
 
 /**
+ * The `scope` to pass `auth()` when signing in: the connector's scopes, or
+ * undefined so auth() asks for the ones the protected resource metadata
+ * lists.
+ */
+export function signInScope(connector: Connector): string | undefined {
+  return connector.scopes?.join(" ");
+}
+
+/**
  * The OAuth provider `@ai-sdk/mcp`'s `auth()` runs a connector's sign-in
  * with (ADR 0003). The client registration lives in connectorClients. What
  * a sign-in produces (state, PKCE verifier, authorization server, tokens) is
@@ -35,7 +48,8 @@ type PendingConnect = Pick<
  * pendingConnects row, and finishConnect saves the connection.
  *
  * Pass `fetch` to `auth()` as `fetchFn`, so it only reaches the pinned
- * origins.
+ * origins, and signInScope as `scope` when signing in. The provider adds
+ * the connector's authorize parameters to the authorize URL.
  */
 export class ConnectorOAuthProvider implements OAuthClientProvider {
   authorizationUrl?: URL;
@@ -95,6 +109,11 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   }
 
   redirectToAuthorization(authorizationUrl: URL) {
+    for (const [name, value] of Object.entries(
+      this.connector.authorizeParams ?? {},
+    )) {
+      authorizationUrl.searchParams.set(name, value);
+    }
     this.authorizationUrl = authorizationUrl;
   }
 
@@ -273,21 +292,49 @@ class UntrustedOriginError extends Error {
 }
 
 /**
- * An MCP client for the connector's server, sending `accessToken`. It only
- * reaches the pinned origins. Close it when done.
+ * An MCP client for one of the connector's servers, sending `accessToken`.
+ * It only reaches the pinned origins. Close it when done.
  */
 export async function openMcpClient(
   connector: Connector,
+  server: ConnectorServer,
   accessToken: string,
 ): Promise<MCPClient> {
   return await createMCPClient({
     transport: {
       type: "http",
-      url: connector.mcpServerUrl,
+      url: server.url,
       headers: { Authorization: `Bearer ${accessToken}` },
       fetch: pinnedFetch(connector),
     },
   });
+}
+
+/** An open MCP client and the server it talks to. */
+export type ServerClient = { server: ConnectorServer; mcp: MCPClient };
+
+/**
+ * Opens an MCP client to each of the connector's servers, in order, and
+ * passes them to `run`. Closes every client it opened once `run` ends or a
+ * server fails to open.
+ */
+export async function withMcpClients<T>(
+  connector: Connector,
+  accessToken: string,
+  run: (clients: ServerClient[]) => Promise<T>,
+): Promise<T> {
+  const clients: ServerClient[] = [];
+  try {
+    for (const server of connector.servers) {
+      clients.push({
+        server,
+        mcp: await openMcpClient(connector, server, accessToken),
+      });
+    }
+    return await run(clients);
+  } finally {
+    await Promise.allSettled(clients.map(async ({ mcp }) => await mcp.close()));
+  }
 }
 
 function assertPinnedOrigin(
@@ -541,7 +588,10 @@ export async function revokeConnection(
   const endpoint = await findRevocationEndpoint(
     fetchPinned,
     registration.authorization_server ??
-      (await findAuthorizationServer(fetchPinned, connector.mcpServerUrl)),
+      (await findAuthorizationServer(
+        fetchPinned,
+        signInServer(connector).url,
+      )),
   );
   if (!endpoint) return false;
 
@@ -609,22 +659,28 @@ async function findAuthorizationServer(
 
 /**
  * The revocation endpoint from the authorization server's metadata, or
- * undefined if it doesn't list one. Throws if a8 finds no metadata.
+ * undefined if it doesn't list one. When the RFC 8414 metadata names none,
+ * a8 reads the OpenID Connect discovery document too, because some vendors
+ * list it only there. Throws if a8 finds no metadata.
  */
 async function findRevocationEndpoint(
   fetchPinned: ReturnType<typeof pinnedFetch>,
   authorizationServerUrl: string,
 ): Promise<string | undefined> {
-  const found = await fetchMetadata(
-    fetchPinned,
-    authorizationServerMetadataUrls(authorizationServerUrl),
-    { signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS) },
-  );
-  if (!found) {
+  // One deadline for every attempt.
+  const signal = AbortSignal.timeout(REVOKE_TIMEOUT_MS);
+  let foundMetadata = false;
+  for (const url of authorizationServerMetadataUrls(authorizationServerUrl)) {
+    const found = await fetchMetadata(fetchPinned, [url], { signal });
+    if (!found) continue;
+    foundMetadata = true;
+    const endpoint = found.metadata.revocation_endpoint;
+    if (typeof endpoint === "string") return endpoint;
+  }
+  if (!foundMetadata) {
     throw new Error(
       `Reading ${authorizationServerUrl}'s authorization server metadata failed.`,
     );
   }
-  const endpoint = found.metadata.revocation_endpoint;
-  return typeof endpoint === "string" ? endpoint : undefined;
+  return undefined;
 }

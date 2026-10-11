@@ -4,9 +4,9 @@
 // may name an MCP server, a pinned origin, a sign-in or a tool's kind.
 //
 // Each connector's id, card fields and tool labels live only here. The
-// server catalog keys its entries by these ids and its tool kinds by these
-// tool names, so a connector or tool missing from either file fails the
-// typecheck.
+// server catalog keys its entries by these ids, its MCP servers by these
+// server keys and its tool kinds by these tool names, so a connector,
+// server or tool missing from either file fails the typecheck.
 
 /**
  * One line under a card's description about what the user's own account
@@ -28,6 +28,24 @@ export type ConnectorToolView = {
   target?: readonly string[];
 };
 
+/** The tools a8 offers from one of a connector's MCP servers. */
+export type ConnectorServerView = {
+  /**
+   * Goes between the connector id and the tool in the model's name for
+   * each of this server's tools, like `docs` in `googledrive__docs_get`
+   * (modelToolName). Leave it out unless two of the connector's servers
+   * would give tools the same model name. Changing it makes old threads
+   * lose those tool rows.
+   */
+  toolPrefix?: string;
+  /**
+   * The MCP tools a8 offers the model from this server, by their name on
+   * the server, like `notion-search`. Every other tool stays hidden. The
+   * server catalog gives each one its kind.
+   */
+  tools: Record<string, ConnectorToolView>;
+};
+
 /** One catalog connector as written below. */
 type ConnectorViewEntry = {
   /**
@@ -47,11 +65,12 @@ type ConnectorViewEntry = {
   examplePrompt: string;
   cardNote?: CardNote;
   /**
-   * The MCP tools a8 offers the model, by their name on the MCP server, like
-   * `notion-search`. Every other tool stays hidden. The server catalog gives
-   * each one its kind.
+   * The connector's MCP servers, by a key of lowercase letters and digits.
+   * A connector with one server keys it by the connector id. Stored tool
+   * lists name each tool's server by this key, so never change one. The
+   * server catalog gives each server its URL.
    */
-  tools: Record<string, ConnectorToolView>;
+  servers: Record<string, ConnectorServerView>;
 };
 
 const ENTRIES = [
@@ -61,36 +80,40 @@ const ENTRIES = [
     description: "Search, read and write pages in your Notion workspace.",
     examplePrompt:
       "@notion find my notes from this week and list the action items",
-    tools: {
-      "notion-search": { label: "Searching Notion" },
-      "notion-fetch": { label: "Reading Notion" },
-      "notion-query-data-sources": { label: "Reading a Notion database" },
-      "notion-get-comments": { label: "Reading Notion comments" },
-      "notion-get-users": { label: "Finding Notion users" },
-      "notion-get-teams": { label: "Finding Notion teamspaces" },
-      "notion-create-pages": {
-        label: "Creating Notion pages",
-        target: ["parent"],
-      },
-      "notion-update-page": {
-        label: "Updating a Notion page",
-        target: ["page_id"],
-      },
-      "notion-move-pages": {
-        label: "Moving Notion pages",
-        target: ["page_or_database_ids", "new_parent"],
-      },
-      "notion-duplicate-page": {
-        label: "Duplicating a Notion page",
-        target: ["page_id"],
-      },
-      "notion-create-database": {
-        label: "Creating a Notion database",
-        target: ["parent"],
-      },
-      "notion-create-comment": {
-        label: "Commenting in Notion",
-        target: ["page_id", "discussion_id"],
+    servers: {
+      notion: {
+        tools: {
+          "notion-search": { label: "Searching Notion" },
+          "notion-fetch": { label: "Reading Notion" },
+          "notion-query-data-sources": { label: "Reading a Notion database" },
+          "notion-get-comments": { label: "Reading Notion comments" },
+          "notion-get-users": { label: "Finding Notion users" },
+          "notion-get-teams": { label: "Finding Notion teamspaces" },
+          "notion-create-pages": {
+            label: "Creating Notion pages",
+            target: ["parent"],
+          },
+          "notion-update-page": {
+            label: "Updating a Notion page",
+            target: ["page_id"],
+          },
+          "notion-move-pages": {
+            label: "Moving Notion pages",
+            target: ["page_or_database_ids", "new_parent"],
+          },
+          "notion-duplicate-page": {
+            label: "Duplicating a Notion page",
+            target: ["page_id"],
+          },
+          "notion-create-database": {
+            label: "Creating a Notion database",
+            target: ["parent"],
+          },
+          "notion-create-comment": {
+            label: "Commenting in Notion",
+            target: ["page_id", "discussion_id"],
+          },
+        },
       },
     },
   },
@@ -99,33 +122,37 @@ const ENTRIES = [
     name: "Linear",
     description: "Find, create and update Linear issues, and comment on them.",
     examplePrompt: "@linear list my open issues, highest priority first",
-    tools: {
-      list_issues: { label: "Searching Linear issues" },
-      get_issue: { label: "Reading a Linear issue" },
-      list_comments: { label: "Reading Linear comments" },
-      list_projects: { label: "Finding Linear projects" },
-      list_teams: { label: "Finding Linear teams" },
-      list_users: { label: "Finding Linear users" },
-      list_issue_statuses: { label: "Finding Linear statuses" },
-      list_issue_labels: { label: "Finding Linear labels" },
-      get_workspace: { label: "Reading the Linear workspace" },
-      // Both save tools create without `id` and update the item with it.
-      save_issue: {
-        label: "Saving a Linear issue",
-        target: ["id", "team", "project", "parentId"],
-      },
-      save_comment: {
-        label: "Commenting in Linear",
-        target: [
-          "id",
-          "issueId",
-          "projectId",
-          "initiativeId",
-          "documentId",
-          "milestoneId",
-          "statusUpdateId",
-          "parentId",
-        ],
+    servers: {
+      linear: {
+        tools: {
+          list_issues: { label: "Searching Linear issues" },
+          get_issue: { label: "Reading a Linear issue" },
+          list_comments: { label: "Reading Linear comments" },
+          list_projects: { label: "Finding Linear projects" },
+          list_teams: { label: "Finding Linear teams" },
+          list_users: { label: "Finding Linear users" },
+          list_issue_statuses: { label: "Finding Linear statuses" },
+          list_issue_labels: { label: "Finding Linear labels" },
+          get_workspace: { label: "Reading the Linear workspace" },
+          // Both save tools create without `id` and update the item with it.
+          save_issue: {
+            label: "Saving a Linear issue",
+            target: ["id", "team", "project", "parentId"],
+          },
+          save_comment: {
+            label: "Commenting in Linear",
+            target: [
+              "id",
+              "issueId",
+              "projectId",
+              "initiativeId",
+              "documentId",
+              "milestoneId",
+              "statusUpdateId",
+              "parentId",
+            ],
+          },
+        },
       },
     },
   },
@@ -134,22 +161,26 @@ const ENTRIES = [
     name: "Todoist",
     description: "Find, add and complete Todoist tasks.",
     examplePrompt: "@todoist what's due today?",
-    tools: {
-      "find-tasks": { label: "Searching Todoist tasks" },
-      "find-tasks-by-date": { label: "Finding Todoist tasks by date" },
-      "find-completed-tasks": { label: "Finding completed Todoist tasks" },
-      "find-projects": { label: "Finding Todoist projects" },
-      "find-sections": { label: "Finding Todoist sections" },
-      "find-labels": { label: "Finding Todoist labels" },
-      "find-comments": { label: "Reading Todoist comments" },
-      "get-overview": { label: "Reading a Todoist project overview" },
-      "user-info": { label: "Reading the Todoist account" },
-      // Each task names its own project inside `tasks`, so no top-level
-      // argument is the target.
-      "add-tasks": { label: "Adding Todoist tasks" },
-      "complete-tasks": {
-        label: "Completing Todoist tasks",
-        target: ["ids"],
+    servers: {
+      todoist: {
+        tools: {
+          "find-tasks": { label: "Searching Todoist tasks" },
+          "find-tasks-by-date": { label: "Finding Todoist tasks by date" },
+          "find-completed-tasks": { label: "Finding completed Todoist tasks" },
+          "find-projects": { label: "Finding Todoist projects" },
+          "find-sections": { label: "Finding Todoist sections" },
+          "find-labels": { label: "Finding Todoist labels" },
+          "find-comments": { label: "Reading Todoist comments" },
+          "get-overview": { label: "Reading a Todoist project overview" },
+          "user-info": { label: "Reading the Todoist account" },
+          // Each task names its own project inside `tasks`, so no top-level
+          // argument is the target.
+          "add-tasks": { label: "Adding Todoist tasks" },
+          "complete-tasks": {
+            label: "Completing Todoist tasks",
+            target: ["ids"],
+          },
+        },
       },
     },
   },
@@ -158,23 +189,27 @@ const ENTRIES = [
     name: "Airtable",
     description: "Read your Airtable bases, and add or update records.",
     examplePrompt: "@airtable list my bases and the tables in each",
-    tools: {
-      list_workspaces: { label: "Finding Airtable workspaces" },
-      list_bases: { label: "Finding Airtable bases" },
-      search_bases: { label: "Searching Airtable bases" },
-      list_tables_for_base: { label: "Reading an Airtable base" },
-      get_table_schema: { label: "Reading an Airtable table" },
-      list_records_for_table: { label: "Reading Airtable records" },
-      search_records: { label: "Searching Airtable records" },
-      analyze_table: { label: "Analyzing an Airtable table" },
-      list_record_comments: { label: "Reading Airtable comments" },
-      create_records_for_table: {
-        label: "Adding Airtable records",
-        target: ["baseId", "tableId"],
-      },
-      update_records_for_table: {
-        label: "Updating Airtable records",
-        target: ["baseId", "tableId"],
+    servers: {
+      airtable: {
+        tools: {
+          list_workspaces: { label: "Finding Airtable workspaces" },
+          list_bases: { label: "Finding Airtable bases" },
+          search_bases: { label: "Searching Airtable bases" },
+          list_tables_for_base: { label: "Reading an Airtable base" },
+          get_table_schema: { label: "Reading an Airtable table" },
+          list_records_for_table: { label: "Reading Airtable records" },
+          search_records: { label: "Searching Airtable records" },
+          analyze_table: { label: "Analyzing an Airtable table" },
+          list_record_comments: { label: "Reading Airtable comments" },
+          create_records_for_table: {
+            label: "Adding Airtable records",
+            target: ["baseId", "tableId"],
+          },
+          update_records_for_table: {
+            label: "Updating Airtable records",
+            target: ["baseId", "tableId"],
+          },
+        },
       },
     },
   },
@@ -184,21 +219,25 @@ const ENTRIES = [
     description: "See your Calendly event types and meetings, and book or cancel meetings.",
     examplePrompt: "@calendly what meetings do I have this week?",
     cardNote: { text: "Booking needs a paid Calendly plan." },
-    tools: {
-      "users-get_current_user": { label: "Reading the Calendly account" },
-      "event_types-list_event_types": { label: "Finding Calendly event types" },
-      "event_types-get_event_type": { label: "Reading a Calendly event type" },
-      "event_types-list_event_type_available_times": { label: "Finding open Calendly times" },
-      "availability-list_user_busy_times": { label: "Checking Calendly busy times" },
-      "meetings-list_events": { label: "Finding Calendly meetings" },
-      "meetings-get_event": { label: "Reading a Calendly meeting" },
-      "meetings-list_event_invitees": { label: "Finding Calendly invitees" },
-      "locations-list_user_meeting_locations": { label: "Finding Calendly meeting locations" },
-      // The actions below mark no target until someone checks their input
-      // schemas on a signed-in probe.
-      "meetings-create_invitee": { label: "Booking a Calendly meeting" },
-      "meetings-cancel_event": { label: "Cancelling a Calendly meeting" },
-      "scheduling_links-create_single_use_scheduling_link": { label: "Creating a Calendly scheduling link" },
+    servers: {
+      calendly: {
+        tools: {
+          "users-get_current_user": { label: "Reading the Calendly account" },
+          "event_types-list_event_types": { label: "Finding Calendly event types" },
+          "event_types-get_event_type": { label: "Reading a Calendly event type" },
+          "event_types-list_event_type_available_times": { label: "Finding open Calendly times" },
+          "availability-list_user_busy_times": { label: "Checking Calendly busy times" },
+          "meetings-list_events": { label: "Finding Calendly meetings" },
+          "meetings-get_event": { label: "Reading a Calendly meeting" },
+          "meetings-list_event_invitees": { label: "Finding Calendly invitees" },
+          "locations-list_user_meeting_locations": { label: "Finding Calendly meeting locations" },
+          // The actions below mark no target until someone checks their input
+          // schemas on a signed-in probe.
+          "meetings-create_invitee": { label: "Booking a Calendly meeting" },
+          "meetings-cancel_event": { label: "Cancelling a Calendly meeting" },
+          "scheduling_links-create_single_use_scheduling_link": { label: "Creating a Calendly scheduling link" },
+        },
+      },
     },
   },
 ] as const satisfies readonly ConnectorViewEntry[];
@@ -206,12 +245,27 @@ const ENTRIES = [
 /** A catalog connector's id. A typo in one fails the typecheck. */
 export type ConnectorId = (typeof ENTRIES)[number]["id"];
 
-/** The MCP names of a catalog connector's tools, like `notion-search`. */
-export type ConnectorToolName<Id extends ConnectorId> = keyof Extract<
+type Entry<Id extends ConnectorId> = Extract<
   (typeof ENTRIES)[number],
   { id: Id }
->["tools"] &
+>;
+
+/** The keys of a catalog connector's MCP servers, like `notion`. */
+export type ServerKey<Id extends ConnectorId> = keyof Entry<Id>["servers"] &
   string;
+
+/** The MCP names of one server's tools, like `notion-search`. */
+export type ServerToolName<
+  Id extends ConnectorId,
+  Key extends ServerKey<Id>,
+> = Entry<Id>["servers"][Key] extends { tools: infer Tools }
+  ? keyof Tools & string
+  : never;
+
+/** The MCP names of a catalog connector's tools on all its servers. */
+export type ConnectorToolName<Id extends ConnectorId> = {
+  [Key in ServerKey<Id>]: ServerToolName<Id, Key>;
+}[ServerKey<Id>];
 
 /** A catalog connector as the UI shows it. */
 export type ConnectorView = Omit<ConnectorViewEntry, "id" | "handle"> & {
@@ -302,26 +356,34 @@ export function findMentions(text: string): ConnectorView[] {
 const MAX_TOOL_NAME_LENGTH = 64;
 
 /**
- * The model's name for a connector's tool, `<connector id>__<tool>`. A
- * prefix of the connector's ID that the vendor puts on its own names is
- * dropped, so `notion-search` becomes `notion__search`. Characters outside
- * `[a-zA-Z0-9_-]` become `_`, and a name over 64 characters is cut short.
- * Either way the name then ends in a hash of the vendor's name, so `a.b`
- * and `a_b` still get different names.
+ * The model's name for a connector's tool, `<connector id>__<tool>`, or
+ * `<connector id>__<prefix>_<tool>` on a server with a `toolPrefix`. A
+ * prefix of the connector's ID, or of the server's `toolPrefix`, that the
+ * vendor puts on its own names is dropped, so `notion-search` becomes
+ * `notion__search`. Characters outside `[a-zA-Z0-9_-]` become `_`, and a
+ * name over 64 characters is cut short. Either way the name then ends in a
+ * hash of the vendor's name, so `a.b` and `a_b` still get different names.
  */
 export function modelToolName(
   connector: { id: string },
+  server: { toolPrefix?: string },
   mcpName: string,
 ): string {
+  const { toolPrefix } = server;
+  const dropped = toolPrefix ?? connector.id;
   const tool =
-    mcpName.startsWith(connector.id) &&
-    ["-", "_", "."].includes(mcpName.charAt(connector.id.length))
-      ? mcpName.slice(connector.id.length + 1)
+    mcpName.startsWith(dropped) &&
+    ["-", "_", "."].includes(mcpName.charAt(dropped.length))
+      ? mcpName.slice(dropped.length + 1)
       : mcpName;
-  const full = `${connector.id}__${tool}`;
+  const start =
+    toolPrefix === undefined
+      ? `${connector.id}__`
+      : `${connector.id}__${toolPrefix}_`;
+  const full = `${start}${tool}`;
   const name = full.replace(/[^a-zA-Z0-9_-]/g, "_");
   if (name === full && name.length <= MAX_TOOL_NAME_LENGTH) return name;
-  const hash = fnv1a(`${connector.id}__${mcpName}`);
+  const hash = fnv1a(`${start}${mcpName}`);
   const kept = Math.min(name.length, MAX_TOOL_NAME_LENGTH - hash.length - 1);
   return `${name.slice(0, kept)}_${hash}`;
 }
@@ -341,11 +403,13 @@ export type FoundConnectorTool = ConnectorToolView & { connector: ConnectorView 
 /** Every offered tool's connector, label and target, by the tool's model name. */
 const TOOLS_BY_MODEL_NAME = new Map(
   CONNECTOR_VIEWS.flatMap((connector) =>
-    Object.entries(connector.tools).map(
-      ([name, tool]): [string, FoundConnectorTool] => [
-        modelToolName(connector, name),
-        { connector, ...tool },
-      ],
+    Object.values(connector.servers).flatMap((server) =>
+      Object.entries(server.tools).map(
+        ([name, tool]): [string, FoundConnectorTool] => [
+          modelToolName(connector, server, name),
+          { connector, ...tool },
+        ],
+      ),
     ),
   ),
 );

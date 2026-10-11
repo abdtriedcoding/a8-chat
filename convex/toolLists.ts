@@ -14,14 +14,19 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { openMcpClient } from "./lib/connectorAuth";
+import { withMcpClients, type ServerClient } from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
+  type StoredTool,
   type StoredToolList,
 } from "./lib/connectorToolList";
 import { connectionAccessToken } from "./lib/connectionTokens";
-import { findConnector, type Connector } from "./lib/connectors";
+import {
+  findConnector,
+  signInServer,
+  type Connector,
+} from "./lib/connectors";
 import schema from "./schema";
 
 /**
@@ -184,6 +189,54 @@ export async function deleteToolList(
   if (toolList) await ctx.db.delete("connectionToolLists", toolList._id);
 }
 
+/** How many tool lists one migrateToolListServers step reads. */
+const MIGRATION_BATCH_SIZE = 10;
+
+/**
+ * Adds the key of the server that listed each tool to tool lists stored
+ * before tools named their server. Every connector had one server then, so
+ * each tool gets its connector's first server's key. A list whose
+ * connection or connector is gone stays as it is. Schedules itself for the
+ * next page and logs "Tool list server migration done." at the end. Run
+ * once with `bunx convex run toolLists:migrateToolListServers`.
+ */
+export const migrateToolListServers = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.null(),
+  handler: async (ctx, { cursor = null }) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("connectionToolLists")
+      .paginate({ numItems: MIGRATION_BATCH_SIZE, cursor });
+    let updated = 0;
+    for (const toolList of page) {
+      const tools = JSON.parse(toolList.tools) as Partial<StoredTool>[];
+      if (tools.every((tool) => tool.server !== undefined)) continue;
+      const connection = await ctx.db.get(
+        "connections",
+        toolList.connectionId,
+      );
+      const connector = connection && findConnector(connection.connectorId);
+      if (!connector) continue;
+      const key = signInServer(connector).key;
+      await ctx.db.patch("connectionToolLists", toolList._id, {
+        tools: JSON.stringify(tools.map((tool) => ({ server: key, ...tool }))),
+      });
+      updated++;
+    }
+    console.log(`Added server keys to ${updated} of ${page.length} tool lists.`);
+    if (isDone) {
+      console.log("Tool list server migration done.");
+    } else {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.toolLists.migrateToolListServers,
+        { cursor: continueCursor },
+      );
+    }
+    return null;
+  },
+});
+
 async function findToolList(ctx: QueryCtx, connectionId: Id<"connections">) {
   return await ctx.db
     .query("connectionToolLists")
@@ -192,13 +245,24 @@ async function findToolList(ctx: QueryCtx, connectionId: Id<"connections">) {
 }
 
 /**
- * Every tool the connector's MCP server lists, across all pages, as a8
- * stores them (storedToolList).
+ * Every tool the connector's MCP servers list, across all pages, as a8
+ * stores them (storedToolList). Takes a client for each server
+ * (withMcpClients).
  */
 export async function fetchToolList(
   connector: Connector,
-  client: MCPClient,
+  clients: ServerClient[],
 ): Promise<StoredToolList> {
+  const listed = await Promise.all(
+    clients.map(async ({ server, mcp }) => ({
+      server,
+      tools: await listAllTools(mcp),
+    })),
+  );
+  return storedToolList(connector, listed);
+}
+
+async function listAllTools(client: MCPClient): Promise<McpTool[]> {
   const tools: McpTool[] = [];
   let cursor: string | undefined;
   do {
@@ -208,7 +272,7 @@ export async function fetchToolList(
     tools.push(...page.tools);
     cursor = page.nextCursor;
   } while (cursor !== undefined);
-  return storedToolList(connector, tools);
+  return tools;
 }
 
 /**
@@ -220,12 +284,11 @@ async function listToolsWithToken(
   accessToken: string,
 ): Promise<StoredToolList | 401 | 403> {
   try {
-    const client = await openMcpClient(connector, accessToken);
-    try {
-      return await fetchToolList(connector, client);
-    } finally {
-      await client.close();
-    }
+    return await withMcpClients(
+      connector,
+      accessToken,
+      async (clients) => await fetchToolList(connector, clients),
+    );
   } catch (error) {
     if (MCPClientError.isInstance(error)) {
       if (error.statusCode === 401 || error.statusCode === 403) {
