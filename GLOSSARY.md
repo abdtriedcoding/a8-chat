@@ -18,6 +18,14 @@ _Avoid_: query, user message
 The assistant's full answer to one prompt, including every step it took on the way, such as web searches. A reply can be stopped, and the last one can be regenerated.
 _Avoid_: response, completion, answer
 
+**Stopped reply**:
+A reply the user stopped before it finished. It keeps whatever text it had so far, and the model sees that text on the next prompt.
+_Avoid_: cancelled reply, aborted reply
+
+**Continuing reply**:
+A reply that picks up again once the user has approved or cancelled every action card in it. It's the same reply, so it isn't a send.
+_Avoid_: continuation, resumed reply
+
 **Turn**:
 One prompt together with its reply.
 _Avoid_: exchange, round
@@ -83,3 +91,14 @@ _Avoid_: write, operation, mutation
 **Action card**:
 The preview of an action waiting in a reply, showing the app, the target and the content, where the user approves or cancels it. A new prompt sent while a card is waiting cancels that action.
 _Avoid_: approval request, pending action (in UI copy), confirmation
+
+**Decision**:
+The user's choice to approve or cancel the action on an action card.
+_Avoid_: approval (for a cancel), approval response
+
+**Deferred tool**:
+A connector tool the model finds through tool search instead of seeing it up front. Once the user's connector tools pass the tool budget in a thread, that thread defers them from then on, except those of up to three connectors the prompt mentions.
+
+**Tool budget**:
+The token size the user's connector tools can reach before a thread defers them.
+_Avoid_: tool cap, tool limit
