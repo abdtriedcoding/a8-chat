@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/empty";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
 import { throwIfRefused } from "@/lib/errors";
-import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
+import { browserTimeZone } from "../../../convex/lib/timeZone";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 

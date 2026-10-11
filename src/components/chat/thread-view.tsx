@@ -26,8 +26,8 @@ import {
   type Stop,
   type ThreadMessage,
 } from "@/lib/stopped-turns";
-import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
+import { browserTimeZone } from "../../../convex/lib/timeZone";
 import { DecideActionProvider } from "./action-card";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
