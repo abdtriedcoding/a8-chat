@@ -21,11 +21,7 @@ import { useReplyStatus } from "@/hooks/use-reply-status";
 import { errorMessage, throwIfRefused } from "@/lib/errors";
 import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
 import { replyText } from "@/lib/reply-text";
-import {
-  stoppedTurns,
-  type Stop,
-  type ThreadMessage,
-} from "@/lib/stopped-turns";
+import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
 import { DecideActionProvider } from "./action-card";
@@ -87,19 +83,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
   }
 
   async function stop() {
-    // Keep the reply's text only if some is on screen. If the user stopped
-    // during "Thinking…", the reply is hidden. A reply that continues after
-    // an action card keeps what it had before, so the model still sees it.
-    const keepText =
-      replyStatus === "continuing" ||
-      (last?.role === "assistant" && last.text !== "");
-    await stopReply({ threadId, keepText });
+    await stopReply({ threadId });
   }
 
   const lastReply = messages.findLast(({ role }) => role === "assistant");
   const lastReplyText =
     lastReply &&
-    copyableText(lastReply, stoppedTurns(messages).get(lastReply.order));
+    copyableText(lastReply, stoppedTurns(messages).has(lastReply.order));
 
   useThreadShortcuts({
     stopReply: replyInProgress
@@ -227,12 +217,11 @@ export function ThreadView({ threadId }: { threadId: string }) {
 
 /**
  * The text Copy under a reply copies: none while the reply is still being
- * written, or when the user stopped it before any text showed.
+ * written. A stopped reply keeps the text it had.
  */
-function copyableText(reply: ThreadMessage, stopped: Stop | undefined) {
-  if (stopped) return stopped.keepText ? replyText(reply) : "";
-  if (reply.status === "pending" || reply.status === "streaming") return "";
-  return replyText(reply);
+function copyableText(reply: ThreadMessage, stopped: boolean) {
+  const writing = reply.status === "pending" || reply.status === "streaming";
+  return writing && !stopped ? "" : replyText(reply);
 }
 
 async function copyReply(text: string) {
