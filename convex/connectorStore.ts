@@ -128,39 +128,54 @@ export const saveConnection = internalMutation({
 });
 
 /**
- * Deletes a connection and returns the tokens it held at that moment, so
- * the caller can revoke tokens a refresh wrote after it read them. Returns
- * null if it deleted nothing.
+ * Deletes the user's connection for disconnect, and returns the tokens it
+ * held at that moment, so the caller can revoke tokens a refresh wrote
+ * after it read them. Returns null if it deleted nothing.
  *
- * Disconnect passes the `connectedAt` it read. Then it only deletes the
- * signed-in user's connection, and only if it wasn't replaced since. A
- * reconnect from another tab during disconnect replaces the row with a
- * later `connectedAt`, and that new connection stays. A token refresh or a
- * reply marking it as needing reconnecting keeps `connectedAt`, so neither
- * stops the delete. Account purge passes no `connectedAt`, since the user
- * is already gone.
+ * It deletes only if the row is still the user's and still has the
+ * `connectedAt` disconnect read. A reconnect from another tab during
+ * disconnect replaces the row with a later `connectedAt`, and that new
+ * connection stays. A token refresh or a reply marking it as needing
+ * reconnecting keeps `connectedAt`, so neither stops the delete.
  */
 export const deleteConnection = internalMutation({
   args: {
     connectionId: v.id("connections"),
-    connectedAt: v.optional(v.number()),
+    userId: v.string(),
+    connectedAt: v.number(),
   },
   returns: v.union(vConnectionTokens, v.null()),
-  handler: async (ctx, { connectionId, connectedAt }) => {
-    const user = connectedAt === undefined ? null : await requireUser(ctx);
+  handler: async (ctx, { connectionId, userId, connectedAt }) => {
     const connection = await ctx.db.get("connections", connectionId);
-    if (!connection) return null;
-    if (
-      user &&
-      (connection.userId !== user._id || connection.connectedAt !== connectedAt)
-    ) {
-      return null;
-    }
-    await ctx.db.delete("connections", connectionId);
-    await deleteToolList(ctx, connectionId);
-    return connectionTokens(connection);
+    if (connection?.userId !== userId) return null;
+    if (connection.connectedAt !== connectedAt) return null;
+    return await deleteConnectionRow(ctx, connection);
   },
 });
+
+/**
+ * Deletes a deleted user's connection for account purge, and returns the
+ * tokens it held at that moment, like deleteConnection. It deletes only if
+ * the row is the user's, whatever its `connectedAt`.
+ */
+export const purgeConnection = internalMutation({
+  args: { connectionId: v.id("connections"), userId: v.string() },
+  returns: v.union(vConnectionTokens, v.null()),
+  handler: async (ctx, { connectionId, userId }) => {
+    const connection = await ctx.db.get("connections", connectionId);
+    if (connection?.userId !== userId) return null;
+    return await deleteConnectionRow(ctx, connection);
+  },
+});
+
+async function deleteConnectionRow(
+  ctx: MutationCtx,
+  connection: Doc<"connections">,
+): Promise<ConnectionTokens> {
+  await ctx.db.delete("connections", connection._id);
+  await deleteToolList(ctx, connection._id);
+  return connectionTokens(connection);
+}
 
 /**
  * Claims the lease to refresh the connection's tokens at `tokenVersion`
@@ -245,27 +260,25 @@ export const settleTokens = internalMutation({
 });
 
 /**
- * Revokes the connection at the vendor, then deletes it with
- * deleteConnection, even if revoking failed. A reply may refresh the
- * tokens between the two, and if the vendor rotated the refresh token,
- * revoking the old one may leave the new one working. So when the deleted
- * row's tokens changed, it revokes again with those. Returns whether the
- * last revocation worked. Disconnect passes `connectedAt`, account purge
- * doesn't.
+ * Revokes the connection at the vendor, then deletes it with `deleteRow`,
+ * even if revoking failed. Disconnect deletes with deleteConnection, and
+ * account purge with purgeConnection.
+ *
+ * A reply may refresh the tokens between the revoke and the delete, and if
+ * the vendor rotated the refresh token, revoking the old one may leave the
+ * new one working. So when the deleted row's tokens changed, it revokes
+ * again with those. Returns whether the last revocation worked.
  */
 export async function revokeAndDeleteConnection(
   ctx: ActionCtx,
   connection: Doc<"connections">,
-  connectedAt?: number,
+  deleteRow: () => Promise<ConnectionTokens | null>,
 ): Promise<boolean> {
   const connector = findConnector(connection.connectorId);
   let revoked = connector
     ? await tryRevoke(ctx, connector, connection)
     : false;
-  const deleted = await ctx.runMutation(
-    internal.connectorStore.deleteConnection,
-    { connectionId: connection._id, connectedAt },
-  );
+  const deleted = await deleteRow();
   if (connector && deleted && deleted.tokenVersion !== connection.tokenVersion) {
     revoked = await tryRevoke(ctx, connector, deleted);
   }
@@ -304,7 +317,12 @@ export const purgeUserConnections = internalAction({
       );
       if (connections.length === 0) return null;
       for (const connection of connections) {
-        await revokeAndDeleteConnection(ctx, connection);
+        await revokeAndDeleteConnection(ctx, connection, () =>
+          ctx.runMutation(internal.connectorStore.purgeConnection, {
+            connectionId: connection._id,
+            userId,
+          }),
+        );
       }
     }
   },
