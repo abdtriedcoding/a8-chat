@@ -11,6 +11,14 @@ crons.cron(
   {},
 );
 
+// Daily at 03:15 UTC.
+crons.cron(
+  "clean up upload grants",
+  "15 3 * * *",
+  internal.attachments.cleanUpUploadGrants,
+  {},
+);
+
 // Daily at 03:30 UTC.
 crons.cron(
   "clean up orphaned storage",

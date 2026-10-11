@@ -323,9 +323,13 @@ export const saveUpload = internalMutation({
   },
 });
 
-/** How long an upload can go unsent before cleanUpUnsentUploads deletes it. */
+/**
+ * How long an upload can go unregistered before cleanUpOrphanedStorage
+ * deletes it. Matches the 24 hours the Agent's getFilesToDelete waits, which
+ * the Agent doesn't export.
+ */
 const UNSENT_UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-/** How many attachments rows one cleanup transaction checks. */
+/** How many Agent files one cleanup transaction deletes. */
 const CLEANUP_BATCH_SIZE = 100;
 /**
  * How many of one file's attachments rows a cleanup transaction deletes. A
@@ -336,85 +340,69 @@ const ROW_DELETE_BATCH_SIZE = 10;
 
 /**
  * Deletes uploads that were never sent: files no message references, and
- * that nothing has touched for `maxAgeMs` (24 hours by default). For each
- * file it deletes the Agent's row, the storage object (the Agent's delete
- * leaves it), and the file's attachments rows.
+ * that nothing has touched for 24 hours. It pages the Agent's
+ * getFilesToDelete, so it reads only unused files. For each file it deletes
+ * the Agent's row, the storage object (the Agent's delete leaves it), and
+ * the file's attachments rows.
+ *
+ * It deletes every unused Agent file, with or without an attachments row.
+ * Today saveUpload is the only code that adds Agent files. If the Agent
+ * ever stores inline bytes as files (see cleanUpOrphanedStorage), this job
+ * deletes those once their messages are gone too.
  *
  * Deleting a thread drops its prompts' references to their files, which
- * touches the files. The first run `maxAgeMs` or more later deletes them.
+ * touches the files. The first run 24 hours or more later deletes them.
  *
- * Runs daily (convex/crons.ts). To test it by hand, pass a shorter
- * `maxAgeMs`. The Agent's getFilesToDelete can't be used here, since its 24
- * hours are fixed.
+ * Runs daily (convex/crons.ts). To test it by hand, set the Agent file row's
+ * `lastTouchedAt` to over 24 hours ago.
  */
 export const cleanUpUnsentUploads = internalMutation({
-  args: { maxAgeMs: v.optional(v.number()) },
+  args: {},
   returns: v.null(),
-  handler: async (ctx, { maxAgeMs = UNSENT_UPLOAD_MAX_AGE_MS }) => {
-    await cleanUpUploadsBatch(ctx, Date.now() - maxAgeMs, null);
+  handler: async (ctx) => {
+    await cleanUpUploadsBatch(ctx, null);
     return null;
   },
 });
 
-/** Checks the next batch for cleanUpUnsentUploads, with the same cutoff. */
+/** Deletes the next batch for cleanUpUnsentUploads. */
 export const continueUploadCleanUp = internalMutation({
-  args: { cutoff: v.number(), cursor: v.string() },
+  args: { cursor: v.string() },
   returns: v.null(),
-  handler: async (ctx, { cutoff, cursor }) => {
-    await cleanUpUploadsBatch(ctx, cutoff, cursor);
+  handler: async (ctx, { cursor }) => {
+    await cleanUpUploadsBatch(ctx, cursor);
     return null;
   },
 });
 
-/**
- * Deletes the unsent uploads among one batch of attachments rows, then
- * schedules the next batch. `cutoff` is the latest last-touched time a file
- * can have and still be deleted.
- */
-async function cleanUpUploadsBatch(
-  ctx: MutationCtx,
-  cutoff: number,
-  cursor: string | null,
-) {
-  // Registering a file touches it, so a file untouched since the cutoff only
-  // has rows created before it.
-  const { page, isDone, continueCursor } = await ctx.db
-    .query("attachments")
-    .withIndex("by_creation_time", (q) => q.lte("_creationTime", cutoff))
-    .paginate({ numItems: CLEANUP_BATCH_SIZE, cursor });
+/** Deletes one batch of unsent uploads, then schedules the next batch. */
+async function cleanUpUploadsBatch(ctx: MutationCtx, cursor: string | null) {
+  const { page, isDone, continueCursor } = await ctx.runQuery(
+    components.agent.files.getFilesToDelete,
+    { paginationOpts: { numItems: CLEANUP_BATCH_SIZE, cursor } },
+  );
 
-  const storageIds = new Map(page.map((row) => [row.fileId, row.storageId]));
-  for (const [fileId, storageId] of storageIds) {
-    const agentFile = await ctx.runQuery(components.agent.files.get, {
-      fileId,
-    });
-    if (
-      !agentFile ||
-      agentFile.refcount > 0 ||
-      agentFile.lastTouchedAt > cutoff
-    ) {
-      continue;
-    }
-    // This transaction just saw the file unreferenced, so `force` only skips
-    // the Agent's own 24-hour check, which a shorter maxAgeMs needs.
+  // deleteFiles checks the refcount and the 24 hours again, and returns the
+  // files it deleted. Only those lose their storage object and rows.
+  const deletedFileIds = new Set(
     await ctx.runMutation(components.agent.files.deleteFiles, {
-      fileIds: [fileId],
-      force: true,
-    });
+      fileIds: page.map((file) => file._id),
+    }),
+  );
+  for (const file of page) {
+    if (!deletedFileIds.has(file._id)) continue;
+    const storageId = file.storageId as Id<"_storage">;
     if (await ctx.db.system.get("_storage", storageId)) {
       await ctx.storage.delete(storageId);
     }
-    await deleteAttachmentRows(ctx, fileId);
+    await deleteAttachmentRows(ctx, file._id);
   }
 
   if (!isDone) {
     await ctx.scheduler.runAfter(
       0,
       internal.attachments.continueUploadCleanUp,
-      {
-        cutoff,
-        cursor: continueCursor,
-      },
+      { cursor: continueCursor },
     );
   }
 }
@@ -422,10 +410,12 @@ async function cleanUpUploadsBatch(
 /** How many storage files one orphan cleanup transaction checks. */
 const ORPHAN_BATCH_SIZE = 100;
 /**
- * How far back cleanUpOrphanedStorage looks. It runs daily, so a file it
- * passes over once has an attachments row, and later runs skip it.
+ * How far back cleanUpOrphanedStorage looks. Each run reads every storage
+ * file created from this far back up to UNSENT_UPLOAD_MAX_AGE_MS ago, a
+ * 2-day window. It runs daily, so two runs read each file, and one can be
+ * missed. A file no run reads stays in storage.
  */
-const ORPHAN_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const ORPHAN_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
 /**
  * How long an upload grant row stays. Twice UPLOAD_GRANT_MAX_AGE_MS, so a
  * claim row outlives every grant that could still claim its file.
@@ -435,34 +425,71 @@ const UPLOAD_GRANT_RETENTION_MS = 2 * UPLOAD_GRANT_MAX_AGE_MS;
 const GRANT_DELETE_BATCH_SIZE = 500;
 
 /**
+ * Deletes upload grant rows older than `maxAgeMs` (48 hours by default). A
+ * full batch schedules the next one with the same cutoff, until a batch
+ * comes back short.
+ *
+ * Runs daily (convex/crons.ts). To test it by hand, pass a shorter
+ * `maxAgeMs`.
+ */
+export const cleanUpUploadGrants = internalMutation({
+  args: { maxAgeMs: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, { maxAgeMs = UPLOAD_GRANT_RETENTION_MS }) => {
+    await cleanUpGrantsBatch(ctx, Date.now() - maxAgeMs);
+    return null;
+  },
+});
+
+/** Deletes the next batch for cleanUpUploadGrants, with the same cutoff. */
+export const continueGrantCleanUp = internalMutation({
+  args: { cutoff: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { cutoff }) => {
+    await cleanUpGrantsBatch(ctx, cutoff);
+    return null;
+  },
+});
+
+/**
+ * Deletes one batch of upload grant rows created before `cutoff`, then
+ * schedules the next batch if this one was full.
+ */
+async function cleanUpGrantsBatch(ctx: MutationCtx, cutoff: number) {
+  const oldGrants = await ctx.db
+    .query("uploadGrants")
+    .withIndex("by_creation_time", (q) => q.lt("_creationTime", cutoff))
+    .take(GRANT_DELETE_BATCH_SIZE);
+  for (const grant of oldGrants) {
+    await ctx.db.delete("uploadGrants", grant._id);
+  }
+  if (oldGrants.length === GRANT_DELETE_BATCH_SIZE) {
+    await ctx.scheduler.runAfter(0, internal.attachments.continueGrantCleanUp, {
+      cutoff,
+    });
+  }
+}
+
+/**
  * Deletes storage files nobody registered: uploads older than 24 hours with
  * no attachments row. registerUpload fails for a file this old unless its
  * grant is still valid, and saveUpload writes the attachments row in the
  * transaction that adds the file to the Agent, so a file with no row isn't
  * used by a message. Files with a row are never deleted here, whether or
- * not a message uses them. cleanUpUnsentUploads handles those.
+ * not a message uses them. cleanUpUnsentUploads deletes unused Agent files.
  *
  * The Agent also stores a file, with no row, when a message holds inline
  * bytes over 64 KB. a8's prompts hold file URLs (loadPromptAttachments), so
  * that doesn't happen. A change that saves inline bytes must keep this job
  * from deleting those files.
  *
- * It also deletes old upload grant rows. Runs daily (convex/crons.ts).
+ * Runs daily (convex/crons.ts).
  */
 export const cleanUpOrphanedStorage = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
     const now = Date.now();
-    const oldGrants = await ctx.db
-      .query("uploadGrants")
-      .withIndex("by_creation_time", (q) =>
-        q.lt("_creationTime", now - UPLOAD_GRANT_RETENTION_MS),
-      )
-      .take(GRANT_DELETE_BATCH_SIZE);
-    for (const grant of oldGrants) {
-      await ctx.db.delete("uploadGrants", grant._id);
-    }
     await cleanUpOrphansBatch(
       ctx,
       now - UNSENT_UPLOAD_MAX_AGE_MS,
