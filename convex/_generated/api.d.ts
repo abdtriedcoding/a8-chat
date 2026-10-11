@@ -36,6 +36,7 @@ import type * as lib_toolLoading from "../lib/toolLoading.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as threads from "../threads.js";
 import type * as titles from "../titles.js";
+import type * as toolLists from "../toolLists.js";
 
 import type {
   ApiFromModules,
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   rateLimits: typeof rateLimits;
   threads: typeof threads;
   titles: typeof titles;
+  toolLists: typeof toolLists;
 }>;
 
 /**

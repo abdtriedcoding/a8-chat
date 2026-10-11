@@ -20,6 +20,7 @@ import { REFRESH_LEASE_MS } from "./lib/connectionTokens";
 import { findConnector, type Connector } from "./lib/connectors";
 import { getEncryptionKey } from "./lib/encryption";
 import schema, { vAuthorizationServer, vClientRegistration } from "./schema";
+import { deleteToolList, vStoredToolList, writeToolList } from "./toolLists";
 
 /** How long a sign-in can take before its pendingConnects row expires. */
 const PENDING_CONNECT_TTL_MS = 10 * 60 * 1000;
@@ -79,7 +80,10 @@ export const getConnection = internalQuery({
   },
 });
 
-/** Creates or replaces the user's connection to the connector. */
+/**
+ * Creates or replaces the user's connection to the connector, and stores
+ * its tool list.
+ */
 export const saveConnection = internalMutation({
   args: {
     userId: v.string(),
@@ -88,26 +92,27 @@ export const saveConnection = internalMutation({
     encryptedRefreshToken: v.optional(v.string()),
     tokenExpiresAt: v.optional(v.number()),
     accountLabel: v.optional(v.string()),
-    toolList: v.string(),
+    toolList: vStoredToolList,
   },
   returns: v.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, { toolList, ...args }) => {
     const existing = await findConnection(ctx, args.userId, args.connectorId);
     const now = Date.now();
     const connection = {
       ...args,
       status: "connected" as const,
       tokenVersion: (existing?.tokenVersion ?? 0) + 1,
-      toolListFetchedAt: now,
       // Always later than the replaced row's, even within one millisecond,
       // so deleteConnection can tell a reconnect happened.
       connectedAt: Math.max(now, (existing?.connectedAt ?? 0) + 1),
     };
-    if (existing) {
-      await ctx.db.replace("connections", existing._id, connection);
+    let connectionId = existing?._id;
+    if (connectionId) {
+      await ctx.db.replace("connections", connectionId, connection);
     } else {
-      await ctx.db.insert("connections", connection);
+      connectionId = await ctx.db.insert("connections", connection);
     }
+    await writeToolList(ctx, connectionId, toolList);
     return null;
   },
 });
@@ -142,6 +147,7 @@ export const deleteConnection = internalMutation({
       return null;
     }
     await ctx.db.delete("connections", connectionId);
+    await deleteToolList(ctx, connectionId);
     return connectionTokens(connection);
   },
 });

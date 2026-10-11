@@ -646,7 +646,7 @@ export const streamReply = internalAction({
       });
       if (!canReply) return;
       const connections = await ctx.runQuery(
-        internal.connectors.listReplyConnections,
+        internal.toolLists.listReplyConnections,
         { threadId },
       );
       const promptText: string = await ctx.runQuery(
@@ -693,7 +693,7 @@ export const streamReply = internalAction({
             timeZone,
             now: new Date(),
             canSearchWeb,
-            connections,
+            connections: connections.map(({ connection }) => connection),
             mentioned,
             loading,
           }),
