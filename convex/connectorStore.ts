@@ -2,6 +2,7 @@
 // (pendingConnects) and OAuth client registrations (connectorClients). All
 // internal: convex/connectors.ts holds the public functions.
 
+import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
@@ -18,7 +19,12 @@ import { limitConnectStart } from "./rateLimits";
 import { revokeConnection } from "./lib/connectorAuth";
 import { REFRESH_LEASE_MS } from "./lib/connectionTokens";
 import { findConnector, type Connector } from "./lib/connectors";
-import { getEncryptionKey } from "./lib/encryption";
+import {
+  decryptOrUndefined,
+  encryptSecret,
+  getEncryptionKey,
+  isLegacySecret,
+} from "./lib/encryption";
 import schema, { vAuthorizationServer, vClientRegistration } from "./schema";
 import { deleteToolList, vStoredToolList, writeToolList } from "./toolLists";
 
@@ -185,10 +191,11 @@ export const claimRefresh = internalMutation({
  * ends the refresh lease if the caller held one:
  * - `refreshed` stores the new tokens and bumps the version.
  * - `rejected` means the connection needs reconnecting. The vendor refused
- *   the refresh, refused a token a8 just refreshed or answered 403, or a8
- *   can't decrypt the access token.
- * - `failed` means the vendor couldn't be reached for a refresh. The
- *   tokens stay.
+ *   the refresh, refused a token a8 just refreshed or answered 403, or the
+ *   access token is damaged.
+ * - `failed` means the vendor couldn't be reached for a refresh, or a
+ *   secret was encrypted under another CONNECTION_ENCRYPTION_KEY. The
+ *   tokens and the status stay.
  *
  * Changes nothing if the tokens changed since `tokenVersion`, like after a
  * reconnect or another reply's refresh. Returns the connection's tokens
@@ -531,3 +538,158 @@ async function findClientRegistration(ctx: QueryCtx, connectorId: string) {
     .withIndex("by_connectorId", (q) => q.eq("connectorId", connectorId))
     .unique();
 }
+
+// Re-encrypting v1 secrets
+
+/** How many rows one re-encrypt step reads. */
+const REENCRYPT_BATCH_SIZE = 100;
+
+/** An encrypted value stored in a connection or a client registration. */
+const vStoredSecret = v.union(
+  v.object({
+    table: v.literal("connections"),
+    id: v.id("connections"),
+    field: v.union(
+      v.literal("encryptedAccessToken"),
+      v.literal("encryptedRefreshToken"),
+    ),
+    value: v.string(),
+  }),
+  v.object({
+    table: v.literal("connectorClients"),
+    id: v.id("connectorClients"),
+    field: v.literal("encryptedClientSecret"),
+    value: v.string(),
+  }),
+);
+
+type StoredSecret = Infer<typeof vStoredSecret>;
+
+/**
+ * Rewrites every v1 secret in `connections` and `connectorClients` as v2,
+ * with the current key's id (lib/encryption.ts). Run it once per
+ * deployment with `npx convex run connectorStore:reencryptSecrets`. It's
+ * safe to run again: later runs find no v1 values. It leaves a v1 value
+ * that doesn't decrypt as it is and counts it in `failed`. Under the right
+ * key that means it's damaged, and the connection asks for a reconnect
+ * when it's next used.
+ */
+export const reencryptSecrets = internalAction({
+  args: {},
+  returns: v.object({ reencrypted: v.number(), failed: v.number() }),
+  handler: async (ctx) => {
+    const key = await getEncryptionKey();
+    let reencrypted = 0;
+    let failed = 0;
+    for (const table of ["connections", "connectorClients"] as const) {
+      let cursor: string | null = null;
+      for (;;) {
+        const page: { secrets: StoredSecret[]; cursor: string | null } =
+          await ctx.runQuery(internal.connectorStore.listLegacySecrets, {
+            table,
+            paginationOpts: { numItems: REENCRYPT_BATCH_SIZE, cursor },
+          });
+        const replacements = [];
+        for (const secret of page.secrets) {
+          const plaintext = await decryptOrUndefined(key, secret.value);
+          if (plaintext === undefined) {
+            console.error(
+              `Re-encrypting ${secret.table} ${secret.id} ${secret.field} failed: it doesn't decrypt.`,
+            );
+            failed++;
+            continue;
+          }
+          replacements.push({
+            secret,
+            value: await encryptSecret(key, plaintext),
+          });
+        }
+        if (replacements.length > 0) {
+          reencrypted += await ctx.runMutation(
+            internal.connectorStore.replaceSecrets,
+            { replacements },
+          );
+        }
+        if (page.cursor === null) break;
+        cursor = page.cursor;
+      }
+    }
+    return { reencrypted, failed };
+  },
+});
+
+/**
+ * The v1 secrets in one page of `table`, and the cursor of the next page,
+ * or null after the last.
+ */
+export const listLegacySecrets = internalQuery({
+  args: {
+    table: v.union(v.literal("connections"), v.literal("connectorClients")),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: v.object({
+    secrets: v.array(vStoredSecret),
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { table, paginationOpts }) => {
+    if (table === "connections") {
+      const { page, isDone, continueCursor } = await ctx.db
+        .query("connections")
+        .paginate(paginationOpts);
+      return {
+        secrets: page.flatMap((connection) =>
+          (["encryptedAccessToken", "encryptedRefreshToken"] as const).flatMap(
+            (field) => {
+              const value = connection[field];
+              return value !== undefined && isLegacySecret(value)
+                ? [{ table, id: connection._id, field, value }]
+                : [];
+            },
+          ),
+        ),
+        cursor: isDone ? null : continueCursor,
+      };
+    }
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("connectorClients")
+      .paginate(paginationOpts);
+    return {
+      secrets: page.flatMap(({ _id, encryptedClientSecret: value }) =>
+        value !== undefined && isLegacySecret(value)
+          ? [{ table, id: _id, field: "encryptedClientSecret" as const, value }]
+          : [],
+      ),
+      cursor: isDone ? null : continueCursor,
+    };
+  },
+});
+
+/**
+ * Stores each re-encrypted value, unless its field changed since it was
+ * read, like after a token refresh. It keeps `tokenVersion`, since the
+ * token itself is the same. Returns how many it stored.
+ */
+export const replaceSecrets = internalMutation({
+  args: {
+    replacements: v.array(v.object({ secret: vStoredSecret, value: v.string() })),
+  },
+  returns: v.number(),
+  handler: async (ctx, { replacements }) => {
+    let replaced = 0;
+    for (const { secret, value } of replacements) {
+      if (secret.table === "connections") {
+        const connection = await ctx.db.get("connections", secret.id);
+        if (connection?.[secret.field] !== secret.value) continue;
+        await ctx.db.patch("connections", secret.id, { [secret.field]: value });
+      } else {
+        const registration = await ctx.db.get("connectorClients", secret.id);
+        if (registration?.encryptedClientSecret !== secret.value) continue;
+        await ctx.db.patch("connectorClients", secret.id, {
+          encryptedClientSecret: value,
+        });
+      }
+      replaced++;
+    }
+    return replaced;
+  },
+});

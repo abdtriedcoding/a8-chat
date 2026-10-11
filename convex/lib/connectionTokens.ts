@@ -16,10 +16,11 @@ import {
 } from "./connectorAuth";
 import { signInServer, type Connector } from "./connectors";
 import {
-  decryptSecret,
+  decryptOrUndefined,
   encryptOptionalSecret,
   encryptSecret,
   getEncryptionKey,
+  type EncryptionKey,
 } from "./encryption";
 
 /** How close to expiry an access token gets refreshed before it's used. */
@@ -46,9 +47,11 @@ export type AccessTokenResult =
  * The connection's access token, and the tokens it came from. It's
  * refreshed first when it expires within 5 minutes, or when `refused` is
  * set because the vendor just refused it. Returns `needsReconnect` when the
- * vendor refuses the refresh or the connection needs reconnecting. Tokens
- * a8 can't decrypt mark the connection as needing reconnecting. Throws if
- * the vendor couldn't be reached.
+ * vendor refuses the refresh or the connection needs reconnecting. Damaged
+ * tokens mark the connection as needing reconnecting. Throws if the vendor
+ * couldn't be reached, or with MISCONFIGURED if the tokens were encrypted
+ * under another key. The connection's status stays then, so putting the
+ * key back makes it work again.
  */
 export async function connectionAccessToken(
   ctx: ActionCtx,
@@ -74,21 +77,6 @@ export async function connectionAccessToken(
   return { accessToken, tokens: fresh };
 }
 
-/**
- * The secret decrypted, or undefined if a8 can't decrypt it, like after
- * CONNECTION_ENCRYPTION_KEY changed.
- */
-async function decryptOrUndefined(
-  key: CryptoKey,
-  stored: string,
-): Promise<string | undefined> {
-  try {
-    return await decryptSecret(key, stored);
-  } catch {
-    return undefined;
-  }
-}
-
 function isNearExpiry(tokens: ConnectionTokens): boolean {
   return (
     tokens.tokenExpiresAt !== undefined &&
@@ -104,7 +92,7 @@ function isNearExpiry(tokens: ConnectionTokens): boolean {
 async function refresh(
   ctx: ActionCtx,
   connector: Connector,
-  key: CryptoKey,
+  key: EncryptionKey,
   seen: ConnectionTokens,
 ): Promise<ConnectionTokens | null> {
   const args = { connectionId: seen._id, tokenVersion: seen.tokenVersion };
@@ -163,14 +151,15 @@ async function refresh(
 /**
  * Trades the refresh token for new tokens at the vendor. Returns null if
  * the vendor refused the refresh token or a8's client, or a8 has no client
- * or no refresh token it can decrypt, so the user has to sign in again.
- * Throws if the vendor couldn't be reached. Only call it while holding the
+ * or its refresh token is damaged, so the user has to sign in again.
+ * Throws if the vendor couldn't be reached, or with MISCONFIGURED if a
+ * secret was encrypted under another key. Only call it while holding the
  * refresh lease.
  */
 async function requestTokens(
   ctx: ActionCtx,
   connector: Connector,
-  key: CryptoKey,
+  key: EncryptionKey,
   tokens: ConnectionTokens,
 ): Promise<OAuthTokens | null> {
   const refreshToken =
@@ -221,7 +210,7 @@ class RefreshOAuthProvider extends ConnectorOAuthProvider {
   constructor(
     ctx: ActionCtx,
     connector: Connector,
-    encryptionKey: CryptoKey,
+    encryptionKey: EncryptionKey,
     private refreshToken: string | undefined,
   ) {
     super(ctx, connector, encryptionKey);

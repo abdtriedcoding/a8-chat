@@ -41,6 +41,7 @@ import {
   type ConnectorTool,
 } from "./connectors";
 import { modelToolName } from "./connectorView";
+import { isMisconfigured } from "./encryption";
 import type { ConnectorToolGroup } from "./toolLoading";
 
 /** The most of a tool result the model sees, in UTF-8 bytes. */
@@ -212,8 +213,8 @@ class ReplyConnection {
   private readonly clients = new Map<string, Promise<VersionedClient>>();
   private readonly opened: Promise<VersionedClient>[] = [];
   private needsReconnect = false;
-  /** Whether getting the access token threw, like when a refresh failed. */
-  private tokenFailed = false;
+  /** What getting the access token threw, like when a refresh failed. */
+  private tokenError?: Error;
 
   constructor(
     private readonly ctx: ActionCtx,
@@ -282,18 +283,15 @@ class ReplyConnection {
   /**
    * Opens a client to the server. A client that fails to open throws on
    * every call that shares it, and the next call opens another. If getting
-   * the access token failed, every later call throws without trying again.
+   * the access token failed, every later call throws the same error without
+   * trying again.
    */
   private async connect(
     server: ConnectorServer,
     refusedVersion?: number,
   ): Promise<VersionedClient> {
     if (this.needsReconnect) throw new ReconnectError(this.connector);
-    if (this.tokenFailed) {
-      throw new Error(
-        `Getting the ${this.connector.name} access token failed earlier in this reply.`,
-      );
-    }
+    if (this.tokenError) throw this.tokenError;
     let token: AccessTokenResult;
     try {
       token = await connectionAccessToken(
@@ -305,7 +303,8 @@ class ReplyConnection {
     } catch (error) {
       // Trying again on every step would claim the refresh lease and call
       // the vendor each time, so later calls in the reply fail at once.
-      this.tokenFailed = true;
+      this.tokenError =
+        error instanceof Error ? error : new Error(String(error));
       throw error;
     }
     if ("needsReconnect" in token) throw this.giveUp();
@@ -421,6 +420,8 @@ async function refreshIfUnknownTool(
 /**
  * The tool error the model gets when a call doesn't reach a result. When
  * the server didn't know the tool, this also schedules a tool list refresh.
+ * When the deployment is set up wrong, like with another
+ * CONNECTION_ENCRYPTION_KEY, it passes on the MISCONFIGURED message.
  */
 async function callFailedMessage(
   ctx: ActionCtx,
@@ -433,6 +434,9 @@ async function callFailedMessage(
     return `${connector.name} no longer has this tool. Answer without it.`;
   }
   console.error(`Calling a ${connector.name} tool failed`, error);
+  if (isMisconfigured(error)) {
+    return `Calling ${connector.name} failed: ${error.data.message} Reconnecting ${connector.name} won't fix it. Tell the user, and answer without it.`;
+  }
   return `Calling ${connector.name} failed. Tell the user ${connector.name} couldn't be reached, and answer without it.`;
 }
 

@@ -47,6 +47,7 @@ import {
   encryptOptionalSecret,
   encryptSecret,
   getEncryptionKey,
+  isMisconfigured,
 } from "./lib/encryption";
 import { vConnectionStatus } from "./schema";
 import { fetchToolList } from "./toolLists";
@@ -329,10 +330,7 @@ async function requireIdentity(ctx: ActionCtx) {
  * couldn't be reached. Anything else is `failed`.
  */
 function finishConnectError(error: unknown): ConnectError {
-  if (
-    (error instanceof ConvexError && error.data?.code === "MISCONFIGURED") ||
-    isUntrustedOrigin(error)
-  ) {
+  if (isMisconfigured(error) || isUntrustedOrigin(error)) {
     return "misconfigured";
   }
   const oauthError = classifyOAuthError(error);
