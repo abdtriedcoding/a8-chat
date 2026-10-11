@@ -25,7 +25,10 @@ import {
   type ActionCtx,
 } from "./_generated/server";
 import { requireUser } from "./auth";
-import { revokeAndDeleteConnection } from "./connectorStore";
+import {
+  readUserConnections,
+  revokeAndDeleteConnection,
+} from "./connectorStore";
 import {
   classifyOAuthError,
   ConnectorOAuthProvider,
@@ -51,13 +54,6 @@ import {
 } from "./lib/encryption";
 import { vConnectionStatus } from "./schema";
 import { fetchToolList } from "./toolLists";
-
-/**
- * How many of a user's connections list reads. A user has at most one per
- * connector id, but rows of connectors since removed from the catalog
- * count too.
- */
-const MAX_LISTED_CONNECTIONS = 100;
 
 const vConnectorStatus = v.object({
   id: vConnectorId,
@@ -92,10 +88,7 @@ export const list = query({
   returns: v.array(vConnectorStatus),
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    const connections = await ctx.db
-      .query("connections")
-      .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", user._id))
-      .take(MAX_LISTED_CONNECTIONS);
+    const connections = await readUserConnections(ctx, user._id);
     return CONNECTORS.map((connector): ConnectorStatus => {
       const connection = connections.find(
         (row) => row.connectorId === connector.id,
