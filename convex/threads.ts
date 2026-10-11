@@ -1,10 +1,10 @@
 // See the docs at https://docs.convex.dev/agents/threads
-import { getThreadMetadata, updateThreadMetadata } from "@convex-dev/agent";
+import { updateThreadMetadata } from "@convex-dev/agent";
 import {
   paginationOptsValidator,
   paginationResultValidator,
 } from "convex/server";
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import {
   internalMutation,
@@ -13,7 +13,12 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { authComponent, requireUser } from "./auth";
+import {
+  authorizeThreadAccess,
+  findOwnThread,
+  getOwnThread,
+  optionalUser,
+} from "./lib/guards";
 import { checkTitle } from "./lib/prompt";
 import { snippetAround } from "./lib/snippet";
 
@@ -27,7 +32,7 @@ export const list = query({
   args: { paginationOpts: paginationOptsValidator },
   returns: paginationResultValidator(vThreadSummary),
   handler: async (ctx, { paginationOpts }) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
+    const user = await optionalUser(ctx);
     if (!user) return { page: [], isDone: true, continueCursor: "" };
 
     // Always pass a real userId: undefined would list the threads with no owner.
@@ -83,7 +88,7 @@ export const search = query({
   args: { query: v.string() },
   returns: v.array(vSearchResult),
   handler: async (ctx, args) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
+    const user = await optionalUser(ctx);
     // Convex splits a query into terms at spaces and punctuation, so count
     // them the same way.
     const terms = args.query
@@ -242,36 +247,3 @@ export const purgeUserThreads = internalMutation({
     return null;
   },
 });
-
-/**
- * The thread, or null when signed out or it isn't the user's. For queries:
- * the session can end under a live query, so they return nothing rather
- * than throw.
- */
-export async function getOwnThread(ctx: QueryCtx, threadId: string) {
-  const user = await authComponent.safeGetAuthUser(ctx);
-  if (!user) return null;
-  return findOwnThread(ctx, user._id, threadId);
-}
-
-/**
- * Throws unless the signed-in user owns the thread, and returns the user.
- * For mutations.
- */
-export async function authorizeThreadAccess(
-  ctx: MutationCtx,
-  threadId: string,
-) {
-  const user = await requireUser(ctx);
-  if (!(await findOwnThread(ctx, user._id, threadId))) {
-    throw new ConvexError({ code: "NOT_FOUND", message: "Chat not found." });
-  }
-  return user;
-}
-
-async function findOwnThread(ctx: QueryCtx, userId: string, threadId: string) {
-  const thread = await getThreadMetadata(ctx, components.agent, {
-    threadId,
-  }).catch(() => null);
-  return thread?.userId === userId ? thread : null;
-}

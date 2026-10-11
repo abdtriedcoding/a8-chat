@@ -14,7 +14,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { requireUser } from "./auth";
+import { requireUser } from "./lib/guards";
 import { limitConnectStart } from "./rateLimits";
 import { revokeConnection } from "./lib/connectorAuth";
 import { REFRESH_LEASE_MS } from "./lib/connectionTokens";
