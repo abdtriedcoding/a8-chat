@@ -974,6 +974,8 @@ async function promptExists(ctx: QueryCtx, promptMessageId: string) {
   return Boolean(prompt);
 }
 
+const MAX_MESSAGES_PER_PAGE = 100;
+
 export const listThreadMessages = query({
   args: {
     // These arguments are required:
@@ -1012,7 +1014,14 @@ export const listThreadMessages = query({
       streams.deltas = streams.deltas.filter((d) => ids.has(d.streamId));
     }
 
-    const paginated = await listMessages(ctx, components.agent, args);
+    // The client picks numItems, so cap it. One query reads that many messages.
+    const paginated = await listMessages(ctx, components.agent, {
+      ...args,
+      paginationOpts: {
+        ...args.paginationOpts,
+        numItems: Math.min(args.paginationOpts.numItems, MAX_MESSAGES_PER_PAGE),
+      },
+    });
 
     // Each turn's metadata, by order. It goes on every message in the turn,
     // because the client reads `stopped` from the prompt (a reply that's
