@@ -59,7 +59,7 @@ export default defineSchema({
   // Who may register each storage upload (convex/attachments.ts).
   // generateUploadUrl adds a row with no `storageId`, and registerUpload sets
   // it when the user who got the URL claims the file. Nobody else can claim a
-  // file with a row. cleanUpOrphanedStorage deletes old rows.
+  // file with a row. cleanUpUploadGrants deletes old rows.
   uploadGrants: defineTable({
     userId: v.string(),
     storageId: v.optional(v.id("_storage")),
