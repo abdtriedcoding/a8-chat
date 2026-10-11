@@ -2,6 +2,7 @@
 
 import { cn } from "cn";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
+import { usePathname } from "next/navigation";
 import {
   useEffect,
   useRef,
@@ -28,11 +29,7 @@ import {
   type UploadedAttachment,
 } from "@/hooks/use-composer-attachments";
 import { useComposerMentions } from "@/hooks/use-composer-mentions";
-import {
-  currentPath,
-  forgetConnectReturn,
-  savedDraftFor,
-} from "@/lib/connect-return";
+import { forgetConnectReturn, savedDraftFor } from "@/lib/connect-return";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
 import { FileDropZone } from "./file-drop-zone";
@@ -90,21 +87,24 @@ export function Composer({
   // forgets the sign-in so the text comes back once. Session storage only
   // exists in the browser, so this waits for the first render there, after
   // hydration. Only on mount, since a sign-in started from this box saves
-  // its text while the box is still here.
+  // its text while the box is still here. It matches on the pathname Next
+  // is rendering: right after the Connectors page's router.replace,
+  // window.location can still be /connectors.
+  const pathname = usePathname();
   const inBrowser = useSyncExternalStore(
     subscribeToNothing,
     () => true,
     () => false,
   );
-  const [draftChecked, setDraftChecked] = useState(false);
-  if (inBrowser && !draftChecked) {
-    setDraftChecked(true);
-    const draft = savedDraftFor(currentPath());
+  const [draftCheckedFor, setDraftCheckedFor] = useState<string>();
+  if (inBrowser && draftCheckedFor === undefined) {
+    setDraftCheckedFor(pathname);
+    const draft = savedDraftFor(pathname);
     if (draft) setText(draft);
   }
   useEffect(() => {
-    if (draftChecked) forgetConnectReturn(currentPath());
-  }, [draftChecked]);
+    if (draftCheckedFor !== undefined) forgetConnectReturn(draftCheckedFor);
+  }, [draftCheckedFor]);
 
   const uploadedAttachments: UploadedAttachment[] = attachments.flatMap(
     ({ fileId, fileUrl, mediaType, filename }) =>

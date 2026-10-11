@@ -51,21 +51,33 @@ export function clearConnectReturn() {
 }
 
 /**
- * The draft a sign-in from the page at `path` saved, which is "" when it
- * saved none. Undefined when the saved sign-in is for another page, or
- * there is none.
+ * The draft a sign-in from the page at `pathname` saved, which is "" when
+ * it saved none. Undefined when the saved sign-in is for another page, or
+ * there is none. It compares pathnames only, so `/chat?prompt=…` matches
+ * `/chat`.
  */
-export function savedDraftFor(path: string): string | undefined {
+export function savedDraftFor(pathname: string): string | undefined {
   const saved = readConnectReturn();
-  return saved?.path === path ? (saved.draft ?? "") : undefined;
+  return saved && pathnameOf(saved.path) === pathname
+    ? (saved.draft ?? "")
+    : undefined;
 }
 
-/** Forgets the saved sign-in if it's for the page at `path`. */
-export function forgetConnectReturn(path: string) {
-  if (readConnectReturn()?.path === path) clearConnectReturn();
+/** Forgets the saved sign-in if it's for the page at `pathname`. */
+export function forgetConnectReturn(pathname: string) {
+  const saved = readConnectReturn();
+  if (saved && pathnameOf(saved.path) === pathname) clearConnectReturn();
 }
 
-/** The current page's path and query, the way ConnectReturn stores it. */
+function pathnameOf(path: string): string {
+  return path.split("?")[0];
+}
+
+/**
+ * The current page's path and query, the way ConnectReturn stores it. Read
+ * it in event handlers only. Right after a client-side navigation, a render
+ * or an effect can still see the previous page's URL.
+ */
 export function currentPath(): string {
   return window.location.pathname + window.location.search;
 }
