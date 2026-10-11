@@ -1,4 +1,4 @@
-// Which connector tools a reply loads (ADR 0005, ADR 0006). While the
+// Which connector tools a reply loads (ADR 0009, ADR 0006). While the
 // user's connector tools fit TOOL_BUDGET_TOKENS, every tool loads. Above
 // it, the thread defers. Mentioned connectors load, and every other
 // connector tool is sent deferred, for the model to find with Anthropic's
