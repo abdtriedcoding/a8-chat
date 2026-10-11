@@ -2,9 +2,16 @@
 
 import { cn } from "cn";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
-import Link from "next/link";
-import { useRef, useState, type Ref } from "react";
+import { usePathname } from "next/navigation";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Ref,
+} from "react";
 import { toast } from "sonner";
+import { ReconnectButton } from "@/components/connectors/reconnect-button";
 import {
   InputGroup,
   InputGroupAddon,
@@ -22,6 +29,7 @@ import {
   type UploadedAttachment,
 } from "@/hooks/use-composer-attachments";
 import { useComposerMentions } from "@/hooks/use-composer-mentions";
+import { forgetConnectReturn, savedDraftFor } from "@/lib/connect-return";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
 import { FileDropZone } from "./file-drop-zone";
@@ -39,7 +47,8 @@ import { MentionMenu } from "./mention-menu";
  *
  * Typing @ opens a menu of connectors to mention (useComposerMentions). A
  * prompt that mentions a connector that isn't connected can't be sent, and
- * a button above the text links to the Connectors page.
+ * a button above the text signs in to it. The sign-in comes back to this
+ * page, and the box gets its text back on mount (ConnectReturn).
  *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
@@ -73,6 +82,29 @@ export function Composer({
   } = useComposerAttachments();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mentions = useComposerMentions({ text, setText });
+
+  // On mount, puts back the text a sign-in from this page saved, then
+  // forgets the sign-in so the text comes back once. Session storage only
+  // exists in the browser, so this waits for the first render there, after
+  // hydration. Only on mount, since a sign-in started from this box saves
+  // its text while the box is still here. It matches on the pathname Next
+  // is rendering: right after the Connectors page's router.replace,
+  // window.location can still be /connectors.
+  const pathname = usePathname();
+  const inBrowser = useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
+  const [draftCheckedFor, setDraftCheckedFor] = useState<string>();
+  if (inBrowser && draftCheckedFor === undefined) {
+    setDraftCheckedFor(pathname);
+    const draft = savedDraftFor(pathname);
+    if (draft) setText(draft);
+  }
+  useEffect(() => {
+    if (draftCheckedFor !== undefined) forgetConnectReturn(draftCheckedFor);
+  }, [draftCheckedFor]);
 
   const uploadedAttachments: UploadedAttachment[] = attachments.flatMap(
     ({ fileId, fileUrl, mediaType, filename }) =>
@@ -138,6 +170,7 @@ export function Composer({
       />
       {mentions.options.length > 0 && (
         <MentionMenu
+          id={mentions.menuId}
           options={mentions.options}
           selectedId={mentions.selectedId}
           onSelectedChange={mentions.setSelectedId}
@@ -150,22 +183,26 @@ export function Composer({
             align="block-start"
             className="flex-col items-stretch gap-1.5 px-3 pt-2.5"
           >
-            {mentions.blockedMentions.map(({ id, name, status }) => (
+            {mentions.blockedMentions.map((connector) => (
               <div
-                key={id}
+                key={connector.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1.5 font-normal"
               >
                 <span>
-                  {status === "needs_reconnect"
-                    ? `${name} needs reconnecting before this can be sent.`
-                    : `${name} isn't connected, so this can't be sent yet.`}
+                  {connector.status === "needs_reconnect"
+                    ? `${connector.name} needs reconnecting before this can be sent.`
+                    : `${connector.name} isn't connected, so this can't be sent yet.`}
                 </span>
-                <InputGroupButton asChild variant="outline" size="xs">
-                  <Link href="/connectors">
-                    {status === "needs_reconnect" ? "Reconnect" : "Connect"}{" "}
-                    {name}
-                  </Link>
-                </InputGroupButton>
+                <ReconnectButton
+                  connector={connector}
+                  draft={text}
+                  render={<InputGroupButton variant="outline" size="xs" />}
+                >
+                  {connector.status === "needs_reconnect"
+                    ? "Reconnect"
+                    : "Connect"}{" "}
+                  {connector.name}
+                </ReconnectButton>
               </div>
             ))}
           </InputGroupAddon>
@@ -192,6 +229,7 @@ export function Composer({
             setText(event.target.value);
             mentions.syncCaret(event.target);
           }}
+          {...mentions.comboboxProps}
           {...mentions.caretHandlers}
           onPaste={(event) => {
             // A screenshot pastes as a file with no text. Text copied from
@@ -270,4 +308,9 @@ export function Composer({
       </InputGroup>
     </form>
   );
+}
+
+/** For useSyncExternalStore, to tell the browser from the server render. */
+function subscribeToNothing() {
+  return () => {};
 }

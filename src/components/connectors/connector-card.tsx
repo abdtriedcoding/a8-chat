@@ -2,7 +2,6 @@
 
 import { useAction } from "convex/react";
 import { InfoIcon, MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,13 +13,15 @@ import {
 } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { useConnectConnector } from "@/hooks/use-connect-connector";
+import { isConnected } from "@/hooks/use-connections";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";
 import type { ConnectorView } from "../../../convex/lib/connectorView";
+import { ConnectorLogo } from "./connector-logo";
+import { ReconnectButton } from "./reconnect-button";
 
 /**
  * One catalog entry on the Connectors page. Turning the toggle on sends the
@@ -29,7 +30,9 @@ import type { ConnectorView } from "../../../convex/lib/connectorView";
  * A connection that needs reconnecting shows a Reconnect button, which
  * signs in again. A catalog card note shows under the description.
  *
- * `connection` is undefined until the user's connections load.
+ * `connection` is undefined until the user's connections load. Key the card
+ * by the connection's connectedAt, so a new connection, or none, starts it
+ * with no disconnect pending.
  */
 export function ConnectorCard({
   connector,
@@ -38,25 +41,18 @@ export function ConnectorCard({
   connector: ConnectorView;
   connection: ConnectorStatus | undefined;
 }) {
-  const { id, name, handle, logo, description, examplePrompt, cardNote } =
-    connector;
+  const { id, name, handle, description, examplePrompt, cardNote } = connector;
   const { connecting, startConnect } = useConnectConnector(id);
   const disconnect = useAction(api.connectors.disconnect);
-  // connectedAt of the connection being disconnected. The toggle shows off
-  // from the click until the list query drops the connection, which can
-  // land after the action returns.
-  const [disconnectingConnectedAt, setDisconnectingConnectedAt] = useState<number>();
-  const connected =
-    connection !== undefined && connection.status !== "disconnected";
-  const disconnecting =
-    connected &&
-    disconnectingConnectedAt !== undefined &&
-    connection.connectedAt === disconnectingConnectedAt;
-  const needsReconnect =
-    connection?.status === "needs_reconnect" && !disconnecting;
+  // The toggle shows off from the click until the list query drops the
+  // connection, which can land after the action returns. The card's key
+  // changes then, which clears this.
+  const [disconnecting, setDisconnecting] = useState(false);
+  const connected = isConnected(connection) && !disconnecting;
+  const needsReconnect = connected && connection?.status === "needs_reconnect";
 
   async function startDisconnect() {
-    setDisconnectingConnectedAt(connection?.connectedAt);
+    setDisconnecting(true);
     try {
       const { revoked } = await disconnect({ connectorId: id });
       if (revoked) {
@@ -68,28 +64,23 @@ export function ConnectorCard({
       }
     } catch (error) {
       toast.error(errorMessage(error));
-      setDisconnectingConnectedAt(undefined);
+      setDisconnecting(false);
     }
   }
 
   return (
     <Card size="sm">
       <CardHeader className="flex items-center gap-3">
-        {/* Logos are drawn for a light background, so they get a white one in both themes. */}
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-foreground/10">
-          <Image src={logo} alt="" width={24} height={24} />
-        </div>
+        <ConnectorLogo connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
           <h3 className="font-heading font-medium">{name}</h3>
           <p className="truncate text-muted-foreground">
             @{handle}
-            {connected && !disconnecting && (
-              <> · {connection.accountLabel ?? "Connected"}</>
-            )}
+            {connected && <> · {connection?.accountLabel ?? "Connected"}</>}
           </p>
         </div>
         <Switch
-          checked={(connected && !disconnecting) || connecting}
+          checked={connected || connecting}
           disabled={connection === undefined || connecting || disconnecting}
           onCheckedChange={(checked) => {
             if (checked) void startConnect();
@@ -107,14 +98,12 @@ export function ConnectorCard({
               {name} stopped accepting a8&apos;s access.
             </AlertDescription>
             <AlertAction>
-              <Button
-                size="sm"
-                disabled={connecting}
-                onClick={() => void startConnect()}
+              <ReconnectButton
+                connector={connector}
+                render={<Button size="sm" />}
               >
-                {connecting && <Spinner data-icon="inline-start" />}
                 Reconnect
-              </Button>
+              </ReconnectButton>
             </AlertAction>
           </Alert>
         )}

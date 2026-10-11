@@ -1,5 +1,5 @@
 import { ChevronRightIcon } from "lucide-react";
-import Image from "next/image";
+import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import {
   Collapsible,
   CollapsibleContent,
@@ -17,6 +17,8 @@ export type ConnectorToolCall = {
   id: string;
   connector: ConnectorView;
   label: string;
+  /** The tool's target arguments from the catalog, if it marks any. */
+  target?: readonly string[];
   state: string;
   // Partial while the model is still writing it.
   input?: unknown;
@@ -35,7 +37,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
     if (!part.type.startsWith("tool-")) return [];
     const found = findConnectorTool(part.type.slice("tool-".length));
     if (!found) return [];
-    const { connector, label } = found;
+    const { connector, label, target } = found;
     // The UI message doesn't know the tool's types, so this reads the
     // fields every tool part has.
     const call = part as unknown as {
@@ -51,6 +53,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
         id: call.toolCallId,
         connector,
         label,
+        target,
         state: call.state,
         input: call.input,
         output: call.output,
@@ -114,10 +117,7 @@ export function ConnectorToolRow({
   return (
     <Collapsible className="w-full">
       <CollapsibleTrigger className="group/trigger flex max-w-full items-center gap-2 rounded-md text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
-        {/* Logos are drawn for a light background, so they get a white one in both themes. */}
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-white ring-1 ring-foreground/10">
-          <Image src={call.connector.logo} alt="" width={14} height={14} />
-        </span>
+        <ConnectorLogo connector={call.connector} size="sm" />
         <span className={running ? "shimmer truncate" : "truncate"}>
           {call.label}
           {failed && " failed"}

@@ -28,6 +28,7 @@ import {
 } from "@/lib/stopped-turns";
 import { browserTimeZone } from "@/lib/time-zone";
 import { api } from "../../../convex/_generated/api";
+import { DecideActionProvider } from "./action-card";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
@@ -146,37 +147,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
       {thread === undefined || status === "LoadingFirstPage" ? (
         <ConversationSkeleton />
       ) : (
-        <MessageList
-          messages={messages}
-          status={status}
-          onLoadEarlier={() => loadMore(PAGE_SIZE)}
-          replyStatus={replyStatus}
-          onRegenerate={
-            canRedoLastTurn
-              ? async () => {
-                  throwIfRefused(
-                    await regenerateReply({
-                      threadId,
-                      timeZone: browserTimeZone(),
-                    }),
-                  );
-                }
-              : undefined
-          }
-          onEdit={
-            canRedoLastTurn
-              ? async (prompt) => {
-                  throwIfRefused(
-                    await editPrompt({
-                      threadId,
-                      prompt,
-                      timeZone: browserTimeZone(),
-                    }),
-                  );
-                }
-              : undefined
-          }
-          onDecideAction={async (approvalId, approve) => {
+        <DecideActionProvider
+          decide={async (approvalId, approve) => {
             await decideAction({
               threadId,
               approvalId,
@@ -184,9 +156,41 @@ export function ThreadView({ threadId }: { threadId: string }) {
               timeZone: browserTimeZone(),
             });
           }}
-          editingLastPrompt={editingLastPrompt}
-          onEditingLastPromptChange={changeEditingLastPrompt}
-        />
+        >
+          <MessageList
+            messages={messages}
+            status={status}
+            onLoadEarlier={() => loadMore(PAGE_SIZE)}
+            replyStatus={replyStatus}
+            onRegenerate={
+              canRedoLastTurn
+                ? async () => {
+                    throwIfRefused(
+                      await regenerateReply({
+                        threadId,
+                        timeZone: browserTimeZone(),
+                      }),
+                    );
+                  }
+                : undefined
+            }
+            onEdit={
+              canRedoLastTurn
+                ? async (prompt) => {
+                    throwIfRefused(
+                      await editPrompt({
+                        threadId,
+                        prompt,
+                        timeZone: browserTimeZone(),
+                      }),
+                    );
+                  }
+                : undefined
+            }
+            editingLastPrompt={editingLastPrompt}
+            onEditingLastPromptChange={changeEditingLastPrompt}
+          />
+        </DecideActionProvider>
       )}
       <div className="shrink-0 px-4 pb-4">
         <Composer

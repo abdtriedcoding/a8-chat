@@ -19,6 +19,13 @@ export type CardNote = { text: string; link?: { label: string; url: string } };
 export type ConnectorToolView = {
   /** What the tool's row in a reply says, like "Searching Notion". */
   label: string;
+  /**
+   * For an action, the input arguments that say where it happens, by their
+   * name in the tool's input schema, like `page_id`. Its action card shows
+   * them under Target and every other argument under Content. A card for an
+   * action without them shows every argument under one heading.
+   */
+  target?: readonly string[];
 };
 
 /** One catalog connector as written below. */
@@ -61,12 +68,30 @@ const ENTRIES = [
       "notion-get-comments": { label: "Reading Notion comments" },
       "notion-get-users": { label: "Finding Notion users" },
       "notion-get-teams": { label: "Finding Notion teamspaces" },
-      "notion-create-pages": { label: "Creating Notion pages" },
-      "notion-update-page": { label: "Updating a Notion page" },
-      "notion-move-pages": { label: "Moving Notion pages" },
-      "notion-duplicate-page": { label: "Duplicating a Notion page" },
-      "notion-create-database": { label: "Creating a Notion database" },
-      "notion-create-comment": { label: "Commenting in Notion" },
+      "notion-create-pages": {
+        label: "Creating Notion pages",
+        target: ["parent"],
+      },
+      "notion-update-page": {
+        label: "Updating a Notion page",
+        target: ["page_id"],
+      },
+      "notion-move-pages": {
+        label: "Moving Notion pages",
+        target: ["page_or_database_ids", "new_parent"],
+      },
+      "notion-duplicate-page": {
+        label: "Duplicating a Notion page",
+        target: ["page_id"],
+      },
+      "notion-create-database": {
+        label: "Creating a Notion database",
+        target: ["parent"],
+      },
+      "notion-create-comment": {
+        label: "Commenting in Notion",
+        target: ["page_id", "discussion_id"],
+      },
     },
   },
   {
@@ -84,8 +109,24 @@ const ENTRIES = [
       list_issue_statuses: { label: "Finding Linear statuses" },
       list_issue_labels: { label: "Finding Linear labels" },
       get_workspace: { label: "Reading the Linear workspace" },
-      save_issue: { label: "Saving a Linear issue" },
-      save_comment: { label: "Commenting in Linear" },
+      // Both save tools create without `id` and update the item with it.
+      save_issue: {
+        label: "Saving a Linear issue",
+        target: ["id", "team", "project", "parentId"],
+      },
+      save_comment: {
+        label: "Commenting in Linear",
+        target: [
+          "id",
+          "issueId",
+          "projectId",
+          "initiativeId",
+          "documentId",
+          "milestoneId",
+          "statusUpdateId",
+          "parentId",
+        ],
+      },
     },
   },
   {
@@ -103,8 +144,13 @@ const ENTRIES = [
       "find-comments": { label: "Reading Todoist comments" },
       "get-overview": { label: "Reading a Todoist project overview" },
       "user-info": { label: "Reading the Todoist account" },
+      // Each task names its own project inside `tasks`, so no top-level
+      // argument is the target.
       "add-tasks": { label: "Adding Todoist tasks" },
-      "complete-tasks": { label: "Completing Todoist tasks" },
+      "complete-tasks": {
+        label: "Completing Todoist tasks",
+        target: ["ids"],
+      },
     },
   },
   {
@@ -122,8 +168,14 @@ const ENTRIES = [
       search_records: { label: "Searching Airtable records" },
       analyze_table: { label: "Analyzing an Airtable table" },
       list_record_comments: { label: "Reading Airtable comments" },
-      create_records_for_table: { label: "Adding Airtable records" },
-      update_records_for_table: { label: "Updating Airtable records" },
+      create_records_for_table: {
+        label: "Adding Airtable records",
+        target: ["baseId", "tableId"],
+      },
+      update_records_for_table: {
+        label: "Updating Airtable records",
+        target: ["baseId", "tableId"],
+      },
     },
   },
   {
@@ -142,6 +194,8 @@ const ENTRIES = [
       "meetings-get_event": { label: "Reading a Calendly meeting" },
       "meetings-list_event_invitees": { label: "Finding Calendly invitees" },
       "locations-list_user_meeting_locations": { label: "Finding Calendly meeting locations" },
+      // The actions below mark no target until someone checks their input
+      // schemas on a signed-in probe.
       "meetings-create_invitee": { label: "Booking a Calendly meeting" },
       "meetings-cancel_event": { label: "Cancelling a Calendly meeting" },
       "scheduling_links-create_single_use_scheduling_link": { label: "Creating a Calendly scheduling link" },
@@ -281,24 +335,30 @@ function fnv1a(text: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Every offered tool's connector and label, by the tool's model name. */
+/** A connector tool as a reply shows it: its connector, label and target. */
+export type FoundConnectorTool = ConnectorToolView & { connector: ConnectorView };
+
+/** Every offered tool's connector, label and target, by the tool's model name. */
 const TOOLS_BY_MODEL_NAME = new Map(
   CONNECTOR_VIEWS.flatMap((connector) =>
     Object.entries(connector.tools).map(
-      ([name, tool]) =>
-        [modelToolName(connector, name), { connector, label: tool.label }] as const,
+      ([name, tool]): [string, FoundConnectorTool] => [
+        modelToolName(connector, name),
+        { connector, ...tool },
+      ],
     ),
   ),
 );
 
 /**
- * The connector behind a model tool name, and the label its row shows.
- * Undefined for a8's own tools, like webSearch. A tool a8 no longer offers
- * gets a generic label, so old threads still show it.
+ * The connector behind a model tool name, the label its row shows and its
+ * target arguments. Undefined for a8's own tools, like webSearch. A tool a8
+ * no longer offers gets a generic label and no target, so old threads still
+ * show it.
  */
 export function findConnectorTool(
   modelName: string,
-): { connector: ConnectorView; label: string } | undefined {
+): FoundConnectorTool | undefined {
   const found = TOOLS_BY_MODEL_NAME.get(modelName);
   if (found) return found;
   const connector = CONNECTOR_VIEWS.find((entry) =>

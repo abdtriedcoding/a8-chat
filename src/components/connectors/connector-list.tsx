@@ -1,6 +1,6 @@
 "use client";
 
-import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { useAction, useConvexAuth } from "convex/react";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -10,16 +10,15 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { isConnected, useConnections } from "@/hooks/use-connections";
+import { readConnectReturn } from "@/lib/connect-return";
+import { searchConnectors } from "@/lib/connector-search";
 import { api } from "../../../convex/_generated/api";
-import type {
-  ConnectorStatus,
-  ConnectResult,
-} from "../../../convex/connectors";
+import type { ConnectResult } from "../../../convex/connectors";
 import {
   CONNECTOR_VIEWS,
   findConnectorView,
   type ConnectError,
-  type ConnectorView,
 } from "../../../convex/lib/connectorView";
 import { ConnectorCard } from "./connector-card";
 
@@ -65,12 +64,11 @@ export function ConnectorList({
 }: {
   callbackParams: CallbackParams;
 }) {
-  const { isLoading } = useConvexAuth();
-  const connections = useQuery(api.connectors.list, isLoading ? "skip" : {});
-  useFinishSignIn(callbackParams, isLoading);
+  const connections = useConnections();
+  useFinishSignIn(callbackParams);
   const [search, setSearch] = useState("");
 
-  const cards = matchingConnectors(search).map((connector) => ({
+  const cards = searchConnectors(CONNECTOR_VIEWS, search).map((connector) => ({
     connector,
     connection: connections?.find(({ id }) => id === connector.id),
   }));
@@ -78,11 +76,11 @@ export function ConnectorList({
     ? [
         {
           heading: "Connected",
-          cards: cards.filter(({ connection }) => hasConnection(connection)),
+          cards: cards.filter(({ connection }) => isConnected(connection)),
         },
         {
           heading: "Available",
-          cards: cards.filter(({ connection }) => !hasConnection(connection)),
+          cards: cards.filter(({ connection }) => !isConnected(connection)),
         },
       ]
     : [{ cards }];
@@ -119,6 +117,7 @@ export function ConnectorList({
                 {cards.map(({ connector, connection }) => (
                   <li key={connector.id}>
                     <ConnectorCard
+                      key={connection?.connectedAt}
                       connector={connector}
                       connection={connection}
                     />
@@ -133,29 +132,13 @@ export function ConnectorList({
 }
 
 /**
- * The connectors whose name or handle contains the search, in catalog
- * order. A leading @ is ignored, so `@no` finds Notion.
- */
-function matchingConnectors(search: string): ConnectorView[] {
-  const query = search.trim().replace(/^@/, "").toLowerCase();
-  return CONNECTOR_VIEWS.filter(
-    (connector) =>
-      connector.name.toLowerCase().includes(query) ||
-      connector.handle.toLowerCase().includes(query),
-  );
-}
-
-/** Whether the user has a connection, working or needing reconnecting. */
-function hasConnection(connection: ConnectorStatus | undefined): boolean {
-  return connection !== undefined && connection.status !== "disconnected";
-}
-
-/**
  * Finishes the sign-in the callback sent the user back with, or shows why
  * it ended early. The code comes from the URL fragment, which is cleared
- * on load.
+ * on load. A sign-in started on another page goes back there once it
+ * connects (ConnectReturn).
  */
-function useFinishSignIn(callbackParams: CallbackParams, authLoading: boolean) {
+function useFinishSignIn(callbackParams: CallbackParams) {
+  const { isLoading: authLoading } = useConvexAuth();
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
   // finishConnect deletes the sign-in, so a second call would report it
@@ -179,9 +162,15 @@ function useFinishSignIn(callbackParams: CallbackParams, authLoading: boolean) {
     if (!pending) return;
     finish.current = null;
     toast.loading("Connecting…", { id: TOAST_ID });
-    finishConnect(pending)
+    void finishConnect(pending)
       .catch((): ConnectResult => ({ error: "failed" }))
-      .then(showResult);
+      .then((result) => {
+        showResult(result);
+        const started = readConnectReturn();
+        if ("connected" in result && started?.connectorId === result.connected) {
+          router.replace(started.path);
+        }
+      });
   }, [callbackParams, authLoading, router, finishConnect]);
 }
 

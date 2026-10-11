@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/message";
 import { replyText } from "@/lib/reply-text";
 import type { Stop, ThreadMessage } from "@/lib/stopped-turns";
-import { ActionCard, type DecideAction } from "./action-card";
+import { ActionCard } from "./action-card";
 import {
   connectorToolCalls,
   ConnectorToolRow,
@@ -38,7 +38,6 @@ export function AssistantMessage({
   stopped,
   continuing = false,
   onRegenerate,
-  onDecideAction,
 }: {
   message: ThreadMessage;
   /** Set if the user stopped this reply. */
@@ -50,8 +49,6 @@ export function AssistantMessage({
   continuing?: boolean;
   /** Set on the last reply while it can be regenerated. */
   onRegenerate?: () => Promise<void>;
-  /** Approves or cancels one of the reply's actions. */
-  onDecideAction: DecideAction;
 }) {
   const text = replyText(message);
   const [visibleText, { isStreaming }] = useSmoothText(text, {
@@ -131,7 +128,7 @@ export function AssistantMessage({
           </Bubble>
         )}
         {waitingActions.map((call) => (
-          <ActionCard key={call.id} call={call} onDecide={onDecideAction} />
+          <ActionCard key={call.id} call={call} />
         ))}
         {reconnects.map((connector) => (
           <ReconnectChip key={connector.id} connector={connector} />
