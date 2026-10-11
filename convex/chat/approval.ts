@@ -86,11 +86,19 @@ export const decideAction = mutation({
  * Each one gets an "execution-denied" result next to the user's decision.
  * The AI SDK leaves decisions out of what it sends the model, and Anthropic
  * refuses a tool call that has no result after it.
+ *
+ * @param lastTurn The thread's last turn (getLastTurn), newest message
+ *   first. It's read again only when cards are cancelled, since cancelling
+ *   saves the decisions as new messages.
  */
-export async function closeUnrunActions(ctx: MutationCtx, threadId: string) {
-  for (const approvalId of waitingApprovalIds(
-    await getLastTurn(ctx, threadId),
-  )) {
+export async function closeUnrunActions(
+  ctx: MutationCtx,
+  threadId: string,
+  lastTurn: MessageDoc[],
+) {
+  if (!hasActionCards(lastTurn)) return;
+  const waiting = waitingApprovalIds(lastTurn);
+  for (const approvalId of waiting) {
     await chatAgent.denyToolCall(ctx, {
       threadId,
       approvalId,
@@ -98,7 +106,8 @@ export async function closeUnrunActions(ctx: MutationCtx, threadId: string) {
     });
   }
 
-  const turn = await getLastTurn(ctx, threadId);
+  const turn =
+    waiting.length > 0 ? await getLastTurn(ctx, threadId) : lastTurn;
   const toolNames = new Map<string, string>();
   const toolCallIds = new Map<string, string>();
   const ran = new Set<string>();
@@ -141,6 +150,15 @@ export async function closeUnrunActions(ctx: MutationCtx, threadId: string) {
       },
     });
   }
+}
+
+/** Whether any of the turn's actions showed an action card. */
+function hasActionCards(turn: MessageDoc[]): boolean {
+  return turn.some(
+    ({ message }) =>
+      Array.isArray(message?.content) &&
+      message.content.some((part) => part.type === "tool-approval-request"),
+  );
 }
 
 /** The approval IDs of the turn's actions that are still waiting on a card. */

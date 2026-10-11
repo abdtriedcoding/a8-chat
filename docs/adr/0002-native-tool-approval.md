@@ -5,5 +5,5 @@ Every action (a tool call that writes to or deletes from an app) needs approval 
 ## Consequences
 
 - Native approval carries a yes or a no, never edited arguments. Stage 5's Edit needs another path, possibly a thin table on top of this one.
-- A new prompt sent while a card is waiting cancels that action, so a stale card can never send something later. The Agent doesn't do this itself. It only treats the call as denied for the next model call, and the card stays approvable. So each send calls `denyToolCall` on the waiting call.
+- A new prompt sent while a card is waiting cancels that action, so a stale card can never send something later. The Agent doesn't do this itself. It only treats the call as denied for the next model call, and the card stays approvable. So each new prompt calls `denyToolCall` on the waiting call. A regenerate or an edit deletes the turn with the card instead.
 - Approving continues the same reply, so it isn't a send and the send limit doesn't count it. The reply's step cap still applies, but the Agent's cap resets on each `streamText` call, so a8 counts steps across the whole reply itself.
