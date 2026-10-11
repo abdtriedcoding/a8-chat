@@ -496,6 +496,7 @@ async function listTools(url: string, token: string | undefined): Promise<Tool[]
       url,
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     },
+    initializationOptions: { signal: AbortSignal.timeout(TIMEOUT_MS) },
   });
   try {
     const tools: Tool[] = [];
