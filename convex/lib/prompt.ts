@@ -1,3 +1,5 @@
+import type { Message } from "@convex-dev/agent";
+import type { FilePart, ImagePart, ModelMessage } from "ai";
 import { appError, ERROR_CODES } from "./errors";
 
 const MAX_PROMPT_LENGTH = 16_000;
@@ -21,6 +23,47 @@ export function checkPrompt(prompt: string, attachmentCount: number): string {
     );
   }
   return text;
+}
+
+/**
+ * A new prompt's message: its attachments first, then its text. With no
+ * attachments, just the text.
+ */
+export function buildPromptMessage(
+  text: string,
+  attachmentParts: Array<ImagePart | FilePart>,
+): ModelMessage {
+  if (attachmentParts.length === 0) return { role: "user", content: text };
+  return {
+    role: "user",
+    content: text
+      ? [...attachmentParts, { type: "text", text }]
+      : attachmentParts,
+  };
+}
+
+type UserMessage = Extract<Message, { role: "user" }>;
+
+/**
+ * The prompt with its text replaced by `newText`. Image and file parts stay,
+ * and the new text goes after them. Throws if the new text is blank and the
+ * prompt has no attachments (checkPrompt).
+ */
+export function replacePromptText(
+  prompt: UserMessage,
+  newText: string,
+): UserMessage {
+  if (typeof prompt.content === "string") {
+    return { ...prompt, content: checkPrompt(newText, 0) };
+  }
+  const attachmentParts = prompt.content.filter((part) => part.type !== "text");
+  const checkedText = checkPrompt(newText, attachmentParts.length);
+  return {
+    ...prompt,
+    content: checkedText
+      ? [...attachmentParts, { type: "text", text: checkedText }]
+      : attachmentParts,
+  };
 }
 
 /**

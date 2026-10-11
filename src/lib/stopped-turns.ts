@@ -1,7 +1,10 @@
 import type { UIMessage } from "@convex-dev/agent/react";
-import type { MessageMetadata } from "../../convex/chat";
+import type { MessageMetadata } from "../../convex/chat/messages";
 
-/** A message from listThreadMessages (convex/chat.ts), with its metadata. */
+/**
+ * A message from listThreadMessages (convex/chat/messages.ts), with its
+ * metadata.
+ */
 export type ThreadMessage = UIMessage<MessageMetadata>;
 
 /** What a stopped turn carries: whether to keep showing the reply's text. */

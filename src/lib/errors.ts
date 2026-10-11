@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import { ERROR_CODES } from "../../convex/lib/errors";
 import type { AttachmentNotFound } from "../../convex/attachments";
-import type { ReplyInProgress } from "../../convex/chat";
+import type { ReplyInProgress } from "../../convex/chat/send";
 import type { RateLimited } from "../../convex/rateLimits";
 
 const GENERIC_MESSAGE = "Something went wrong. Please try again.";
@@ -51,7 +51,7 @@ type SendRefused = RateLimited | AttachmentNotFound | ReplyInProgress;
 /**
  * Returns a Send's result, or throws a ConvexError if the Send was refused.
  * The Send mutations return the refusal instead of throwing it (see
- * convex/chat.ts). Throwing it here lets callers handle it like any other
+ * convex/chat/send.ts). Throwing it here lets callers handle it like any other
  * error, and errorMessage shows its message.
  */
 export function throwIfRefused<T>(result: T | SendRefused): T {

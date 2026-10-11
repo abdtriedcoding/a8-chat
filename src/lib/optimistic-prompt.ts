@@ -16,7 +16,7 @@ export function optimisticallySendPrompt(
     attachments,
   }: { threadId: string; prompt: string; attachments: UploadedAttachment[] },
 ) {
-  const messagesQuery = api.chat.listThreadMessages;
+  const messagesQuery = api.chat.messages.listThreadMessages;
 
   // The new prompt's turn comes after every turn on screen.
   let highestOrderOnScreen = -1;

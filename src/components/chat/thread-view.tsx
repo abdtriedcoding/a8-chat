@@ -44,17 +44,17 @@ export function ThreadView({ threadId }: { threadId: string }) {
     status,
     loadMore,
   } = useUIMessages(
-    api.chat.listThreadMessages,
+    api.chat.messages.listThreadMessages,
     isAuthenticated ? { threadId } : "skip",
     { initialNumItems: PAGE_SIZE, stream: true },
   );
 
-  const sendMessage = useMutation(api.chat.sendMessage);
+  const sendMessage = useMutation(api.chat.send.sendMessage);
 
-  const stopReply = useMutation(api.chat.stopReply);
-  const regenerateReply = useMutation(api.chat.regenerateReply);
-  const editPrompt = useMutation(api.chat.editPrompt);
-  const decideAction = useMutation(api.chat.decideAction);
+  const stopReply = useMutation(api.chat.stop.stopReply);
+  const regenerateReply = useMutation(api.chat.send.regenerateReply);
+  const editPrompt = useMutation(api.chat.send.editPrompt);
+  const decideAction = useMutation(api.chat.approval.decideAction);
 
   const replyStatus = useReplyStatus(messages);
   const replyInProgress =
