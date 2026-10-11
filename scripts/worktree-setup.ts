@@ -1,5 +1,6 @@
 // Orca setup hook. Gives a linked git worktree its own .env.local, dev port,
 // and Convex dev deployment. Does nothing in the main checkout.
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 
@@ -8,8 +9,12 @@ const run = (cmd: string[], cwd: string) => {
   // so the Convex CLI reads the deployment from the cwd's .env.local instead.
   const env = { ...process.env };
   delete env.CONVEX_DEPLOYMENT;
-  const p = Bun.spawnSync(cmd, { cwd, env, stdout: "pipe", stderr: "inherit" });
-  if (p.exitCode !== 0) throw new Error(`${cmd.join(" ")} failed`);
+  const p = spawnSync(cmd[0], cmd.slice(1), {
+    cwd,
+    env,
+    stdio: ["inherit", "pipe", "inherit"],
+  });
+  if (p.status !== 0) throw new Error(`${cmd.join(" ")} failed`);
   return p.stdout.toString();
 };
 
