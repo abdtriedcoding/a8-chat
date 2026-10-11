@@ -5,6 +5,9 @@ export const MAX_ATTACHMENTS_PER_PROMPT = 5;
 
 const BYTES_PER_MB = 1024 * 1024;
 
+/** The image size limit. Anthropic refuses images over 5 MB. */
+const MAX_IMAGE_SIZE_IN_BYTES = 5 * BYTES_PER_MB;
+
 export type AttachmentKind = "image" | "pdf";
 
 /**
@@ -15,10 +18,10 @@ const SUPPORTED_FILE_TYPES: Record<
   string,
   { kind: AttachmentKind; label: string; maxSizeInBytes: number }
 > = {
-  "image/png": { kind: "image", label: "PNG", maxSizeInBytes: 10 * BYTES_PER_MB },
-  "image/jpeg": { kind: "image", label: "JPEG", maxSizeInBytes: 10 * BYTES_PER_MB },
-  "image/gif": { kind: "image", label: "GIF", maxSizeInBytes: 10 * BYTES_PER_MB },
-  "image/webp": { kind: "image", label: "WebP", maxSizeInBytes: 10 * BYTES_PER_MB },
+  "image/png": { kind: "image", label: "PNG", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
+  "image/jpeg": { kind: "image", label: "JPEG", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
+  "image/gif": { kind: "image", label: "GIF", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
+  "image/webp": { kind: "image", label: "WebP", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
   "application/pdf": { kind: "pdf", label: "PDF", maxSizeInBytes: 32 * BYTES_PER_MB },
 };
 
