@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import {
   ArrowUpIcon,
   CheckIcon,
@@ -16,7 +17,6 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
-import { cn } from "@/lib/utils";
 import { Mention } from "./highlight";
 
 const THREADS = [
