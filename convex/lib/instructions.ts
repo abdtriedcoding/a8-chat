@@ -67,7 +67,7 @@ type ConnectionSummary = Pick<
  *
  * @param timeZone A time zone already checked by resolveTimeZone.
  * @param canSearchWeb Whether the model has the web search tool.
- * @param connections The user's connections.
+ * @param connections The user's connections, of any status.
  * @param mentioned The connectors the prompt mentions (findMentions).
  * @param loading How the reply offers connector tools (arrangeReplyTools).
  */
@@ -90,14 +90,20 @@ export function replyInstructions({
     INSTRUCTIONS,
     FORMATTING,
     ...(canSearchWeb ? [WEB_SEARCH] : []),
-    [
-      CONNECTOR_GUIDE,
-      connectorStatusLine(connections),
-      ...(loading === "search" ? [TOOL_SEARCH] : []),
-      ...mentioned.map((connector) =>
-        mentionInstruction(connector, connections),
-      ),
-    ].join("\n"),
+    // A user with no connections gets no connector text, so the model isn't
+    // steered toward apps they never connected.
+    ...(connections.length > 0
+      ? [
+          [
+            CONNECTOR_GUIDE,
+            connectorStatusLine(connections),
+            ...(loading === "search" ? [TOOL_SEARCH] : []),
+            ...mentioned.map((connector) =>
+              mentionInstruction(connector, connections),
+            ),
+          ].join("\n"),
+        ]
+      : []),
     dateInstruction(timeZone, now),
   ].join("\n\n");
 }

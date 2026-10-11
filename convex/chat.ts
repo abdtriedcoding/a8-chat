@@ -2,6 +2,7 @@
 import {
   abortStream,
   createThread,
+  getThreadMetadata,
   listMessages,
   listStreams,
   stepCountIs,
@@ -15,7 +16,7 @@ import {
 } from "@convex-dev/agent";
 import type { FilePart, ImagePart, ModelMessage } from "ai";
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
 import {
   internalAction,
@@ -23,6 +24,7 @@ import {
   internalQuery,
   mutation,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
@@ -39,6 +41,7 @@ import {
   createConnectorTools,
   type ConnectorTools,
 } from "./lib/connectorTools";
+import { CONNECTORS } from "./lib/connectors";
 import { findMentions } from "./lib/connectorView";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
@@ -52,6 +55,7 @@ import {
   TOOL_BUDGET_TOKENS,
 } from "./lib/toolLoading";
 import { limitSend, vRateLimited } from "./rateLimits";
+import schema from "./schema";
 import { authorizeThreadAccess, getOwnThread } from "./threads";
 
 // The browser's time zone, unchecked. Each Send checks it (resolveTimeZone).
@@ -635,32 +639,22 @@ export const streamReply = internalAction({
     let connectorTools: ConnectorTools | undefined;
     let toolLog: ReplyToolLog | undefined;
     try {
-      // Skip the model call if the user pressed Stop first, a regenerate or
-      // an edit replaced this turn, or a new prompt came after the action
-      // cards this reply continues from.
-      const canReply = await ctx.runQuery(internal.chat.canReply, {
-        threadId,
-        promptMessageId,
-        order,
-        continuing: stepsTaken > 0,
-      });
-      if (!canReply) return;
-      const connections = await ctx.runQuery(
-        internal.toolLists.listReplyConnections,
-        { threadId },
+      // Null if the user pressed Stop first, a regenerate or an edit
+      // replaced this turn, or a new prompt came after the action cards
+      // this reply continues from.
+      const start: ReplyStart = await ctx.runQuery(
+        internal.chat.getReplyStart,
+        { threadId, promptMessageId, order, continuing: stepsTaken > 0 },
       );
-      const promptText: string = await ctx.runQuery(
-        internal.chat.getPromptText,
-        { threadId, promptMessageId, order },
-      );
-      const mentioned = findMentions(promptText);
+      if (!start) return;
+      const { connections } = start;
+      const mentioned = findMentions(start.promptText);
       connectorTools = await createConnectorTools(ctx, connections);
-      const deferred: boolean =
-        connectorTools.groups.length > 0 &&
-        (await ctx.runMutation(internal.chat.deferToolsOverBudget, {
-          threadId,
-          estimatedToolTokens: connectorTools.estimatedTokens,
-        }));
+      const deferred = await defersTools(ctx, {
+        threadId,
+        threadDefers: start.threadDefersTools,
+        connectorTools,
+      });
       const { tools, loading } = arrangeReplyTools({
         nativeTools,
         groups: connectorTools.groups,
@@ -670,6 +664,7 @@ export const streamReply = internalAction({
       });
       toolLog = new ReplyToolLog(
         threadId,
+        connections.length,
         deferred,
         loading,
         connectorTools.groups,
@@ -693,7 +688,7 @@ export const streamReply = internalAction({
             timeZone,
             now: new Date(),
             canSearchWeb,
-            connections: connections.map(({ connection }) => connection),
+            connections,
             mentioned,
             loading,
           }),
@@ -741,76 +736,120 @@ export const streamReply = internalAction({
   },
 });
 
+const vReplyStart = v.union(
+  v.null(),
+  v.object({
+    promptText: v.string(),
+    connections: v.array(schema.doc("connections")),
+    threadDefersTools: v.boolean(),
+  }),
+);
+
+type ReplyStart = Infer<typeof vReplyStart>;
+
 /**
- * Whether streamReply should call the model. It's false if the user pressed
- * Stop before the runner started. It's also false if the prompt is gone. A
- * regenerate or an edit deletes the old prompt, so a runner left over from
- * before it stops here.
+ * Everything streamReply reads before it builds tools, in one query.
  *
- * A reply continuing after action cards also stops here once the user has
- * sent a new prompt. That prompt closed the turn's actions
+ * Null if streamReply shouldn't call the model. That's when the user pressed
+ * Stop before the runner started, or the prompt is gone. A regenerate or an
+ * edit deletes the old prompt, so a runner left over from before it stops
+ * here. A reply continuing after action cards also stops here once the user
+ * has sent a new prompt. That prompt closed the turn's actions
  * (closeUnrunActions), and the reply would add an answer after it.
+ *
+ * Otherwise:
+ * - `promptText`: the text of the prompt the reply answers, for finding its
+ *   mentions. `promptMessageId` is the prompt, or the user's decisions on
+ *   action cards when the reply continues. The turn's prompt is at or
+ *   before it. Empty if the prompt has no text.
+ * - `connections`: the thread owner's connections, tokens included, without
+ *   their tool lists. The reply runs from the scheduler with no signed-in
+ *   user, so the thread names the user.
+ * - `threadDefersTools`: whether the thread already defers connector tools
+ *   (defersTools).
  */
-export const canReply = internalQuery({
+export const getReplyStart = internalQuery({
   args: {
     threadId: v.string(),
     promptMessageId: v.string(),
     order: v.number(),
     continuing: v.boolean(),
   },
-  returns: v.boolean(),
+  returns: vReplyStart,
   handler: async (ctx, { threadId, promptMessageId, order, continuing }) => {
-    if (!(await promptExists(ctx, promptMessageId))) return false;
+    const turn = await listTurnUpTo(ctx, { threadId, promptMessageId, order });
+    if (!turn) return null;
     if (continuing) {
       const { page } = await listMessages(ctx, components.agent, {
         threadId,
         paginationOpts: { numItems: 1, cursor: null },
       });
-      if (page[0]?.order !== order) return false;
+      if (page[0]?.order !== order) return null;
     }
-    return (await getStoppedReply(ctx, threadId, order)) === null;
+    if (await getStoppedReply(ctx, threadId, order)) return null;
+    const prompt = turn.find((message) => message.message?.role === "user");
+    const thread = await getThreadMetadata(ctx, components.agent, {
+      threadId,
+    }).catch(() => null);
+    const userId = thread?.userId;
+    const connections = userId
+      ? await ctx.db
+          .query("connections")
+          .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", userId))
+          .take(CONNECTORS.length)
+      : [];
+    return {
+      promptText: prompt?.text ?? "",
+      connections,
+      threadDefersTools: (await findDeferredToolThread(ctx, threadId)) !== null,
+    };
   },
 });
 
 /**
- * Whether the thread defers connector tools (ADR 0006). It starts to once
- * a reply's connector tools pass TOOL_BUDGET_TOKENS, and keeps on after
+ * Whether the reply defers connector tools (ADR 0006). The thread starts to
+ * once a reply's connector tools pass TOOL_BUDGET_TOKENS, and keeps on after
  * that, so the tool list stays the same and the prompt cache keeps working.
+ * Only that first crossing writes. `threadDefers` comes from getReplyStart.
  */
-export const deferToolsOverBudget = internalMutation({
-  args: { threadId: v.string(), estimatedToolTokens: v.number() },
-  returns: v.boolean(),
-  handler: async (ctx, { threadId, estimatedToolTokens }) => {
-    const row = await ctx.db
-      .query("deferredToolThreads")
-      .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
-      .unique();
-    if (row) return true;
-    if (estimatedToolTokens <= TOOL_BUDGET_TOKENS) return false;
-    await ctx.db.insert("deferredToolThreads", { threadId });
-    return true;
+async function defersTools(
+  ctx: ActionCtx,
+  {
+    threadId,
+    threadDefers,
+    connectorTools,
+  }: {
+    threadId: string;
+    threadDefers: boolean;
+    connectorTools: ConnectorTools;
+  },
+): Promise<boolean> {
+  if (connectorTools.groups.length === 0) return false;
+  if (threadDefers) return true;
+  if (connectorTools.estimatedTokens <= TOOL_BUDGET_TOKENS) return false;
+  await ctx.runMutation(internal.chat.deferThreadTools, { threadId });
+  return true;
+}
+
+/** Makes the thread defer connector tools from now on (defersTools). */
+export const deferThreadTools = internalMutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    if (!(await findDeferredToolThread(ctx, threadId))) {
+      await ctx.db.insert("deferredToolThreads", { threadId });
+    }
+    return null;
   },
 });
 
-/**
- * The text of the prompt a reply answers, for finding its mentions.
- * `promptMessageId` is the prompt, or the user's decisions on action cards
- * when the reply continues. The turn's prompt is at or before it. Empty if
- * the prompt has no text or is gone.
- */
-export const getPromptText = internalQuery({
-  args: {
-    threadId: v.string(),
-    promptMessageId: v.string(),
-    order: v.number(),
-  },
-  returns: v.string(),
-  handler: async (ctx, { threadId, promptMessageId, order }) => {
-    const turn = await listTurnUpTo(ctx, { threadId, promptMessageId, order });
-    const prompt = turn?.find((message) => message.message?.role === "user");
-    return prompt?.text ?? "";
-  },
-});
+/** The thread's deferredToolThreads row, or null if it doesn't defer. */
+async function findDeferredToolThread(ctx: QueryCtx, threadId: string) {
+  return await ctx.db
+    .query("deferredToolThreads")
+    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .unique();
+}
 
 /**
  * Cleans up a stopped reply after the runner is done with it. streamReply
