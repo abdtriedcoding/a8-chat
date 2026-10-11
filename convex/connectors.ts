@@ -24,7 +24,7 @@ import {
   query,
   type ActionCtx,
 } from "./_generated/server";
-import { requireUser } from "./auth";
+import { authComponent } from "./auth";
 import {
   readUserConnections,
   revokeAndDeleteConnection,
@@ -81,14 +81,16 @@ export type DisconnectResult = Infer<typeof vDisconnectResult>;
 /**
  * The user's connection status for each catalog connector, in catalog
  * order. The UI takes names and logos from connectorView.ts. Never returns
- * token fields.
+ * token fields. When signed out, every connector shows as disconnected.
+ * The session can end under a live query, so the query returns instead of
+ * throwing.
  */
 export const list = query({
   args: {},
   returns: v.array(vConnectorStatus),
   handler: async (ctx) => {
-    const user = await requireUser(ctx);
-    const connections = await readUserConnections(ctx, user._id);
+    const user = await authComponent.safeGetAuthUser(ctx);
+    const connections = user ? await readUserConnections(ctx, user._id) : [];
     return CONNECTORS.map((connector): ConnectorStatus => {
       const connection = connections.find(
         (row) => row.connectorId === connector.id,

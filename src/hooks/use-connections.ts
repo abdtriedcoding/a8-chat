@@ -5,7 +5,8 @@ import type { ConnectorStatus } from "../../convex/connectors";
 /**
  * The user's connection status for each catalog connector, in catalog
  * order, or undefined while it loads. It waits for the session to load
- * first, since the query needs a signed-in user.
+ * first. Before then the query sees no user and would report every
+ * connector as disconnected.
  */
 export function useConnections(): ConnectorStatus[] | undefined {
   const { isLoading } = useConvexAuth();
