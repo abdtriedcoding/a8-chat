@@ -209,8 +209,13 @@ export class ReplyToolLog {
   private readonly pausedSteps: number[] = [];
   private steps = 0;
 
+  /**
+   * @param connections How many connections the user has, of any status.
+   *   With none, the reply's instructions have no connector text.
+   */
   constructor(
     private readonly threadId: string,
+    private readonly connections: number,
     private readonly deferred: boolean,
     private readonly loading: ToolLoading,
     private readonly groups: ConnectorToolGroup[],
@@ -269,6 +274,7 @@ export class ReplyToolLog {
   print() {
     console.log("reply tools", {
       threadId: this.threadId,
+      connections: this.connections,
       deferred: this.deferred,
       loading: this.loading,
       estimatedToolTokens: Object.fromEntries(

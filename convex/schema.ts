@@ -40,7 +40,7 @@ export default defineSchema({
   }).index("by_threadId_and_order", ["threadId", "order"]),
   // One row for each thread that defers connector tools (ADR 0006). A reply
   // adds it the first time the user's connector tools pass the tool budget
-  // (lib/toolLoading.ts), and the thread defers from then on, so its tool
+  // (defersTools in chat.ts), and the thread defers from then on, so its tool
   // list doesn't flip back and forth.
   deferredToolThreads: defineTable({
     threadId: v.string(),

@@ -23,7 +23,6 @@ import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { ConnectionTokens } from "../connectorStore";
 import { limitConnectorToolCall } from "../rateLimits";
-import type { ConnectionWithToolList } from "../toolLists";
 import {
   connectionAccessToken,
   type AccessTokenResult,
@@ -72,23 +71,38 @@ export type ConnectorTools = {
 
 /**
  * The reply's tools from the user's connections. Only `connected`
- * connections get tools, and only the allowlisted ones. A tool list over a
- * day old is used as is, and a fresh one is fetched in the background for
- * later replies. A connection with no stored list gets no tools until one
- * is fetched. Each call counts against the user's daily connector tool
- * call limit first.
+ * connections get tools, and only the allowlisted ones. Their stored tool
+ * lists load in one query, which a reply with no `connected` connection
+ * skips. A tool list over a day old is used as is, and a fresh one is
+ * fetched in the background for later replies. A connection with no stored
+ * list gets no tools until one is fetched. Each call counts against the
+ * user's daily connector tool call limit first.
  */
 export async function createConnectorTools(
   ctx: ActionCtx,
-  connections: ConnectionWithToolList[],
+  connections: Doc<"connections">[],
 ): Promise<ConnectorTools> {
   const groups: ConnectorToolGroup[] = [];
   const toolApproval: Record<string, ToolApprovalStatus> = {};
   const replyConnections: ReplyConnection[] = [];
 
-  for (const { connection, toolList } of connections) {
+  const connected = connections.flatMap((connection) => {
     const connector = findConnector(connection.connectorId);
-    if (!connector || connection.status !== "connected") continue;
+    return connector && connection.status === "connected"
+      ? [{ connector, connection }]
+      : [];
+  });
+  const toolLists =
+    connected.length === 0
+      ? []
+      : await ctx.runQuery(internal.toolLists.listToolLists, {
+          connectionIds: connected.map(({ connection }) => connection._id),
+        });
+
+  for (const { connector, connection } of connected) {
+    const toolList = toolLists.find(
+      (list) => list.connectionId === connection._id,
+    );
     if (!toolList || Date.now() - toolList.fetchedAt > TOOL_LIST_MAX_AGE_MS) {
       await scheduleToolListRefresh(ctx, connection);
     }
