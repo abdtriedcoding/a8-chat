@@ -116,15 +116,11 @@ export async function limitSend(
 }
 
 /**
- * Counts one web search against the user's daily cap and the daily cap.
- * Returns false, and counts nothing, once either is hit. Without a user ID it
- * only counts against the daily cap.
- *
- * An action can't check and count in one transaction. The user's cap is
- * checked first, then the daily cap is counted, then the user's. Searches
- * that run at the same time can pass the user's cap by a few.
+ * Whether a web search fits under the user's daily cap and the daily cap.
+ * Counts nothing. Without a user ID it only checks the daily cap. Call
+ * countWebSearch once the search has gone through.
  */
-export async function limitWebSearch(
+export async function checkWebSearch(
   ctx: GenericActionCtx<GenericDataModel>,
   userId: string | undefined,
 ): Promise<boolean> {
@@ -134,12 +130,26 @@ export async function limitWebSearch(
     });
     if (!user.ok) return false;
   }
-  const daily = await rateLimiter.limit(ctx, "dailyWebSearches");
-  if (!daily.ok) return false;
+  const daily = await rateLimiter.check(ctx, "dailyWebSearches");
+  return daily.ok;
+}
+
+/**
+ * Counts one web search against the daily cap and the user's daily cap.
+ * Without a user ID it only counts against the daily cap.
+ *
+ * An action can't check and count in one transaction. Searches that run at
+ * the same time can all get through checkWebSearch, so they can go over a
+ * cap by a few. limit() doesn't count past a full cap.
+ */
+export async function countWebSearch(
+  ctx: GenericActionCtx<GenericDataModel>,
+  userId: string | undefined,
+): Promise<void> {
+  await rateLimiter.limit(ctx, "dailyWebSearches");
   if (userId) {
     await rateLimiter.limit(ctx, "userDailyWebSearches", { key: userId });
   }
-  return true;
 }
 
 /**
