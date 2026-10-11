@@ -20,7 +20,11 @@ import {
   type Connector,
   type ConnectorServer,
 } from "./connectors";
-import { decryptSecret, encryptOptionalSecret } from "./encryption";
+import {
+  decryptSecret,
+  encryptOptionalSecret,
+  type EncryptionKey,
+} from "./encryption";
 
 /** Where the vendor sends the browser back after sign-in (convex/http.ts). */
 export const CALLBACK_PATH = "/connectors/callback";
@@ -63,7 +67,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   constructor(
     private readonly ctx: ActionCtx,
     protected readonly connector: Connector,
-    private readonly encryptionKey: CryptoKey,
+    private readonly encryptionKey: EncryptionKey,
     /** Set when finishing a sign-in. */
     private readonly pending?: PendingConnect,
   ) {}
@@ -572,7 +576,7 @@ const REVOKE_TIMEOUT_MS = 10_000;
 export async function revokeConnection(
   ctx: ActionCtx,
   connector: Connector,
-  encryptionKey: CryptoKey,
+  encryptionKey: EncryptionKey,
   connection: Pick<
     Doc<"connections">,
     "encryptedAccessToken" | "encryptedRefreshToken"

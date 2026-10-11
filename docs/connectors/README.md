@@ -11,6 +11,7 @@ a8 reaches each app through the vendor's own MCP server, with a8 as the OAuth an
 - `convex/lib/connectors.ts`: the server catalog.
 - `convex/lib/connectorAuth.ts`: the OAuth provider `auth()` signs in with, the pinned fetch, metadata discovery, revocation, the OAuth error classifier, and opening MCP clients.
 - `convex/lib/connectionTokens.ts`: a connection's access token, refreshed under the lease (ADR 0003).
+- `convex/lib/encryption.ts`: encrypts and decrypts the stored tokens and client secrets under `CONNECTION_ENCRYPTION_KEY`.
 - `convex/lib/connectorToolList.ts`: what a8 keeps of a server's tool list, and the token estimate.
 - `convex/lib/connectorTools.ts`: a reply's connector tools and the calls they make, the account label tool, and the one reader for MCP tool results.
 - `convex/lib/toolLoading.ts`: which tools load and which are deferred (ADR 0006), the history filter for tool search, and the reply's log line.
@@ -166,7 +167,19 @@ A tool runs without asking only when its `kind` is `read` and the server doesn't
 
 ### When a connection stops working
 
-A tool call the vendor refuses with a 401 refreshes the token and runs once more. The connection needs reconnecting when the vendor refuses the refresh, refuses the new token too, or answers 403, when a8 can't decrypt its tokens, or when a tool-list refresh gets the same answers. The call then fails with the `NEEDS_RECONNECT` code, the reply shows a Reconnect chip, and the connection offers no tools until the user reconnects. When the vendor can't be reached for a token refresh, every later call to that connection in the reply fails without trying again.
+A tool call the vendor refuses with a 401 refreshes the token and runs once more. The connection needs reconnecting when the vendor refuses the refresh, refuses the new token too, or answers 403, when its tokens are damaged, or when a tool-list refresh gets the same answers. The call then fails with the `NEEDS_RECONNECT` code, the reply shows a Reconnect chip, and the connection offers no tools until the user reconnects. When the vendor can't be reached for a token refresh, every later call to that connection in the reply fails without trying again.
+
+### The encryption key
+
+a8 stores each secret as `v2.<keyId>.<iv>.<ciphertext>`. The key id is the first 8 base64url characters of the SHA-256 of `CONNECTION_ENCRYPTION_KEY`. When a secret's key id isn't the current key's, the deployment runs with the wrong key, like after a typo or with a preview deployment's key. Every secret would fail the same way, so a8 doesn't mark the connection. The tool call fails with the `MISCONFIGURED` message, and putting the key back makes every connection work again with no reconnect. Only a secret whose key id matches but that doesn't decrypt counts as damaged and asks for a reconnect.
+
+Secrets stored before key ids are `v1.<iv>.<ciphertext>`. a8 still decrypts them, but it can't tell a wrong key from a damaged `v1` secret, so a wrong key still marks those connections. Rewrite them as `v2` once per deployment, with the right key set:
+
+```bash
+npx convex run connectorStore:reencryptSecrets
+```
+
+Add `--prod` for the production deployment. It returns how many secrets it rewrote and how many didn't decrypt, and it's safe to run again. a8 doesn't support changing the key on purpose yet. Every connection and client registration would need its secrets rewritten under the new key.
 
 ## Checklist for a new connector
 
