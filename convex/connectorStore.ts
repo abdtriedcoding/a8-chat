@@ -3,7 +3,8 @@
 // internal: convex/connectors.ts holds the public functions.
 
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v, type Infer } from "convex/values";
+import { v, type Infer } from "convex/values";
+import { appError, ERROR_CODES } from "./lib/errors";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import {
@@ -388,10 +389,10 @@ export const checkConnectStart = internalMutation({
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     if (!(await limitConnectStart(ctx, user._id))) {
-      throw new ConvexError({
-        code: "RATE_LIMITED",
-        message: "Too many sign-in attempts. Try again in a minute.",
-      });
+      throw appError(
+        ERROR_CODES.RATE_LIMITED,
+        "Too many sign-in attempts. Try again in a minute.",
+      );
     }
     return null;
   },
@@ -540,10 +541,10 @@ export const saveClientRegistration = internalMutation({
       registration.connectorId,
     );
     if (existing && existing.clientId !== registration.clientId) {
-      throw new ConvexError({
-        code: "CONNECT_FAILED",
-        message: "Another sign-in was starting at the same time. Please try again.",
-      });
+      throw appError(
+        ERROR_CODES.CONNECT_FAILED,
+        "Another sign-in was starting at the same time. Please try again.",
+      );
     }
     if (existing) {
       await ctx.db.replace("connectorClients", existing._id, registration);

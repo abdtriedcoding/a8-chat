@@ -16,6 +16,7 @@
 
 import { auth } from "@ai-sdk/mcp";
 import { ConvexError, v, type Infer } from "convex/values";
+import { appError, ERROR_CODES } from "./lib/errors";
 import { internal } from "./_generated/api";
 import {
   action,
@@ -117,7 +118,7 @@ export const connect = action({
     await ctx.runMutation(internal.connectorStore.checkConnectStart, {});
     const connector = findConnector(connectorId);
     if (!connector) {
-      throw new ConvexError({ code: "NOT_FOUND", message: "Unknown connector." });
+      throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
     }
     // Before anything else, so a deployment without the key stores nothing.
     const encryptionKey = await getEncryptionKey();
@@ -131,10 +132,10 @@ export const connect = action({
     } catch (error) {
       if (error instanceof ConvexError) throw error;
       console.error(`Starting ${connector.name} sign-in failed`, error);
-      throw new ConvexError({
-        code: "CONNECT_FAILED",
-        message: `Couldn't start signing in to ${connector.name}. Please try again.`,
-      });
+      throw appError(
+        ERROR_CODES.CONNECT_FAILED,
+        `Couldn't start signing in to ${connector.name}. Please try again.`,
+      );
     }
     const {
       authorizationUrl,
@@ -291,7 +292,7 @@ export const disconnect = action({
     const userId = await requireIdentity(ctx);
     const connector = findConnector(connectorId);
     if (!connector) {
-      throw new ConvexError({ code: "NOT_FOUND", message: "Unknown connector." });
+      throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
     }
     const connection = await ctx.runQuery(
       internal.connectorStore.getConnection,

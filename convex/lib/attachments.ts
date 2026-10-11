@@ -1,4 +1,4 @@
-import { ConvexError } from "convex/values";
+import { appError, ERROR_CODES } from "./errors";
 
 /** The most attachments one prompt can carry. */
 export const MAX_ATTACHMENTS_PER_PROMPT = 5;
@@ -108,10 +108,10 @@ export function detectMediaType(firstBytes: Uint8Array): string | null {
 /** Throws unless `attachmentCount` attachments fit on one prompt. */
 export function checkAttachmentCount(attachmentCount: number) {
   if (attachmentCount > MAX_ATTACHMENTS_PER_PROMPT) {
-    throw new ConvexError({
-      code: "TOO_MANY_ATTACHMENTS",
-      message: `You can attach at most ${MAX_ATTACHMENTS_PER_PROMPT} files.`,
-    });
+    throw appError(
+      ERROR_CODES.TOO_MANY_ATTACHMENTS,
+      `You can attach at most ${MAX_ATTACHMENTS_PER_PROMPT} files.`,
+    );
   }
 }
 

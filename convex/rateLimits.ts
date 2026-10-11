@@ -2,6 +2,7 @@
 import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import { v, type Infer } from "convex/values";
+import { ERROR_CODES } from "./lib/errors";
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 
@@ -63,7 +64,7 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
 
 /** Why a Send was refused. The Send mutations return it instead of throwing. */
 export const vRateLimited = v.object({
-  code: v.literal("RATE_LIMITED"),
+  code: v.literal(ERROR_CODES.RATE_LIMITED),
   message: v.string(),
   // Milliseconds until a Send would go through.
   retryAfter: v.number(),
@@ -245,5 +246,5 @@ export async function resetUserLimits(
 }
 
 function rateLimited(message: string, retryAfter: number): RateLimited {
-  return { code: "RATE_LIMITED", message, retryAfter };
+  return { code: ERROR_CODES.RATE_LIMITED, message, retryAfter };
 }

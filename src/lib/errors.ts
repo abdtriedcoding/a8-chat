@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import { ERROR_CODES } from "../../convex/lib/errors";
 import type { AttachmentNotFound } from "../../convex/attachments";
 import type { ReplyInProgress } from "../../convex/chat";
 import type { RateLimited } from "../../convex/rateLimits";
@@ -37,7 +38,7 @@ export function isUnauthenticated(error: unknown): boolean {
     typeof data === "object" &&
     data !== null &&
     "code" in data &&
-    data.code === "UNAUTHENTICATED"
+    data.code === ERROR_CODES.UNAUTHENTICATED
   );
 }
 
@@ -63,8 +64,8 @@ function isSendRefused(value: unknown): value is SendRefused {
     typeof value === "object" &&
     value !== null &&
     "code" in value &&
-    (value.code === "RATE_LIMITED" ||
-      value.code === "NOT_FOUND" ||
-      value.code === "REPLY_IN_PROGRESS")
+    (value.code === ERROR_CODES.RATE_LIMITED ||
+      value.code === ERROR_CODES.NOT_FOUND ||
+      value.code === ERROR_CODES.REPLY_IN_PROGRESS)
   );
 }
