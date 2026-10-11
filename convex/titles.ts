@@ -21,13 +21,16 @@ const FILENAMES_TITLE_INSTRUCTIONS =
 // Six words fit in far fewer. This only stops a model that ignores them.
 const MAX_TITLE_TOKENS = 30;
 
+// The start of a prompt is enough to title it. The rest only costs tokens.
+const MAX_TITLE_PROMPT_LENGTH = 1_000;
+
 /**
  * Asks the model for a short title for a new thread, and saves it in place
  * of the placeholder (saveTitle). startThread schedules it next to the
  * thread's first reply.
  *
- * The title comes from the prompt's text, or from its file names when it
- * has no text.
+ * The title comes from the first 1,000 characters of the prompt's text, or
+ * from its file names when it has no text.
  *
  * It calls the model directly, not through the thread, so nothing is saved
  * into the thread. If the call fails, the placeholder stays.
@@ -47,12 +50,16 @@ export const generateTitle = internalAction({
     ctx,
     { threadId, userId, prompt, attachmentFilenames, placeholder },
   ) => {
+    // Cut by code points, so the cut never leaves a lone surrogate.
+    const promptStart = Array.from(prompt)
+      .slice(0, MAX_TITLE_PROMPT_LENGTH)
+      .join("");
     const result = await generateText({
       model: chatModel,
       ...(prompt
         ? {
             instructions: TITLE_INSTRUCTIONS,
-            prompt: `<message>\n${prompt}\n</message>`,
+            prompt: `<message>\n${promptStart}\n</message>`,
           }
         : {
             instructions: FILENAMES_TITLE_INSTRUCTIONS,
