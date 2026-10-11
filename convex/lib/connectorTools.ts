@@ -1,10 +1,13 @@
-// A reply's connector tools (ADR 0003, ADR 0005). toolLoading.ts picks
-// which of them the reply loads (ADR 0006). They're built from each
-// connection's stored tool list, so building them sends nothing to the
-// vendor. A connector's MCP client opens on the first call to one of its
-// tools in the reply, and the reply closes it when it ends. A call the
+// Calling connectors' MCP tools. Most calls come from a reply's connector
+// tools (ADR 0003, ADR 0005), which replyTools.ts hands the reply.
+// toolLoading.ts decides which of them load (ADR 0006). They're built from
+// each connection's stored tool list, so building them sends nothing to
+// the vendor. A connector's MCP client opens on the first call to one of
+// its tools in the reply, and the reply closes it when it ends. A call the
 // vendor refuses with a 401 refreshes the token and runs once more. A 403
-// means the connection needs reconnecting.
+// means the connection needs reconnecting. The other call is the account
+// label tool, which a8 calls once after sign-in. Both read their results
+// with readToolResult.
 
 import {
   MCPClientError,
@@ -27,7 +30,7 @@ import {
   connectionAccessToken,
   type AccessTokenResult,
 } from "./connectionTokens";
-import { openMcpClient } from "./connectorAuth";
+import { labelAt, openMcpClient } from "./connectorAuth";
 import type { McpTool } from "./connectorToolList";
 import {
   findConnector,
@@ -140,7 +143,7 @@ export async function createConnectorTools(
               await callFailedMessage(ctx, connector, connection, error),
             );
           }
-          const text = resultText(result);
+          const { text } = readToolResult(result);
           if (!result.isError) return wrapResult(connector, text);
           await refreshIfUnknownTool(ctx, connection, text);
           throw new Error(
@@ -414,28 +417,100 @@ async function callFailedMessage(
   return `Calling ${connector.name} failed. Tell the user ${connector.name} couldn't be reached, and answer without it.`;
 }
 
+/** How long the account label tool can take before a8 gives up on it. */
+const ACCOUNT_LABEL_TIMEOUT_MS = 15_000;
+
 /**
- * A tool result as text: its text parts, or JSON for anything else. A
- * result with no content parts, like Airtable's, gives its structured
- * content as JSON.
+ * Calls the connector's account label tool once, right after sign-in, and
+ * returns the label from its result. Undefined if the connector's label
+ * doesn't come from a tool, the tool isn't an allowlisted read, or the call
+ * or its result fails.
  */
-function resultText(result: CallToolResult): string {
-  const content = "content" in result ? result.content : undefined;
+export async function readAccountLabel(
+  connector: Connector,
+  client: MCPClient,
+): Promise<string | undefined> {
+  const source = connector.accountLabel;
+  if (source?.from !== "tool") return undefined;
+  // a8 calls it without asking, so only an allowlisted read qualifies.
+  const entry = connector.toolAllowlist.find((tool) => tool.name === source.tool);
+  if (entry?.kind !== "read") {
+    console.error(
+      `${connector.name}'s account label tool ${source.tool} isn't an allowlisted read.`,
+    );
+    return undefined;
+  }
+  try {
+    const result = await client.callTool({
+      name: source.tool,
+      arguments: source.arguments ?? {},
+      options: { timeout: ACCOUNT_LABEL_TIMEOUT_MS },
+    });
+    if (result.isError) throw new Error(JSON.stringify(result));
+    return labelAt(readToolResult(result).data, source.field);
+  } catch (error) {
+    console.error(`Reading the ${connector.name} account label failed`, error);
+    return undefined;
+  }
+}
+
+type ContentPart = { type: string; text?: unknown };
+
+/**
+ * What an MCP tool result holds, read the same way for every caller:
+ * - `text`: the content parts as text, joined by blank lines. A text part
+ *   gives its text, an image "[image]", and any other part its JSON. A
+ *   result with no content parts, like Airtable's, gives its structured
+ *   content as JSON. Tool calls send this to the model.
+ * - `data`: the structured content, or else the first text part parsed as
+ *   JSON. Undefined if there's neither. The account label is read from
+ *   this.
+ *
+ * Each is worked out only when read.
+ */
+export function readToolResult(result: CallToolResult): {
+  readonly text: string;
+  readonly data: unknown;
+} {
+  const content =
+    "content" in result && Array.isArray(result.content)
+      ? (result.content as ContentPart[])
+      : undefined;
   const structured =
     "structuredContent" in result ? result.structuredContent : undefined;
-  if (!Array.isArray(content)) return JSON.stringify(structured ?? result);
-  if (content.length === 0 && structured != null) {
-    return JSON.stringify(structured);
-  }
-  return (content as Array<{ type: string; text?: unknown }>)
-    .map((part) => {
-      if (part.type === "text" && typeof part.text === "string") {
-        return part.text;
+  return {
+    get text() {
+      if (!content) return JSON.stringify(structured ?? result);
+      if (content.length === 0 && structured != null) {
+        return JSON.stringify(structured);
       }
-      if (part.type === "image") return "[image]";
-      return JSON.stringify(part);
-    })
-    .join("\n\n");
+      return content
+        .map((part) => {
+          const text = textOf(part);
+          if (text !== undefined) return text;
+          if (part.type === "image") return "[image]";
+          return JSON.stringify(part);
+        })
+        .join("\n\n");
+    },
+    get data() {
+      if (structured) return structured;
+      const text = content?.map(textOf).find((text) => text !== undefined);
+      if (text === undefined) return undefined;
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return undefined;
+      }
+    },
+  };
+}
+
+/** A content part's text, or undefined if it isn't a text part. */
+function textOf(part: ContentPart): string | undefined {
+  return part.type === "text" && typeof part.text === "string"
+    ? part.text
+    : undefined;
 }
 
 /** The text cut to MAX_RESULT_BYTES, and whether it was cut. */

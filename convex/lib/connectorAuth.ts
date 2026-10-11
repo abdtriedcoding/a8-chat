@@ -5,7 +5,6 @@
 import {
   createMCPClient,
   MCPClientError,
-  type CallToolResult,
   type MCPClient,
   type OAuthAuthorizationServerInformation,
   type OAuthClientInformation,
@@ -307,67 +306,12 @@ function pinnedOrigins(connector: Connector): string[] {
   return connector.pinnedOrigins.map((url) => new URL(url).origin);
 }
 
-/** How long the account label tool can take before a8 gives up on it. */
-const ACCOUNT_LABEL_TIMEOUT_MS = 15_000;
-
-/**
- * Calls the connector's account label tool once, right after sign-in, and
- * returns the label from its result. Undefined if the connector's label
- * doesn't come from a tool, the tool isn't an allowlisted read, or the call
- * or its result fails.
- */
-export async function readAccountLabel(
-  connector: Connector,
-  client: MCPClient,
-): Promise<string | undefined> {
-  const source = connector.accountLabel;
-  if (source?.from !== "tool") return undefined;
-  // a8 calls it without asking, so only an allowlisted read qualifies.
-  const entry = connector.toolAllowlist.find((tool) => tool.name === source.tool);
-  if (entry?.kind !== "read") {
-    console.error(
-      `${connector.name}'s account label tool ${source.tool} isn't an allowlisted read.`,
-    );
-    return undefined;
-  }
-  try {
-    const result = await client.callTool({
-      name: source.tool,
-      arguments: source.arguments ?? {},
-      options: { timeout: ACCOUNT_LABEL_TIMEOUT_MS },
-    });
-    if (result.isError) throw new Error(JSON.stringify(result));
-    return labelAt(resultData(result), source.field);
-  } catch (error) {
-    console.error(`Reading the ${connector.name} account label failed`, error);
-    return undefined;
-  }
-}
-
-/** A tool result's structured content, or its first text part as JSON. */
-function resultData(result: CallToolResult): unknown {
-  if ("structuredContent" in result && result.structuredContent) {
-    return result.structuredContent;
-  }
-  const content = "content" in result ? result.content : undefined;
-  const text = Array.isArray(content)
-    ? (content as Array<{ type: string; text?: unknown }>).find(
-        (part) => part.type === "text" && typeof part.text === "string",
-      )?.text
-    : undefined;
-  if (typeof text !== "string") return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * The non-blank string at a dot path like `organization.name`, trimmed, or
- * undefined.
+ * undefined. Reads the account label from a token response, or from a label
+ * tool's result (readAccountLabel).
  */
-function labelAt(data: unknown, path: string): string | undefined {
+export function labelAt(data: unknown, path: string): string | undefined {
   let value = data;
   for (const key of path.split(".")) {
     if (typeof value !== "object" || value === null) return undefined;
