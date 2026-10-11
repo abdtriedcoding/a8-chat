@@ -85,6 +85,10 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
+    // The OAuth scopes the vendor granted at sign-in: the token response's
+    // `scope`, or the scope sign-in asked for when the response has none.
+    // Unset when neither named any, and on rows from before it existed.
+    grantedScopes: v.optional(v.array(v.string())),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
   // The tools a8 stores for one connection (convex/toolLists.ts), apart from
@@ -93,7 +97,9 @@ export default defineSchema({
   // day old, and deleting the connection deletes it.
   connectionToolLists: defineTable({
     connectionId: v.id("connections"),
-    // The allowlisted tools, as JSON (lib/connectorToolList.ts).
+    // The allowlisted tools from every server of the connection's
+    // connector, as JSON, each with its server's key
+    // (lib/connectorToolList.ts).
     tools: v.string(),
     // About how many tokens the tools' definitions take, counted when they
     // were fetched, so a reply doesn't measure them.
@@ -110,6 +116,9 @@ export default defineSchema({
     codeVerifier: v.string(),
     userId: v.string(),
     connectorId: v.string(),
+    // The `scope` the authorize URL asked for, if any. finishConnect stores
+    // it as the granted scopes when the token response names none.
+    scope: v.optional(v.string()),
     // finishConnect checks that the code exchange goes to this server.
     authorizationServer: vAuthorizationServer,
     expiresAt: v.number(),

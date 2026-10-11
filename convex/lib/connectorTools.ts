@@ -2,12 +2,12 @@
 // tools (ADR 0003, ADR 0005), which replyTools.ts hands the reply.
 // toolLoading.ts decides which of them load (ADR 0006). They're built from
 // each connection's stored tool list, so building them sends nothing to
-// the vendor. A connector's MCP client opens on the first call to one of
-// its tools in the reply, and the reply closes it when it ends. A call the
-// vendor refuses with a 401 refreshes the token and runs once more. A 403
-// means the connection needs reconnecting. The other call is the account
-// label tool, which a8 calls once after sign-in. Both read their results
-// with readToolResult.
+// the vendor. Each of a connector's MCP servers gets a client on the first
+// call to one of its tools in the reply, and the reply closes them when it
+// ends. A call the vendor refuses with a 401 refreshes the token and runs
+// once more. A 403 means the connection needs reconnecting. The other call
+// is the account label tool, which a8 calls once after sign-in. Both read
+// their results with readToolResult.
 
 import {
   MCPClientError,
@@ -30,12 +30,14 @@ import {
   connectionAccessToken,
   type AccessTokenResult,
 } from "./connectionTokens";
-import { labelAt, openMcpClient } from "./connectorAuth";
-import type { McpTool } from "./connectorToolList";
+import { labelAt, openMcpClient, type ServerClient } from "./connectorAuth";
+import { readStoredTools, type McpTool } from "./connectorToolList";
 import {
+  findAllowlistedTool,
   findConnector,
   ReconnectError,
   type Connector,
+  type ConnectorServer,
   type ConnectorTool,
 } from "./connectors";
 import { modelToolName } from "./connectorView";
@@ -74,12 +76,12 @@ export type ConnectorTools = {
 
 /**
  * The reply's tools from the user's connections. Only `connected`
- * connections get tools, and only the allowlisted ones. Their stored tool
- * lists load in one query, which a reply with no `connected` connection
- * skips. A tool list over a day old is used as is, and a fresh one is
- * fetched in the background for later replies. A connection with no stored
- * list gets no tools until one is fetched. Each call counts against the
- * user's daily connector tool call limit first.
+ * connections get tools, and only the ones offeredTools returns. Their
+ * stored tool lists load in one query, which a reply with no `connected`
+ * connection skips. A tool list over a day old is used as is, and a fresh
+ * one is fetched in the background for later replies. A connection with no
+ * stored list gets no tools until one is fetched. Each call counts against
+ * the user's daily connector tool call limit first.
  */
 export async function createConnectorTools(
   ctx: ActionCtx,
@@ -114,9 +116,9 @@ export async function createConnectorTools(
     replyConnections.push(replyConnection);
 
     const tools: ToolSet = {};
-    const allowed = allowedTools(connector, toolList.tools);
-    for (const { entry, mcpTool } of allowed) {
-      const name = modelToolName(connector, mcpTool.name);
+    const offered = offeredTools(connector, toolList.tools);
+    for (const { server, entry, mcpTool } of offered) {
+      const name = modelToolName(connector, server, mcpTool.name);
       if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
       tools[name] = tool({
         description: mcpTool.description,
@@ -132,7 +134,7 @@ export async function createConnectorTools(
           }
           let result: CallToolResult;
           try {
-            result = await replyConnection.callTool({
+            result = await replyConnection.callTool(server, {
               name: mcpTool.name,
               arguments: input,
               options: { signal: abortSignal, timeout: TOOL_CALL_TIMEOUT_MS },
@@ -195,17 +197,19 @@ class RefusedTokenError extends Error {
 }
 
 /**
- * One connection's MCP client in a reply. It opens on the first call, with
- * the access token refreshed first if it's about to expire. When the vendor
- * refuses the token with a 401, it refreshes it and tries the call once
- * more. If the refresh is refused, the vendor refuses the new token too, or
- * it answers 403, the connection needs reconnecting, and every later call
+ * One connection's MCP clients in a reply, one per server. A server's
+ * client opens on the first call to one of its tools, with the access
+ * token refreshed first if it's about to expire. When the vendor refuses
+ * the token with a 401, it refreshes it and tries the call once more. If
+ * the refresh is refused, the vendor refuses the new token too, or it
+ * answers 403, the connection needs reconnecting, and every later call
  * throws ReconnectError. If the vendor couldn't be reached for the refresh,
  * every later call in the reply fails without trying it again.
  */
 class ReplyConnection {
   private tokens: ConnectionTokens;
-  private client?: Promise<VersionedClient>;
+  /** The latest client of each server, by server key. */
+  private readonly clients = new Map<string, Promise<VersionedClient>>();
   private readonly opened: Promise<VersionedClient>[] = [];
   private needsReconnect = false;
   /** Whether getting the access token threw, like when a refresh failed. */
@@ -219,9 +223,12 @@ class ReplyConnection {
     this.tokens = connection;
   }
 
-  async callTool(request: CallToolRequest): Promise<CallToolResult> {
+  async callTool(
+    server: ConnectorServer,
+    request: CallToolRequest,
+  ): Promise<CallToolResult> {
     try {
-      return await this.callOnce(request);
+      return await this.callOnce(server, request);
     } catch (error) {
       if (!(error instanceof RefusedTokenError)) throw error;
       // A refresh keeps the token's access, so it can't fix a 403.
@@ -229,7 +236,7 @@ class ReplyConnection {
         throw await this.markNeedsReconnect(error.tokenVersion);
       }
       try {
-        return await this.callOnce(request, error.tokenVersion);
+        return await this.callOnce(server, request, error.tokenVersion);
       } catch (retryError) {
         if (!(retryError instanceof RefusedTokenError)) throw retryError;
         // The vendor refused a token a8 just refreshed.
@@ -239,10 +246,11 @@ class ReplyConnection {
   }
 
   private async callOnce(
+    server: ConnectorServer,
     request: CallToolRequest,
     refusedVersion?: number,
   ): Promise<CallToolResult> {
-    const { tokenVersion, mcp } = await this.open(refusedVersion);
+    const { tokenVersion, mcp } = await this.open(server, refusedVersion);
     try {
       return await mcp.callTool(request);
     } catch (error) {
@@ -251,28 +259,35 @@ class ReplyConnection {
   }
 
   /**
-   * The open client, or a new one. `refusedVersion` names tokens the vendor
-   * refused, so a client sending them is replaced by one with refreshed
-   * tokens. Calls running at once share one client.
+   * The server's open client, or a new one. `refusedVersion` names tokens
+   * the vendor refused, so a client sending them is replaced by one with
+   * refreshed tokens. Calls to one server running at once share a client.
    */
-  private async open(refusedVersion?: number): Promise<VersionedClient> {
-    const opening = this.client;
+  private async open(
+    server: ConnectorServer,
+    refusedVersion?: number,
+  ): Promise<VersionedClient> {
+    const opening = this.clients.get(server.key);
     const current = await opening?.catch(() => undefined);
     if (current && current.tokenVersion !== refusedVersion) return current;
     // Another call may have started a new client while this one waited.
-    if (this.client && this.client !== opening) return await this.client;
-    const client = this.connect(refusedVersion);
-    this.client = client;
+    const latest = this.clients.get(server.key);
+    if (latest && latest !== opening) return await latest;
+    const client = this.connect(server, refusedVersion);
+    this.clients.set(server.key, client);
     this.opened.push(client);
     return await client;
   }
 
   /**
-   * Opens a client. A client that fails to open throws on every call that
-   * shares it, and the next call opens another. If getting the access token
-   * failed, every later call throws without trying again.
+   * Opens a client to the server. A client that fails to open throws on
+   * every call that shares it, and the next call opens another. If getting
+   * the access token failed, every later call throws without trying again.
    */
-  private async connect(refusedVersion?: number): Promise<VersionedClient> {
+  private async connect(
+    server: ConnectorServer,
+    refusedVersion?: number,
+  ): Promise<VersionedClient> {
     if (this.needsReconnect) throw new ReconnectError(this.connector);
     if (this.tokenFailed) {
       throw new Error(
@@ -297,7 +312,11 @@ class ReplyConnection {
     this.tokens = token.tokens;
     const { tokenVersion } = token.tokens;
     try {
-      const mcp = await openMcpClient(this.connector, token.accessToken);
+      const mcp = await openMcpClient(
+        this.connector,
+        server,
+        token.accessToken,
+      );
       return { tokenVersion, mcp };
     } catch (error) {
       throw asRefusedToken(error, tokenVersion);
@@ -345,19 +364,18 @@ function asRefusedToken(error: unknown, tokenVersion: number): unknown {
 }
 
 /**
- * The cached tools on the connector's allowlist, which a reply offers, each
- * with its allowlist entry.
+ * The cached tools a reply offers, each with its server and allowlist
+ * entry: the allowlisted ones, and every one from a server without an
+ * allowlist, which has no entry.
  */
-function allowedTools(
+function offeredTools(
   connector: Connector,
   toolList: string,
-): { entry: ConnectorTool; mcpTool: McpTool }[] {
-  const entries = new Map(
-    connector.toolAllowlist.map((entry) => [entry.name, entry]),
-  );
-  return (JSON.parse(toolList) as McpTool[]).flatMap((mcpTool) => {
-    const entry = entries.get(mcpTool.name);
-    return entry ? [{ entry, mcpTool }] : [];
+): { server: ConnectorServer; entry?: ConnectorTool; mcpTool: McpTool }[] {
+  return readStoredTools(connector, toolList).flatMap(({ server, tool }) => {
+    if (!server.tools) return [{ server, mcpTool: tool }];
+    const entry = server.tools.get(tool.name);
+    return entry ? [{ server, entry, mcpTool: tool }] : [];
   });
 }
 
@@ -365,10 +383,11 @@ function allowedTools(
  * Whether a tool is a read, which runs without approval. The allowlist's
  * `kind` decides, and the server's `readOnlyHint` can only make a tool
  * stricter. A read asks anyway when the server marks it not read-only. An
- * action asks even when the server marks it read-only (ADR 0008).
+ * action asks even when the server marks it read-only, and so does every
+ * tool from a server without an allowlist (ADR 0008).
  */
-function isRead(entry: ConnectorTool, mcpTool: McpTool): boolean {
-  return entry.kind === "read" && mcpTool.annotations?.readOnlyHint !== false;
+function isRead(entry: ConnectorTool | undefined, mcpTool: McpTool): boolean {
+  return entry?.kind === "read" && mcpTool.annotations?.readOnlyHint !== false;
 }
 
 /**
@@ -428,20 +447,21 @@ const ACCOUNT_LABEL_TIMEOUT_MS = 15_000;
  */
 export async function readAccountLabel(
   connector: Connector,
-  client: MCPClient,
+  clients: ServerClient[],
 ): Promise<string | undefined> {
   const source = connector.accountLabel;
   if (source?.from !== "tool") return undefined;
   // a8 calls it without asking, so only an allowlisted read qualifies.
-  const entry = connector.toolAllowlist.find((tool) => tool.name === source.tool);
-  if (entry?.kind !== "read") {
+  const found = findAllowlistedTool(connector, source.tool);
+  const client = clients.find(({ server }) => server === found?.server);
+  if (found?.tool.kind !== "read" || !client) {
     console.error(
       `${connector.name}'s account label tool ${source.tool} isn't an allowlisted read.`,
     );
     return undefined;
   }
   try {
-    const result = await client.callTool({
+    const result = await client.mcp.callTool({
       name: source.tool,
       arguments: source.arguments ?? {},
       options: { timeout: ACCOUNT_LABEL_TIMEOUT_MS },

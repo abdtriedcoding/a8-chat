@@ -14,7 +14,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { openMcpClient } from "./lib/connectorAuth";
+import { withMcpClients, type ServerClient } from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
@@ -192,13 +192,24 @@ async function findToolList(ctx: QueryCtx, connectionId: Id<"connections">) {
 }
 
 /**
- * Every tool the connector's MCP server lists, across all pages, as a8
- * stores them (storedToolList).
+ * Every tool the connector's MCP servers list, across all pages, as a8
+ * stores them (storedToolList). Takes a client for each server
+ * (withMcpClients).
  */
 export async function fetchToolList(
   connector: Connector,
-  client: MCPClient,
+  clients: ServerClient[],
 ): Promise<StoredToolList> {
+  const listed = await Promise.all(
+    clients.map(async ({ server, mcp }) => ({
+      server,
+      tools: await listAllTools(mcp),
+    })),
+  );
+  return storedToolList(connector, listed);
+}
+
+async function listAllTools(client: MCPClient): Promise<McpTool[]> {
   const tools: McpTool[] = [];
   let cursor: string | undefined;
   do {
@@ -208,7 +219,7 @@ export async function fetchToolList(
     tools.push(...page.tools);
     cursor = page.nextCursor;
   } while (cursor !== undefined);
-  return storedToolList(connector, tools);
+  return tools;
 }
 
 /**
@@ -220,12 +231,11 @@ async function listToolsWithToken(
   accessToken: string,
 ): Promise<StoredToolList | 401 | 403> {
   try {
-    const client = await openMcpClient(connector, accessToken);
-    try {
-      return await fetchToolList(connector, client);
-    } finally {
-      await client.close();
-    }
+    return await withMcpClients(
+      connector,
+      accessToken,
+      async (clients) => await fetchToolList(connector, clients),
+    );
   } catch (error) {
     if (MCPClientError.isInstance(error)) {
       if (error.statusCode === 401 || error.statusCode === 403) {

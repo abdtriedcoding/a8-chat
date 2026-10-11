@@ -23,8 +23,15 @@ import {
   authorizationServersIn,
   fetchMetadata,
   protectedResourceMetadataUrls,
+  signInScope,
 } from "../convex/lib/connectorAuth";
-import { findConnector, type Connector } from "../convex/lib/connectors";
+import {
+  findAllowlistedTool,
+  findConnector,
+  signInServer,
+  type Connector,
+  type ConnectorServer,
+} from "../convex/lib/connectors";
 import { modelToolName } from "../convex/lib/connectorView";
 
 /** How long each request to the vendor can take. */
@@ -39,7 +46,8 @@ const USAGE = `Usage: bun scripts/probe-connector.ts <mcp-url | connector-id> [o
   --token <token>  List tools with this access token. MCP_TOKEN works too.
   --sign-in        Sign in through the browser to get a token. Needs a
                    registration endpoint, and registers a new client each run.
-  --scope <scope>  The scope --sign-in asks for.`;
+  --scope <scope>  The scope --sign-in asks for. Defaults to the catalog
+                   connector's scopes, if it has any.`;
 
 type Json = Record<string, unknown>;
 type Tool = ListToolsResult["tools"][number];
@@ -53,7 +61,8 @@ type Findings = {
   /** The authorization servers whose metadata the probe found. */
   authorizationServers: string[];
   registrationEndpoint?: string;
-  tools?: Tool[];
+  /** Each server's tools, by server key. Unset if listing failed. */
+  tools?: Map<string, Tool[]>;
   /** Why there's no tool list, when there isn't one. */
   noToolsReason: string;
 };
@@ -82,15 +91,27 @@ if (!URL.canParse(target) && !connector) {
   console.error(`"${target}" is neither a URL nor a catalog connector ID.`);
   process.exit(2);
 }
-const mcpUrl = connector?.mcpServerUrl ?? target;
+// A URL that isn't in the catalog yet is probed as one server with no
+// allowlist.
+const servers: ConnectorServer[] = connector?.servers ?? [
+  { key: "", url: target },
+];
+// Sign-in reads the first server's OAuth metadata (signInServer).
+const mcpUrl = connector ? signInServer(connector).url : target;
 const findings: Findings = {
   origins: new Map(),
   authorizationServers: [],
   noToolsReason: "pass --token or --sign-in to list tools",
 };
-noteOrigin(findings.origins, mcpUrl, "MCP server");
+for (const server of servers) {
+  noteOrigin(findings.origins, server.url, "MCP server");
+}
 
-heading(connector ? `${connector.name} (${mcpUrl})` : mcpUrl);
+heading(
+  connector
+    ? `${connector.name} (${servers.map((server) => server.url).join(", ")})`
+    : mcpUrl,
+);
 
 heading("initialize without a token");
 const anonymous = await initializeWithoutToken(mcpUrl);
@@ -157,23 +178,34 @@ let token = values.token ?? process.env.MCP_TOKEN;
 if (!token && values["sign-in"]) {
   heading("Signing in");
   try {
-    token = await signIn(mcpUrl, values.scope);
+    token = await signIn(
+      mcpUrl,
+      values.scope ?? (connector && signInScope(connector)),
+    );
   } catch (error) {
     console.log(`Signing in failed: ${describeError(error)}`);
     findings.noToolsReason = "signing in failed";
   }
 }
 
-heading("Tools");
 if (token || anonymous.ok) {
-  try {
-    findings.tools = await listTools(mcpUrl, token);
-    printTools(findings.tools, connector);
-  } catch (error) {
-    findings.noToolsReason = `listing tools failed: ${describeError(error)}`;
+  const listed = new Map<string, Tool[]>();
+  for (const server of servers) {
+    heading(servers.length > 1 ? `Tools on ${server.key} (${server.url})` : "Tools");
+    try {
+      const tools = await listTools(server.url, token);
+      listed.set(server.key, tools);
+      printTools(tools, server);
+    } catch (error) {
+      findings.noToolsReason = `listing ${server.url}'s tools failed: ${describeError(error)}`;
+      console.log(findings.noToolsReason);
+    }
   }
+  if (listed.size === servers.length) findings.tools = listed;
+} else {
+  heading("Tools");
+  console.log(findings.noToolsReason);
 }
-if (!findings.tools) console.log(findings.noToolsReason);
 
 if (connector) {
   heading(`Catalog check: ${connector.id}`);
@@ -306,11 +338,13 @@ function describeScopes(
 /**
  * Signs in through the browser with a client registered just for this run,
  * and returns the access token. The redirect URI is a localhost one, so
- * this doesn't prove the vendor accepts a8's own redirect URI.
+ * this doesn't prove the vendor accepts a8's own redirect URI. Like a8, it
+ * puts the connector's authorize parameters on the authorize URL.
  */
 async function signIn(url: string, scope: string | undefined): Promise<string> {
   const provider = new ProbeOAuthProvider(
     `http://localhost:${CALLBACK_PORT}/callback`,
+    connector?.authorizeParams ?? {},
   );
   const callback = waitForCallback(CALLBACK_PORT);
   // A taken port rejects before anything awaits the callback. The await
@@ -379,7 +413,10 @@ class ProbeOAuthProvider implements OAuthClientProvider {
   private savedCodeVerifier?: string;
   private savedAuthorizationServer?: OAuthAuthorizationServerInformation;
 
-  constructor(readonly redirectUrl: string) {}
+  constructor(
+    readonly redirectUrl: string,
+    private readonly authorizeParams: Record<string, string>,
+  ) {}
 
   get clientMetadata(): OAuthClientMetadata {
     return {
@@ -436,6 +473,9 @@ class ProbeOAuthProvider implements OAuthClientProvider {
   }
 
   redirectToAuthorization(authorizationUrl: URL) {
+    for (const [name, value] of Object.entries(this.authorizeParams)) {
+      authorizationUrl.searchParams.set(name, value);
+    }
     this.authorizationUrl = authorizationUrl;
   }
 
@@ -475,18 +515,15 @@ async function listTools(url: string, token: string | undefined): Promise<Tool[]
 
 /**
  * One block per tool: its name, its annotations, and the size of its
- * description and input schema. Marks the tools a connector allowlists, with
- * each one's kind, read or action.
+ * description and input schema. Marks the tools the server allowlists,
+ * with each one's kind, read or action.
  */
-function printTools(tools: Tool[], connector: Connector | undefined) {
-  const allowlistKinds = new Map(
-    connector?.toolAllowlist.map((tool) => [tool.name, tool.kind]),
-  );
+function printTools(tools: Tool[], server: ConnectorServer) {
   let totalBytes = 0;
   for (const tool of tools) {
     const schemaBytes = byteLength(JSON.stringify(tool.inputSchema));
     totalBytes += byteLength(JSON.stringify(tool));
-    const kind = allowlistKinds.get(tool.name);
+    const kind = server.tools?.get(tool.name)?.kind;
     console.log(`${tool.name}${kind ? `  (allowlisted, ${kind})` : ""}`);
     console.log(`  annotations: ${formatAnnotations(tool.annotations)}`);
     console.log(
@@ -528,11 +565,15 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
   const pinned = new Set(
     connector.pinnedOrigins.map((url) => new URL(url).origin),
   );
-  const mcpOrigin = new URL(connector.mcpServerUrl).origin;
-  report(
-    pinned.has(mcpOrigin),
-    `the MCP URL's origin, ${mcpOrigin}, ${pinned.has(mcpOrigin) ? "is" : "isn't"} pinned`,
-  );
+  for (const server of connector.servers) {
+    const mcpOrigin = new URL(server.url).origin;
+    const which =
+      connector.servers.length > 1 ? `${server.key}'s MCP URL` : "the MCP URL";
+    report(
+      pinned.has(mcpOrigin),
+      `${which}'s origin, ${mcpOrigin}, ${pinned.has(mcpOrigin) ? "is" : "isn't"} pinned`,
+    );
+  }
   report(
     findings.authorizationServers.length > 0,
     `found metadata for ${findings.authorizationServers.length} authorization server(s)`,
@@ -552,10 +593,15 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     );
   }
 
+  // Model names must differ across all of the connector's servers.
   const modelNames = new Map<string, string[]>();
-  for (const tool of connector.toolAllowlist) {
-    const name = modelToolName(connector, tool.name);
-    modelNames.set(name, [...(modelNames.get(name) ?? []), tool.name]);
+  let allowlisted = 0;
+  for (const server of connector.servers) {
+    for (const name of server.tools?.keys() ?? []) {
+      allowlisted++;
+      const modelName = modelToolName(connector, server, name);
+      modelNames.set(modelName, [...(modelNames.get(modelName) ?? []), name]);
+    }
   }
   for (const [name, tools] of modelNames) {
     if (tools.length > 1) {
@@ -563,7 +609,7 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     }
   }
   report(
-    modelNames.size === connector.toolAllowlist.length,
+    modelNames.size === allowlisted,
     `every allowlisted tool has its own model name`,
   );
 
@@ -571,28 +617,37 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     report(false, `allowlist not checked: ${findings.noToolsReason}`);
     return failures;
   }
-  const live = new Set(findings.tools.map((tool) => tool.name));
-  const missing = connector.toolAllowlist.filter((tool) => !live.has(tool.name));
-  for (const tool of missing) {
-    report(false, `allowlisted tool ${tool.name} isn't on the server`);
+  for (const server of connector.servers) {
+    const live = new Set(
+      findings.tools.get(server.key)?.map((tool) => tool.name),
+    );
+    const names = [...(server.tools?.keys() ?? [])];
+    const missing = names.filter((name) => !live.has(name));
+    const where =
+      connector.servers.length > 1 ? `${server.key}'s server` : "the server";
+    for (const name of missing) {
+      report(false, `allowlisted tool ${name} isn't on ${where}`);
+    }
+    report(
+      missing.length === 0,
+      `${names.length - missing.length} of ${names.length} allowlisted tools are on ${where}`,
+    );
   }
-  const listed = connector.toolAllowlist.length;
-  report(
-    missing.length === 0,
-    `${listed - missing.length} of ${listed} allowlisted tools are on the server`,
-  );
   const labelSource = connector.accountLabel;
   if (labelSource?.from === "tool") {
-    const entry = connector.toolAllowlist.find(
-      (tool) => tool.name === labelSource.tool,
-    );
+    const found = findAllowlistedTool(connector, labelSource.tool);
     report(
-      entry?.kind === "read",
-      `account label tool ${labelSource.tool} ${entry?.kind === "read" ? "is" : "isn't"} an allowlisted read`,
+      found?.tool.kind === "read",
+      `account label tool ${labelSource.tool} ${found?.tool.kind === "read" ? "is" : "isn't"} an allowlisted read`,
     );
+    const live =
+      found !== undefined &&
+      (findings.tools.get(found.server.key) ?? []).some(
+        (tool) => tool.name === labelSource.tool,
+      );
     report(
-      live.has(labelSource.tool),
-      `account label tool ${labelSource.tool} ${live.has(labelSource.tool) ? "is" : "isn't"} on the server`,
+      live,
+      `account label tool ${labelSource.tool} ${live ? "is" : "isn't"} on the server`,
     );
   }
   return failures;
