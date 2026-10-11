@@ -9,8 +9,8 @@ Use the Playwright MCP tools (`mcp__playwright__browser_*`), which `.mcp.json` r
 
 ## Before you start
 
-- **The app** runs at http://localhost:3000. It has to be port 3000, because Better Auth only trusts that origin. Check it with `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000`. If nothing answers, start `bun dev` in the background and wait until it does.
-- **Convex changes:** the functions come from the Convex dev deployment, not from local files. After changing `convex/`, push first with `bunx convex dev --once`.
+- **The app** runs on the `PORT` in this checkout's `.env.local`, or 3000 in the main checkout. Read it first and use that port everywhere below. Every linked worktree has its own port, deployment and `.env.local`, written by Orca's setup hook (`orca.yaml`, `scripts/worktree-setup.ts`). Other worktrees run on other ports, so never assume 3000, and confirm the page is this branch's. Check it with `curl -s -o /dev/null -w "%{http_code}" http://localhost:<PORT>`. If nothing answers, start `bun dev` in the background and wait until it does. If a worktree has no `.env.local`, run `bun scripts/worktree-setup.ts`.
+- **Convex changes:** the functions come from this worktree's own Convex dev deployment (`CONVEX_DEPLOYMENT` in `.env.local`), so pushing never touches other worktrees. After changing `convex/`, push with `bunx convex dev --once`.
 - **Stale styles:** if classes seem to do nothing, Turbopack is serving stale CSS. Restart `bun dev`.
 
 ## Drive it
