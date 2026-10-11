@@ -140,6 +140,6 @@ async function defersTools(
   if (connectorTools.groups.length === 0) return false;
   if (threadDefers) return true;
   if (connectorTools.estimatedTokens <= TOOL_BUDGET_TOKENS) return false;
-  await ctx.runMutation(internal.chat.deferThreadTools, { threadId });
+  await ctx.runMutation(internal.chat.reply.deferThreadTools, { threadId });
   return true;
 }

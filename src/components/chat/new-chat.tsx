@@ -32,7 +32,7 @@ function caretToEnd(textarea: HTMLTextAreaElement | null) {
  */
 export function NewChat({ prompt }: { prompt?: string }) {
   const router = useRouter();
-  const startThread = useMutation(api.chat.startThread);
+  const startThread = useMutation(api.chat.send.startThread);
   // Creating the thread, then navigating to it: the composer stays off
   // through both, until the thread page takes over.
   const [starting, setStarting] = useState(false);

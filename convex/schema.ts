@@ -28,7 +28,7 @@ export const vClientRegistration = v.object({
 });
 
 export default defineSchema({
-  // One row for each reply the user stopped (stopReply in convex/chat.ts).
+  // One row for each reply the user stopped (stopReply in convex/chat/stop.ts).
   // The Agent gives a prompt and its reply the same `order`, so `order`
   // identifies the turn.
   stoppedReplies: defineTable({
@@ -40,8 +40,8 @@ export default defineSchema({
   }).index("by_threadId_and_order", ["threadId", "order"]),
   // One row for each thread that defers connector tools (ADR 0006). A reply
   // adds it the first time the user's connector tools pass the tool budget
-  // (defersTools in chat.ts), and the thread defers from then on, so its tool
-  // list doesn't flip back and forth.
+  // (defersTools in convex/lib/replyTools.ts), and the thread defers from
+  // then on, so its tool list doesn't flip back and forth.
   deferredToolThreads: defineTable({
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
