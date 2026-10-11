@@ -289,7 +289,7 @@ export const disconnect = action({
   args: { connectorId: vConnectorId },
   returns: vDisconnectResult,
   handler: async (ctx, { connectorId }): Promise<DisconnectResult> => {
-    await requireIdentity(ctx);
+    const userId = await requireUserId(ctx);
     const connector = findConnector(connectorId);
     if (!connector) {
       throw new ConvexError({ code: "NOT_FOUND", message: "Unknown connector." });
@@ -300,22 +300,31 @@ export const disconnect = action({
     );
     // Already disconnected, maybe from another tab. a8 holds no token.
     if (!connection) return { revoked: true };
-    const revoked = await revokeAndDeleteConnection(
-      ctx,
-      connection,
-      connection.connectedAt,
+    const revoked = await revokeAndDeleteConnection(ctx, connection, () =>
+      ctx.runMutation(internal.connectorStore.deleteConnection, {
+        connectionId: connection._id,
+        userId,
+        connectedAt: connection.connectedAt,
+      }),
     );
     return { revoked };
   },
 });
 
-async function requireIdentity(ctx: ActionCtx) {
-  if (!(await ctx.auth.getUserIdentity())) {
+/**
+ * The signed-in user's ID. Throws if no one is signed in. An action can't
+ * read the user with requireUser, but Better Auth sets the identity's
+ * `subject` to the user ID.
+ */
+async function requireUserId(ctx: ActionCtx): Promise<string> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
     throw new ConvexError({
       code: "UNAUTHENTICATED",
       message: "Please sign in to continue.",
     });
   }
+  return identity.subject;
 }
 
 /**
