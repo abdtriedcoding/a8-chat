@@ -104,10 +104,28 @@ export type MessageMetadata = {
 // Each checks the rate limits (limitSend) before it saves anything. A Send
 // over a limit, or with an attachment that's gone, returns the refusal
 // instead of throwing it, because the Convex client logs every thrown error
-// to the browser console.
+// to the browser console. sendMessage also returns a refusal while a reply
+// is running.
 //
-// startThread and sendMessage load their attachments before the rate limits.
-// limitSend counts the Send, so a refusal after it would still be counted.
+// startThread and sendMessage load their attachments before the rate limits,
+// and sendMessage checks for a running reply first. limitSend counts the
+// Send, so a refusal after it would still be counted.
+
+/**
+ * Why a Send was refused: the thread's reply is still running. sendMessage
+ * returns it instead of throwing.
+ */
+const vReplyInProgress = v.object({
+  code: v.literal("REPLY_IN_PROGRESS"),
+  message: v.string(),
+});
+
+export type ReplyInProgress = Infer<typeof vReplyInProgress>;
+
+const REPLY_IN_PROGRESS: ReplyInProgress = {
+  code: "REPLY_IN_PROGRESS",
+  message: "Wait for the reply to finish first.",
+};
 
 export const startThread = mutation({
   args: {
@@ -163,12 +181,23 @@ export const sendMessage = mutation({
     threadId: v.string(),
     timeZone: vTimeZone,
   },
-  returns: v.union(v.null(), vRateLimited, vAttachmentNotFound),
+  returns: v.union(
+    v.null(),
+    vRateLimited,
+    vAttachmentNotFound,
+    vReplyInProgress,
+  ),
   handler: async (
     ctx,
     { prompt, attachmentFileIds = [], threadId, timeZone },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
+    // A second tab, or a direct call, can send while a reply is running. The
+    // new prompt would close the reply's running actions (closeUnrunActions),
+    // and a second runner would stream into the thread next to the first.
+    if (hasPendingReply(await getLastTurn(ctx, threadId))) {
+      return REPLY_IN_PROGRESS;
+    }
     const text = checkPrompt(prompt, attachmentFileIds.length);
     const attachments = await loadPromptAttachments(
       ctx,
@@ -275,16 +304,7 @@ async function redoLastTurn(
       message: "There's no prompt in this chat.",
     });
   }
-  // A pending message means the runner is still writing the reply. A turn
-  // with only its prompt is fine. Its runner hasn't started yet, or it
-  // stopped before saving anything. Without the prompt, it won't call the
-  // model.
-  if (turn.some((message) => message.status === "pending")) {
-    throw new ConvexError({
-      code: "REPLY_IN_PROGRESS",
-      message: "Wait for the reply to finish first.",
-    });
-  }
+  if (hasPendingReply(turn)) throw new ConvexError(REPLY_IN_PROGRESS);
 
   // The Agent also aborts any stream still running at this order.
   await chatAgent.deleteMessages(ctx, {
@@ -521,6 +541,18 @@ async function closeUnrunActions(ctx: MutationCtx, threadId: string) {
       },
     });
   }
+}
+
+/**
+ * Whether the turn's reply is still running. It's true while the turn holds
+ * a pending message, which includes the time the runner spends on actions
+ * the user approved. A turn with only its prompt has no pending message. Its
+ * runner hasn't started yet, or it stopped before saving anything. A reply
+ * paused on action cards has none either, so a new prompt can still cancel
+ * the cards.
+ */
+function hasPendingReply(turn: MessageDoc[]): boolean {
+  return turn.some((message) => message.status === "pending");
 }
 
 /** The approval IDs of the turn's actions that are still waiting on a card. */

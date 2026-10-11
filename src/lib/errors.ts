@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { AttachmentNotFound } from "../../convex/attachments";
+import type { ReplyInProgress } from "../../convex/chat";
 import type { RateLimited } from "../../convex/rateLimits";
 
 const GENERIC_MESSAGE = "Something went wrong. Please try again.";
@@ -40,8 +41,11 @@ export function isUnauthenticated(error: unknown): boolean {
   );
 }
 
-/** Why a Send was refused: a rate limit, or an attachment that's gone. */
-type SendRefused = RateLimited | AttachmentNotFound;
+/**
+ * Why a Send was refused: a rate limit, an attachment that's gone, or a
+ * reply that's still running.
+ */
+type SendRefused = RateLimited | AttachmentNotFound | ReplyInProgress;
 
 /**
  * Returns a Send's result, or throws a ConvexError if the Send was refused.
@@ -59,6 +63,8 @@ function isSendRefused(value: unknown): value is SendRefused {
     typeof value === "object" &&
     value !== null &&
     "code" in value &&
-    (value.code === "RATE_LIMITED" || value.code === "NOT_FOUND")
+    (value.code === "RATE_LIMITED" ||
+      value.code === "NOT_FOUND" ||
+      value.code === "REPLY_IN_PROGRESS")
   );
 }
