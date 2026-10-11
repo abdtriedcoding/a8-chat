@@ -3,13 +3,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
+import type { ConnectorId } from "../../convex/lib/connectorView";
 
 /**
  * Starts signing in to a connector. The browser goes to the vendor's
  * sign-in, and comes back to the Connectors page. `connecting` stays true
  * until the browser leaves, or until the start fails and shows a toast.
  */
-export function useConnectConnector(connectorId: string) {
+export function useConnectConnector(connectorId: ConnectorId) {
   const connect = useAction(api.connectors.connect);
   const [connecting, setConnecting] = useState(false);
 

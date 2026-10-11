@@ -25,7 +25,7 @@ import {
   type ActionCtx,
 } from "./_generated/server";
 import { requireUser } from "./auth";
-import { findConnection, revokeAndDeleteConnection } from "./connectorStore";
+import { revokeAndDeleteConnection } from "./connectorStore";
 import {
   classifyOAuthError,
   ConnectorOAuthProvider,
@@ -37,12 +37,11 @@ import {
 } from "./lib/connectorAuth";
 import type { StoredToolList } from "./lib/connectorToolList";
 import {
-  CONNECT_ERRORS,
   CONNECTORS,
-  connectorHandle,
   findConnector,
-  type ConnectError,
+  vConnectorId,
 } from "./lib/connectors";
+import { CONNECT_ERRORS, type ConnectError } from "./lib/connectorView";
 import {
   encryptOptionalSecret,
   encryptSecret,
@@ -51,13 +50,15 @@ import {
 import { vConnectionStatus } from "./schema";
 import { fetchToolList } from "./toolLists";
 
+/**
+ * How many of a user's connections list reads. A user has at most one per
+ * connector id, but rows of connectors since removed from the catalog
+ * count too.
+ */
+const MAX_LISTED_CONNECTIONS = 100;
+
 const vConnectorStatus = v.object({
-  id: v.string(),
-  name: v.string(),
-  handle: v.string(),
-  logo: v.string(),
-  description: v.string(),
-  examplePrompt: v.string(),
+  id: vConnectorId,
   status: v.union(vConnectionStatus, v.literal("disconnected")),
   accountLabel: v.optional(v.string()),
   connectedAt: v.optional(v.number()),
@@ -80,30 +81,30 @@ const vDisconnectResult = v.object({ revoked: v.boolean() });
 export type DisconnectResult = Infer<typeof vDisconnectResult>;
 
 /**
- * The catalog, with the user's connection status for each connector. Never
- * returns token fields.
+ * The user's connection status for each catalog connector, in catalog
+ * order. The UI takes names and logos from connectorView.ts. Never returns
+ * token fields.
  */
 export const list = query({
   args: {},
   returns: v.array(vConnectorStatus),
   handler: async (ctx) => {
     const user = await requireUser(ctx);
-    return await Promise.all(
-      CONNECTORS.map(async (connector): Promise<ConnectorStatus> => {
-        const connection = await findConnection(ctx, user._id, connector.id);
-        return {
-          id: connector.id,
-          name: connector.name,
-          handle: connectorHandle(connector),
-          logo: connector.logo,
-          description: connector.description,
-          examplePrompt: connector.examplePrompt,
-          status: connection?.status ?? "disconnected",
-          accountLabel: connection?.accountLabel,
-          connectedAt: connection?.connectedAt,
-        };
-      }),
-    );
+    const connections = await ctx.db
+      .query("connections")
+      .withIndex("by_userId_and_connectorId", (q) => q.eq("userId", user._id))
+      .take(MAX_LISTED_CONNECTIONS);
+    return CONNECTORS.map((connector): ConnectorStatus => {
+      const connection = connections.find(
+        (row) => row.connectorId === connector.id,
+      );
+      return {
+        id: connector.id,
+        status: connection?.status ?? "disconnected",
+        accountLabel: connection?.accountLabel,
+        connectedAt: connection?.connectedAt,
+      };
+    });
   },
 });
 
@@ -112,7 +113,7 @@ export const list = query({
  * the browser to go to.
  */
 export const connect = action({
-  args: { connectorId: v.string() },
+  args: { connectorId: vConnectorId },
   returns: v.string(),
   handler: async (ctx, { connectorId }): Promise<string> => {
     // Checks the session and the rate limit before any outbound fetch, since
@@ -284,7 +285,7 @@ export const finishConnect = action({
  * vendor may still accept the token until it expires.
  */
 export const disconnect = action({
-  args: { connectorId: v.string() },
+  args: { connectorId: vConnectorId },
   returns: vDisconnectResult,
   handler: async (ctx, { connectorId }): Promise<DisconnectResult> => {
     await requireIdentity(ctx);

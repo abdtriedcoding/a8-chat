@@ -9,13 +9,13 @@ import type { ThreadMessage } from "@/lib/stopped-turns";
 import {
   findConnectorTool,
   isReconnectError,
-  type Connector,
-} from "../../../convex/lib/connectors";
+  type ConnectorView,
+} from "../../../convex/lib/connectorView";
 
 /** A reply's call to a connector tool (convex/lib/connectorTools.ts). */
 export type ConnectorToolCall = {
   id: string;
-  connector: Connector;
+  connector: ConnectorView;
   label: string;
   state: string;
   // Partial while the model is still writing it.

@@ -5,7 +5,8 @@
 // Convex's 1 MB document limit.
 
 import type { ListToolsResult } from "@ai-sdk/mcp";
-import { modelToolName, type Connector } from "./connectors";
+import type { Connector } from "./connectors";
+import { modelToolName } from "./connectorView";
 import { estimateToolTokens } from "./toolLoading";
 
 export type McpTool = ListToolsResult["tools"][number];

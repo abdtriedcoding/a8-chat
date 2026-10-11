@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import { CONNECTORS, connectorHandle, type Connector } from "./connectors";
+import { CONNECTOR_VIEWS, type ConnectorView } from "./connectorView";
 import { TOOL_SEARCH_KEY, type ToolLoading } from "./toolLoading";
 
 const INSTRUCTIONS =
@@ -83,7 +83,7 @@ export function replyInstructions({
   now: Date;
   canSearchWeb: boolean;
   connections: ConnectionSummary[];
-  mentioned: Connector[];
+  mentioned: ConnectorView[];
   loading: ToolLoading;
 }): string {
   return [
@@ -108,13 +108,13 @@ export function replyInstructions({
  * isn't connected, but its status can change before the reply runs.
  */
 function mentionInstruction(
-  connector: Connector,
+  connector: ConnectorView,
   connections: ConnectionSummary[],
 ): string {
   const status = connections.find(
     (row) => row.connectorId === connector.id,
   )?.status;
-  const mention = `The user mentioned @${connectorHandle(connector)} in their prompt`;
+  const mention = `The user mentioned @${connector.handle} in their prompt`;
   if (status === "connected") {
     return `${mention}, so answer it with ${connector.name}'s tools. Use them before web search or your own knowledge.`;
   }
@@ -126,7 +126,7 @@ function mentionInstruction(
  * Notion (Acme workspace). Needs reconnect: none. Not connected: none."
  */
 function connectorStatusLine(connections: ConnectionSummary[]): string {
-  const states = CONNECTORS.map((connector) => {
+  const states = CONNECTOR_VIEWS.map((connector) => {
     const connection = connections.find(
       (row) => row.connectorId === connector.id,
     );

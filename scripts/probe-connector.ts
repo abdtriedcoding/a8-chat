@@ -24,11 +24,8 @@ import {
   fetchMetadata,
   protectedResourceMetadataUrls,
 } from "../convex/lib/connectorAuth";
-import {
-  findConnector,
-  modelToolName,
-  type Connector,
-} from "../convex/lib/connectors";
+import { findConnector, type Connector } from "../convex/lib/connectors";
+import { modelToolName } from "../convex/lib/connectorView";
 
 /** How long each request to the vendor can take. */
 const TIMEOUT_MS = 15_000;

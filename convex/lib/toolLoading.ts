@@ -5,7 +5,8 @@
 // tool search.
 
 import type { ModelMessage, StepResult, Tool, ToolSet } from "ai";
-import { findConnectorTool, type Connector } from "./connectors";
+import type { Connector } from "./connectors";
+import { findConnectorTool, type ConnectorView } from "./connectorView";
 
 /**
  * About how many tokens of connector tool definitions a reply loads. Above
@@ -70,12 +71,12 @@ export function arrangeReplyTools({
 }: {
   nativeTools: ToolSet;
   groups: ConnectorToolGroup[];
-  mentioned: Connector[];
+  mentioned: ConnectorView[];
   deferred: boolean;
   toolSearch: Tool;
 }): { tools: ToolSet; loading: ToolLoading } {
   const isMentioned = (group: ConnectorToolGroup) =>
-    mentioned.includes(group.connector);
+    mentioned.some(({ id }) => id === group.connector.id);
   const mentionedGroups = groups.filter(isMentioned);
   const otherGroups = groups.filter((group) => !isMentioned(group));
   const toolsOf = (list: ConnectorToolGroup[]): ToolSet =>

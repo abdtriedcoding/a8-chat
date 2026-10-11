@@ -7,7 +7,7 @@ import {
 import {
   CONNECT_ERRORS,
   type ConnectError,
-} from "../../../../convex/lib/connectors";
+} from "../../../../convex/lib/connectorView";
 
 export const metadata: Metadata = { title: "Connectors" };
 
