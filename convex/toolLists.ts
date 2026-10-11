@@ -149,18 +149,29 @@ export const refreshToolList = internalAction({
     }
     await ctx.runMutation(internal.toolLists.saveToolList, {
       connectionId,
+      connectedAt: connection.connectedAt,
       toolList,
     });
     return null;
   },
 });
 
-/** Stores a new tool list for the connection, if it still exists. */
+/**
+ * Stores a new tool list for the connection, if it still exists and wasn't
+ * replaced since `connectedAt`. A reconnect keeps the row's ID but stores
+ * its own list, which an older refresh mustn't overwrite. A token refresh
+ * keeps `connectedAt`, so it doesn't stop the write.
+ */
 export const saveToolList = internalMutation({
-  args: { connectionId: v.id("connections"), toolList: vStoredToolList },
+  args: {
+    connectionId: v.id("connections"),
+    connectedAt: v.number(),
+    toolList: vStoredToolList,
+  },
   returns: v.null(),
-  handler: async (ctx, { connectionId, toolList }) => {
-    if (!(await ctx.db.get("connections", connectionId))) return null;
+  handler: async (ctx, { connectionId, connectedAt, toolList }) => {
+    const connection = await ctx.db.get("connections", connectionId);
+    if (connection?.connectedAt !== connectedAt) return null;
     await writeToolList(ctx, connectionId, toolList);
     return null;
   },
