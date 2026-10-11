@@ -34,9 +34,6 @@ export default defineSchema({
   stoppedReplies: defineTable({
     threadId: v.string(),
     order: v.number(),
-    // False if the user pressed Stop before seeing any of the reply. The
-    // reply is then hidden, even if some of its text had been saved.
-    keepText: v.boolean(),
   }).index("by_threadId_and_order", ["threadId", "order"]),
   // One row for each thread that defers connector tools (ADR 0006). A reply
   // adds it the first time the user's connector tools pass the tool budget

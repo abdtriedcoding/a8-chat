@@ -58,6 +58,12 @@ export const streamReply = internalAction({
   ) => {
     const startedAt = Date.now();
     let replyTools: ReplyTools | undefined;
+    // Set when the reply's stream is aborted, which is how Stop reaches the
+    // runner (stopReply). The Agent then saves the partial reply as failed
+    // and returns without an error. A Stop that lands after the model's last
+    // word, while the Agent saves the final text, fails the reply without
+    // this. That reply keeps its text on screen, but the model doesn't see it.
+    let aborted = false;
     try {
       // Null if the user pressed Stop first, a regenerate or an edit
       // replaced this turn, or a new prompt came after the action cards
@@ -110,6 +116,9 @@ export const streamReply = internalAction({
               : {},
           onStepFinish: (step) => log.addStep(step),
           onToolExecutionEnd: (event) => log.addToolRun(event),
+          onAbort: () => {
+            aborted = true;
+          },
         },
         {
           // more custom delta options (`true` uses defaults)
@@ -140,13 +149,13 @@ export const streamReply = internalAction({
       throw error;
     } finally {
       await replyTools?.close();
-      // Runs even if the model call failed. Does nothing unless the user
-      // stopped this reply.
-      await ctx.runMutation(internal.chat.stop.settleStop, {
-        threadId,
-        promptMessageId,
-        order,
-      });
+      if (aborted) {
+        await ctx.runMutation(internal.chat.stop.settleStop, {
+          threadId,
+          promptMessageId,
+          order,
+        });
+      }
     }
   },
 });

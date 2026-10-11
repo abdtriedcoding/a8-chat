@@ -132,7 +132,7 @@ export function MessageList({
                     <AssistantMessage
                       key={replyKey}
                       message={message}
-                      stopped={stopped.get(message.order)}
+                      stopped={stopped.has(message.order)}
                       continuing={
                         i === messages.length - 1 &&
                         replyStatus === "continuing"
