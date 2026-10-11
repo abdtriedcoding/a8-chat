@@ -295,6 +295,9 @@ class UntrustedOriginError extends Error {
   }
 }
 
+/** How long opening an MCP client, including its initialize request, can take. */
+const OPEN_CLIENT_TIMEOUT_MS = 15_000;
+
 /**
  * An MCP client for one of the connector's servers, sending `accessToken`.
  * It only reaches the pinned origins. Close it when done.
@@ -310,6 +313,11 @@ export async function openMcpClient(
       url: server.url,
       headers: { Authorization: `Bearer ${accessToken}` },
       fetch: pinnedFetch(connector),
+    },
+    // A signal, not `timeout`, so the SDK's error keeps the signal's
+    // TimeoutError as its cause. isVendorUnreachable checks for that.
+    initializationOptions: {
+      signal: AbortSignal.timeout(OPEN_CLIENT_TIMEOUT_MS),
     },
   });
 }
