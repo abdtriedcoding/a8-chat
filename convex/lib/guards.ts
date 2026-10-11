@@ -6,17 +6,14 @@
  * Only this module and getCurrentUser (convex/auth.ts) read the session.
  */
 import { getThreadMetadata } from "@convex-dev/agent";
-import { ConvexError } from "convex/values";
+import { appError, ERROR_CODES } from "./errors";
 import { components } from "../_generated/api";
 import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import { authComponent } from "../auth";
 
 /** The error every signed-out mutation and action throws. */
 export function unauthenticated() {
-  return new ConvexError({
-    code: "UNAUTHENTICATED",
-    message: "Please sign in to continue.",
-  });
+  return appError(ERROR_CODES.UNAUTHENTICATED, "Please sign in to continue.");
 }
 
 /** The signed-in user. Throws when signed out. For mutations. */
@@ -58,7 +55,7 @@ export async function authorizeThreadAccess(
 ) {
   const user = await requireUser(ctx);
   if (!(await findOwnThread(ctx, user._id, threadId))) {
-    throw new ConvexError({ code: "NOT_FOUND", message: "Chat not found." });
+    throw appError(ERROR_CODES.NOT_FOUND, "Chat not found.");
   }
   return user;
 }

@@ -1,4 +1,4 @@
-import { ConvexError } from "convex/values";
+import { appError, ERROR_CODES } from "./errors";
 
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_TITLE_LENGTH = 60;
@@ -12,16 +12,13 @@ const MAX_RENAME_LENGTH = 80;
 export function checkPrompt(prompt: string, attachmentCount: number): string {
   const text = prompt.trim();
   if (!text && attachmentCount === 0) {
-    throw new ConvexError({
-      code: "INVALID_PROMPT",
-      message: "Type a message first.",
-    });
+    throw appError(ERROR_CODES.INVALID_PROMPT, "Type a message first.");
   }
   if (text.length > MAX_PROMPT_LENGTH) {
-    throw new ConvexError({
-      code: "INVALID_PROMPT",
-      message: `Messages can be at most ${MAX_PROMPT_LENGTH.toLocaleString("en-US")} characters.`,
-    });
+    throw appError(
+      ERROR_CODES.INVALID_PROMPT,
+      `Messages can be at most ${MAX_PROMPT_LENGTH.toLocaleString("en-US")} characters.`,
+    );
   }
   return text;
 }
@@ -33,17 +30,14 @@ export function checkPrompt(prompt: string, attachmentCount: number): string {
 export function checkTitle(title: string): string {
   const text = title.replace(/\s+/g, " ").trim();
   if (!text) {
-    throw new ConvexError({
-      code: "INVALID_TITLE",
-      message: "Type a title first.",
-    });
+    throw appError(ERROR_CODES.INVALID_TITLE, "Type a title first.");
   }
   // Count code points, like titleFromPrompt.
   if (Array.from(text).length > MAX_RENAME_LENGTH) {
-    throw new ConvexError({
-      code: "INVALID_TITLE",
-      message: `Titles can be at most ${MAX_RENAME_LENGTH} characters.`,
-    });
+    throw appError(
+      ERROR_CODES.INVALID_TITLE,
+      `Titles can be at most ${MAX_RENAME_LENGTH} characters.`,
+    );
   }
   return text;
 }

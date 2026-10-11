@@ -16,7 +16,8 @@ import {
 } from "@convex-dev/agent";
 import type { FilePart, ImagePart, ModelMessage } from "ai";
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v, type Infer } from "convex/values";
+import { v, type Infer } from "convex/values";
+import { appError, ERROR_CODES } from "./lib/errors";
 import { components, internal } from "./_generated/api";
 import {
   internalAction,
@@ -122,14 +123,14 @@ export type MessageMetadata = {
  * returns it instead of throwing.
  */
 const vReplyInProgress = v.object({
-  code: v.literal("REPLY_IN_PROGRESS"),
+  code: v.literal(ERROR_CODES.REPLY_IN_PROGRESS),
   message: v.string(),
 });
 
 export type ReplyInProgress = Infer<typeof vReplyInProgress>;
 
 const REPLY_IN_PROGRESS: ReplyInProgress = {
-  code: "REPLY_IN_PROGRESS",
+  code: ERROR_CODES.REPLY_IN_PROGRESS,
   message: "Wait for the reply to finish first.",
 };
 
@@ -305,12 +306,11 @@ async function redoLastTurn(
   const order = turn[0]?.order;
   const prompt = turn.find((message) => message.message?.role === "user");
   if (order === undefined || prompt?.message?.role !== "user") {
-    throw new ConvexError({
-      code: "NO_PROMPT",
-      message: "There's no prompt in this chat.",
-    });
+    throw appError(ERROR_CODES.NO_PROMPT, "There's no prompt in this chat.");
   }
-  if (hasPendingReply(turn)) throw new ConvexError(REPLY_IN_PROGRESS);
+  if (hasPendingReply(turn)) {
+    throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS.message);
+  }
 
   // The Agent also aborts any stream still running at this order.
   await chatAgent.deleteMessages(ctx, {
@@ -443,10 +443,10 @@ export const decideAction = mutation({
       !waiting.includes(approvalId) ||
       (await getStoppedReply(ctx, threadId, order))
     ) {
-      throw new ConvexError({
-        code: "ACTION_NOT_WAITING",
-        message: "This action was already approved or cancelled.",
-      });
+      throw appError(
+        ERROR_CODES.ACTION_NOT_WAITING,
+        "This action was already approved or cancelled.",
+      );
     }
     const { messageId } = approve
       ? await chatAgent.approveToolCall(ctx, { threadId, approvalId })

@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import { appError, ERROR_CODES, type AppErrorData } from "./errors";
 import { env } from "../_generated/server";
 
 // a8 encrypts connection secrets (tokens, client secrets) with AES-GCM under
@@ -32,11 +33,10 @@ export async function getEncryptionKey(): Promise<EncryptionKey> {
     bytes = undefined;
   }
   if (bytes?.length !== 32) {
-    throw new ConvexError({
-      code: "MISCONFIGURED",
-      message:
-        "Connectors need CONNECTION_ENCRYPTION_KEY, a base64-encoded 32-byte key. Ask whoever runs this a8 to set it.",
-    });
+    throw appError(
+      ERROR_CODES.MISCONFIGURED,
+      "Connectors need CONNECTION_ENCRYPTION_KEY, a base64-encoded 32-byte key. Ask whoever runs this a8 to set it.",
+    );
   }
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return {
@@ -51,8 +51,11 @@ export async function getEncryptionKey(): Promise<EncryptionKey> {
 /** True for the ConvexError a8 throws when the deployment is set up wrong. */
 export function isMisconfigured(
   error: unknown,
-): error is ConvexError<{ code: "MISCONFIGURED"; message: string }> {
-  return error instanceof ConvexError && error.data?.code === "MISCONFIGURED";
+): error is ConvexError<AppErrorData<typeof ERROR_CODES.MISCONFIGURED>> {
+  return (
+    error instanceof ConvexError &&
+    error.data?.code === ERROR_CODES.MISCONFIGURED
+  );
 }
 
 export async function encryptSecret(
@@ -96,11 +99,10 @@ export async function decryptSecret(
   let ciphertext: string | undefined;
   if (parts[0] === VERSION && parts.length === 4) {
     if (parts[1] !== key.id) {
-      throw new ConvexError({
-        code: "MISCONFIGURED",
-        message:
-          "CONNECTION_ENCRYPTION_KEY isn't the key a8 encrypted the connector tokens with. Ask whoever runs this a8 to put the old key back.",
-      });
+      throw appError(
+        ERROR_CODES.MISCONFIGURED,
+        "CONNECTION_ENCRYPTION_KEY isn't the key a8 encrypted the connector tokens with. Ask whoever runs this a8 to put the old key back.",
+      );
     }
     [, , iv, ciphertext] = parts;
   } else if (parts[0] === LEGACY_VERSION && parts.length === 3) {

@@ -1,6 +1,7 @@
 // See the docs at https://docs.convex.dev/agents/files
 import type { FilePart, ImagePart } from "ai";
-import { ConvexError, v, type Infer } from "convex/values";
+import { v, type Infer } from "convex/values";
+import { appError, ERROR_CODES } from "./lib/errors";
 import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -35,7 +36,7 @@ const vRegisteredUpload = v.object({ fileId: v.string(), fileUrl: v.string() });
 
 /** Why registerUpload refused a file. It returns this instead of throwing. */
 const vUploadRejected = v.object({
-  code: v.literal("INVALID_ATTACHMENT"),
+  code: v.literal(ERROR_CODES.INVALID_ATTACHMENT),
   message: v.string(),
 });
 
@@ -45,7 +46,7 @@ const vUploadRejected = v.object({
  * throwing, like a rate limit.
  */
 export const vAttachmentNotFound = v.object({
-  code: v.literal("NOT_FOUND"),
+  code: v.literal(ERROR_CODES.NOT_FOUND),
   message: v.string(),
 });
 
@@ -80,10 +81,10 @@ export const generateUploadUrl = mutation({
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     if (!(await limitUploadUrl(ctx, user._id))) {
-      throw new ConvexError({
-        code: "RATE_LIMITED",
-        message: "Too many uploads. Try again later.",
-      });
+      throw appError(
+        ERROR_CODES.RATE_LIMITED,
+        "Too many uploads. Try again later.",
+      );
     }
     await ctx.db.insert("uploadGrants", { userId: user._id });
     return await ctx.storage.generateUploadUrl();
@@ -113,12 +114,12 @@ export const claimUpload = internalMutation({
     const user = await requireUser(ctx);
     if (!(await limitUploadRegistration(ctx, user._id))) {
       return {
-        code: "INVALID_ATTACHMENT",
+        code: ERROR_CODES.INVALID_ATTACHMENT,
         message: "Too many uploads. Try again later.",
       };
     }
     const notFound: UploadRejected = {
-      code: "INVALID_ATTACHMENT",
+      code: ERROR_CODES.INVALID_ATTACHMENT,
       message: "Upload not found.",
     };
     const storedFile = await ctx.db.system.get("_storage", storageId);
@@ -180,10 +181,7 @@ export const registerUpload = action({
       { storageId },
     );
     if (!storageMetadata) {
-      throw new ConvexError({
-        code: "NOT_FOUND",
-        message: "Upload not found.",
-      });
+      throw appError(ERROR_CODES.NOT_FOUND, "Upload not found.");
     }
     const safeFilename = cleanFilename(filename);
     const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
@@ -242,7 +240,7 @@ async function rejectUpload(
   rejectionReason: string,
 ): Promise<UploadRejected> {
   await ctx.storage.delete(storageId);
-  return { code: "INVALID_ATTACHMENT", message: rejectionReason };
+  return { code: ERROR_CODES.INVALID_ATTACHMENT, message: rejectionReason };
 }
 
 export const getStorageMetadata = internalQuery({
@@ -309,10 +307,7 @@ export const saveUpload = internalMutation({
     }
     const fileUrl = await ctx.storage.getUrl(savedStorageId);
     if (!fileUrl) {
-      throw new ConvexError({
-        code: "NOT_FOUND",
-        message: "Upload not found.",
-      });
+      throw appError(ERROR_CODES.NOT_FOUND, "Upload not found.");
     }
     return { fileId: agentFile.fileId, fileUrl };
   },
@@ -684,10 +679,10 @@ export async function loadPromptAttachments(
 
       const mediaType = agentFile.mediaType ?? "";
       if (!acceptedMediaTypes.includes(mediaType)) {
-        throw new ConvexError({
-          code: "UNSUPPORTED_ATTACHMENT",
-          message: "This model can't read this kind of file.",
-        });
+        throw appError(
+          ERROR_CODES.UNSUPPORTED_ATTACHMENT,
+          "This model can't read this kind of file.",
+        );
       }
       const filename = agentFile.filename ?? UNNAMED_FILE;
       // Keep these parts URLs. The Agent stores inline bytes over 64 KB as
@@ -705,7 +700,7 @@ export async function loadPromptAttachments(
   );
   if (attachments.length < loadedAttachments.length) {
     const notFound: AttachmentNotFound = {
-      code: "NOT_FOUND",
+      code: ERROR_CODES.NOT_FOUND,
       message: "Attachment not found. Attach it again.",
     };
     return notFound;

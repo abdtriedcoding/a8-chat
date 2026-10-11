@@ -8,6 +8,8 @@
 // server keys and its tool kinds by these tool names, so a connector,
 // server or tool missing from either file fails the typecheck.
 
+import { ERROR_CODES } from "./errors";
+
 /**
  * One line under a card's description about what the user's own account
  * needs first, like a paid plan, an admin step or a region. `link` goes to
@@ -323,7 +325,7 @@ export type ConnectError = (typeof CONNECT_ERRORS)[number];
  * reconnecting. The reply shows a Reconnect chip for a call that failed with
  * it. Saved replies hold it, so never change it.
  */
-export const RECONNECT_ERROR_CODE = "NEEDS_RECONNECT";
+export const RECONNECT_ERROR_CODE = ERROR_CODES.NEEDS_RECONNECT;
 
 /** Whether a tool call's error text is a ReconnectError's. */
 export function isReconnectError(errorText: string | undefined): boolean {
