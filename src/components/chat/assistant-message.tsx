@@ -12,7 +12,7 @@ import {
   MessageFooter,
 } from "@/components/ui/message";
 import { replyText } from "@/lib/reply-text";
-import type { Stop, ThreadMessage } from "@/lib/stopped-turns";
+import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCard } from "./action-card";
 import {
   connectorToolCalls,
@@ -40,8 +40,8 @@ export function AssistantMessage({
   onRegenerate,
 }: {
   message: ThreadMessage;
-  /** Set if the user stopped this reply. */
-  stopped?: Stop;
+  /** Whether the user stopped this reply. */
+  stopped?: boolean;
   /**
    * Whether the user has decided on the reply's action cards, and the reply
    * hasn't picked up again yet.
@@ -65,9 +65,8 @@ export function AssistantMessage({
         continuing)) ||
     isStreaming;
 
-  // If the user stopped before seeing any text, or the reply has none, show
-  // only "Stopped".
-  if (stopped && (!stopped.keepText || !text)) {
+  // A stopped reply with no text shows only "Stopped".
+  if (stopped && !text) {
     return <StoppedMarker onRegenerate={onRegenerate} />;
   }
 
