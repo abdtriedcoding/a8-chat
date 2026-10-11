@@ -5,11 +5,7 @@
 // mustn't pass Convex's 1 MB document limit.
 
 import type { ListToolsResult } from "@ai-sdk/mcp";
-import {
-  signInServer,
-  type Connector,
-  type ConnectorServer,
-} from "./connectors";
+import type { Connector, ConnectorServer } from "./connectors";
 import { modelToolName } from "./connectorView";
 import { estimateToolTokens } from "./toolLoading";
 
@@ -112,13 +108,10 @@ export function readStoredTools(
   const servers = new Map(
     connector.servers.map((server) => [server.key, server]),
   );
-  return (JSON.parse(tools) as Partial<StoredTool>[]).flatMap(
+  return (JSON.parse(tools) as StoredTool[]).flatMap(
     ({ server: key, ...tool }) => {
-      // Lists stored before tools named their server have no key, and all
-      // came from the connector's only server. migrateToolListServers adds
-      // the key.
-      const server = servers.get(key ?? signInServer(connector).key);
-      return server ? [{ server, tool: tool as McpTool }] : [];
+      const server = servers.get(key);
+      return server ? [{ server, tool }] : [];
     },
   );
 }

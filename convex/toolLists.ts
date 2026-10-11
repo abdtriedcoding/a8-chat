@@ -18,15 +18,10 @@ import { withMcpClients, type ServerClient } from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
-  type StoredTool,
   type StoredToolList,
 } from "./lib/connectorToolList";
 import { connectionAccessToken } from "./lib/connectionTokens";
-import {
-  findConnector,
-  signInServer,
-  type Connector,
-} from "./lib/connectors";
+import { findConnector, type Connector } from "./lib/connectors";
 import schema from "./schema";
 
 /**
@@ -188,54 +183,6 @@ export async function deleteToolList(
   const toolList = await findToolList(ctx, connectionId);
   if (toolList) await ctx.db.delete("connectionToolLists", toolList._id);
 }
-
-/** How many tool lists one migrateToolListServers step reads. */
-const MIGRATION_BATCH_SIZE = 10;
-
-/**
- * Adds the key of the server that listed each tool to tool lists stored
- * before tools named their server. Every connector had one server then, so
- * each tool gets its connector's first server's key. A list whose
- * connection or connector is gone stays as it is. Schedules itself for the
- * next page and logs "Tool list server migration done." at the end. Run
- * once with `bunx convex run toolLists:migrateToolListServers`.
- */
-export const migrateToolListServers = internalMutation({
-  args: { cursor: v.optional(v.union(v.string(), v.null())) },
-  returns: v.null(),
-  handler: async (ctx, { cursor = null }) => {
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("connectionToolLists")
-      .paginate({ numItems: MIGRATION_BATCH_SIZE, cursor });
-    let updated = 0;
-    for (const toolList of page) {
-      const tools = JSON.parse(toolList.tools) as Partial<StoredTool>[];
-      if (tools.every((tool) => tool.server !== undefined)) continue;
-      const connection = await ctx.db.get(
-        "connections",
-        toolList.connectionId,
-      );
-      const connector = connection && findConnector(connection.connectorId);
-      if (!connector) continue;
-      const key = signInServer(connector).key;
-      await ctx.db.patch("connectionToolLists", toolList._id, {
-        tools: JSON.stringify(tools.map((tool) => ({ server: key, ...tool }))),
-      });
-      updated++;
-    }
-    console.log(`Added server keys to ${updated} of ${page.length} tool lists.`);
-    if (isDone) {
-      console.log("Tool list server migration done.");
-    } else {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.toolLists.migrateToolListServers,
-        { cursor: continueCursor },
-      );
-    }
-    return null;
-  },
-});
 
 async function findToolList(ctx: QueryCtx, connectionId: Id<"connections">) {
   return await ctx.db
