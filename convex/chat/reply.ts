@@ -25,7 +25,7 @@ import { createReplyTools, type ReplyTools } from "../lib/replyTools";
 import { canSearchWeb } from "../lib/searchWeb";
 import schema from "../schema";
 import { getStoppedReply } from "./stop";
-import { listTurnUpTo } from "./turns";
+import { getContinuedTurn, listTurnUpTo } from "./turns";
 
 /** The error saved on a reply that failed before the model call. */
 const REPLY_START_FAILED = "The reply failed before the model call";
@@ -49,12 +49,21 @@ export const streamReply = internalAction({
     // The prompt's order. The reply gets the same one.
     order: v.number(),
     timeZone: v.string(),
+    // Whether the reply continues after action cards.
+    continuing: v.optional(v.boolean()),
     // The steps the reply took before it paused on action cards.
     stepsTaken: v.optional(v.number()),
   },
   handler: async (
     ctx,
-    { promptMessageId, threadId, order, timeZone, stepsTaken = 0 },
+    {
+      promptMessageId,
+      threadId,
+      order,
+      timeZone,
+      continuing = false,
+      stepsTaken = 0,
+    },
   ) => {
     const startedAt = Date.now();
     let replyTools: ReplyTools | undefined;
@@ -70,7 +79,7 @@ export const streamReply = internalAction({
       // this reply continues from.
       const start: ReplyStart = await ctx.runQuery(
         internal.chat.reply.getReplyStart,
-        { threadId, promptMessageId, order, continuing: stepsTaken > 0 },
+        { threadId, promptMessageId, order, continuing },
       );
       if (!start) return;
       replyTools = await createReplyTools(ctx, {
@@ -202,26 +211,23 @@ export const getReplyStart = internalQuery({
   },
   returns: vReplyStart,
   handler: async (ctx, { threadId, promptMessageId, order, continuing }) => {
-    const turn = await listTurnUpTo(ctx, { threadId, promptMessageId, order });
+    const turn = continuing
+      ? await getContinuedTurn(ctx, { threadId, promptMessageId, order })
+      : await listTurnUpTo(ctx, { threadId, promptMessageId, order });
     if (!turn) return null;
-    if (continuing) {
-      const { page } = await listMessages(ctx, components.agent, {
-        threadId,
-        paginationOpts: { numItems: 1, cursor: null },
-      });
-      if (page[0]?.order !== order) return null;
-    }
-    if (await getStoppedReply(ctx, threadId, order)) return null;
+    const [stopped, thread, deferredToolThread] = await Promise.all([
+      getStoppedReply(ctx, threadId, order),
+      getThreadMetadata(ctx, components.agent, { threadId }).catch(() => null),
+      findDeferredToolThread(ctx, threadId),
+    ]);
+    if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
-    const thread = await getThreadMetadata(ctx, components.agent, {
-      threadId,
-    }).catch(() => null);
     const userId = thread?.userId;
     const connections = userId ? await readUserConnections(ctx, userId) : [];
     return {
       promptText: prompt?.text ?? "",
       connections,
-      threadDefersTools: (await findDeferredToolThread(ctx, threadId)) !== null,
+      threadDefersTools: deferredToolThread !== null,
     };
   },
 });

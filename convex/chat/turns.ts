@@ -67,6 +67,28 @@ export async function listTurnUpTo(
   return page.filter((message) => message.order === order);
 }
 
+/**
+ * The turn a reply continues after action cards, newest message first. One
+ * read of the thread's last turn checks that the turn is still the newest,
+ * and that it still holds `promptMessageId`, the user's decisions.
+ *
+ * Null once the user has sent a new prompt, since this turn isn't the newest
+ * then. Also null once a regenerate or an edit has deleted the decisions.
+ */
+export async function getContinuedTurn(
+  ctx: QueryCtx,
+  {
+    threadId,
+    promptMessageId,
+    order,
+  }: { threadId: string; promptMessageId: string; order: number },
+): Promise<MessageDoc[] | null> {
+  const turn = await getLastTurn(ctx, threadId);
+  if (turn[0]?.order !== order) return null;
+  if (!turn.some((message) => message._id === promptMessageId)) return null;
+  return turn;
+}
+
 /** False once a regenerate or an edit has deleted the prompt. */
 async function promptExists(ctx: QueryCtx, promptMessageId: string) {
   const [prompt] = await ctx.runQuery(
