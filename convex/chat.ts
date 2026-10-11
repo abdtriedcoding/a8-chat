@@ -35,7 +35,6 @@ import {
   toolSearch,
 } from "./agents/chat";
 import { loadPromptAttachments, vAttachmentNotFound } from "./attachments";
-import { requireUser } from "./auth";
 import { readUserConnections } from "./connectorStore";
 import { replyInstructions } from "./lib/instructions";
 import { checkPrompt, titleFromPrompt } from "./lib/prompt";
@@ -45,7 +44,11 @@ import { canSearchWeb } from "./lib/searchWeb";
 import { resolveTimeZone } from "./lib/timeZone";
 import { limitSend, vRateLimited } from "./rateLimits";
 import schema from "./schema";
-import { authorizeThreadAccess, getOwnThread } from "./threads";
+import {
+  authorizeThreadAccess,
+  getOwnThread,
+  requireUser,
+} from "./lib/guards";
 
 // The browser's time zone, unchecked. Each Send checks it (resolveTimeZone).
 const vTimeZone = v.optional(v.string());

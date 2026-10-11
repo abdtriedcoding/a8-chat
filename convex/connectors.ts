@@ -22,9 +22,8 @@ import {
   env,
   httpAction,
   query,
-  type ActionCtx,
 } from "./_generated/server";
-import { authComponent } from "./auth";
+import { optionalUser, requireIdentity } from "./lib/guards";
 import {
   readUserConnections,
   revokeAndDeleteConnection,
@@ -89,7 +88,7 @@ export const list = query({
   args: {},
   returns: v.array(vConnectorStatus),
   handler: async (ctx) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
+    const user = await optionalUser(ctx);
     const connections = user ? await readUserConnections(ctx, user._id) : [];
     return CONNECTORS.map((connector): ConnectorStatus => {
       const connection = connections.find(
@@ -289,7 +288,7 @@ export const disconnect = action({
   args: { connectorId: vConnectorId },
   returns: vDisconnectResult,
   handler: async (ctx, { connectorId }): Promise<DisconnectResult> => {
-    const userId = await requireUserId(ctx);
+    const userId = await requireIdentity(ctx);
     const connector = findConnector(connectorId);
     if (!connector) {
       throw new ConvexError({ code: "NOT_FOUND", message: "Unknown connector." });
@@ -310,22 +309,6 @@ export const disconnect = action({
     return { revoked };
   },
 });
-
-/**
- * The signed-in user's ID. Throws if no one is signed in. An action can't
- * read the user with requireUser, but Better Auth sets the identity's
- * `subject` to the user ID.
- */
-async function requireUserId(ctx: ActionCtx): Promise<string> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new ConvexError({
-      code: "UNAUTHENTICATED",
-      message: "Please sign in to continue.",
-    });
-  }
-  return identity.subject;
-}
 
 /**
  * Why finishing a sign-in failed: this deployment or the catalog entry is

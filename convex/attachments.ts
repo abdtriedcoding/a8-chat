@@ -13,7 +13,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { chatModel } from "./agents/chat";
-import { requireUser } from "./auth";
+import { requireIdentity, requireUser } from "./lib/guards";
 import { limitUploadRegistration, limitUploadUrl } from "./rateLimits";
 import {
   checkAttachmentCount,
@@ -169,12 +169,7 @@ export const registerUpload = action({
     ctx,
     { storageId, filename },
   ): Promise<RegisteredUpload | UploadRejected> => {
-    if (!(await ctx.auth.getUserIdentity())) {
-      throw new ConvexError({
-        code: "UNAUTHENTICATED",
-        message: "Please sign in to continue.",
-      });
-    }
+    await requireIdentity(ctx);
     // Nothing below deletes a file until the user has claimed it.
     const refusal = await ctx.runMutation(internal.attachments.claimUpload, {
       storageId,
