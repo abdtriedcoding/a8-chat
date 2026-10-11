@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0009
+---
+
 # Every connection's tools load on every reply, and a mention steers the model
 
 Each reply offers the model the curated tools of every connection the user has, so it can search Notion without being told to. Typing `@notion` puts Notion's tools first and tells the model to use them. This replaces ADR 0004, where a connector's tools loaded only after a mention. Mention-only kept the token cost down, but it made the user name the app every time, and Gemini's connected apps showed the model can pick the app itself.

@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0005
+status: superseded by ADR-0009
 ---
 
 # Apps join a thread only when the user @mentions them

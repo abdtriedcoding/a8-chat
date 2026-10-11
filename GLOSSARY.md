@@ -36,21 +36,33 @@ _Avoid_: request, message (as a unit of usage)
 A third-party product a person already uses, like Gmail or Notion.
 _Avoid_: integration, service, tool (for the product)
 
+**Catalog**:
+The connectors a8 ships with, the same for every user. Each entry names the tools a8 offers from its app and labels each one a read or an action.
+_Avoid_: registry, connector list
+
 **Connector**:
-An entry in a8's catalog for one app, with a handle, a logo and the tools a8 exposes. UI copy says "connector".
-_Avoid_: plugin, integration, connected app, MCP server (for the catalog entry)
+One app a8 can work in, with a name, a handle, a logo and the tools a8 offers from it. A connector is either in the catalog or a custom connector. UI copy says "connector".
+_Avoid_: plugin, integration, connected app, MCP server (for the connector)
 
 **Custom connector**:
-A connector a user adds themselves from an MCP server's URL, seen only by that user. It has a handle and a connection like any other connector, but each of its tools asks for approval the first time it's used in a thread.
+A connector a user adds themselves from an MCP server's URL, seen only by that user. It has a handle and a connection like any other connector, but a8 can't label its tools, so every call to one of them asks for approval.
 _Avoid_: custom MCP, custom server, my connector
 
 **Connection**:
 One user's signed-in link to a connector. A user has at most one connection per connector.
 _Avoid_: account, link, install
 
-**Client registration**:
-The OAuth client a8 registered with a connector's authorization server. A deployment has one per connector, and every user's connection signs in through it. Not to be confused with the MCP client a reply opens to call a connector's tools.
-_Avoid_: connector client, OAuth app
+**OAuth client registration**:
+The OAuth client a8 registered with a connector's authorization server. A deployment has one per connector, and every user's connection signs in through it. Not to be confused with an MCP client.
+_Avoid_: connector client, OAuth app, client (on its own)
+
+**MCP client**:
+a8's open session with one of a connector's MCP servers, used to list or call its tools. A reply opens one for each server it calls and closes them when it ends. Not to be confused with an OAuth client registration.
+_Avoid_: server client, connection (for the session), client (on its own)
+
+**Tool list**:
+The tools a8 keeps for one connection: the ones it offers from the connector, as its MCP servers last listed them. A reply builds its tools from it without asking the app.
+_Avoid_: tool cache, manifest
 
 **Handle**:
 The word typed after @ to pick a connector, like `notion`.
@@ -61,7 +73,7 @@ A connector's handle typed after @ in a prompt. It tells the model to use that c
 _Avoid_: tag, active app
 
 **Read**:
-A tool call that only fetches from an app, like searching email. Runs without asking.
+A tool call that only fetches from an app, like searching email, and that the catalog labels a read. Runs without asking. Calls to a custom connector's tools always ask, even when they only fetch.
 _Avoid_: query, lookup
 
 **Action**:

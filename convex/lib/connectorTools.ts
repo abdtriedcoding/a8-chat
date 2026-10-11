@@ -1,5 +1,5 @@
 // Calling connectors' MCP tools. Most calls come from a reply's connector
-// tools (ADR 0003, ADR 0005), which replyTools.ts hands the reply.
+// tools (ADR 0003, ADR 0009), which replyTools.ts hands the reply.
 // toolLoading.ts decides which of them load (ADR 0006). They're built from
 // each connection's stored tool list, so building them sends nothing to
 // the vendor. Each of a connector's MCP servers gets a client on the first
@@ -46,7 +46,7 @@ import type { ConnectorToolGroup } from "./toolLoading";
 /** The most of a tool result the model sees, in UTF-8 bytes. */
 const MAX_RESULT_BYTES = 20_000;
 
-/** How old a cached tool list can get before a reply asks for a new one. */
+/** How old a stored tool list can get before a reply asks for a new one. */
 const TOOL_LIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** How long one tool call can take before a8 gives up on it. */
@@ -364,7 +364,7 @@ function asRefusedToken(error: unknown, tokenVersion: number): unknown {
 }
 
 /**
- * The cached tools a reply offers, each with its server and allowlist
+ * The stored tools a reply offers, each with its server and allowlist
  * entry: the allowlisted ones, and every one from a server without an
  * allowlist, which has no entry.
  */
@@ -406,7 +406,7 @@ async function scheduleToolListRefresh(
 
 /**
  * Whether an error from the server says it doesn't know the tool. If so,
- * the cached tool list is out of date, and this schedules a refresh.
+ * the stored tool list is out of date, and this schedules a refresh.
  */
 async function refreshIfUnknownTool(
   ctx: ActionCtx,

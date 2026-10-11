@@ -1,4 +1,4 @@
-// The tool cache: each connection's stored tool list, in connectionToolLists.
+// Tool lists: the tools a8 stores for each connection, in connectionToolLists.
 // finishConnect fetches the first list and saveConnection stores it. A reply
 // builds its tools from the stored list without calling the vendor, and asks
 // for a refresh when the list is a day old or the server didn't know a tool.
