@@ -3,7 +3,7 @@
 // builds its tools from the stored list without calling the vendor, and asks
 // for a refresh when the list is a day old or the server didn't know a tool.
 
-import { MCPClientError, type MCPClient } from "@ai-sdk/mcp";
+import type { MCPClient } from "@ai-sdk/mcp";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -14,7 +14,11 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { withMcpClients, type ServerClient } from "./lib/connectorAuth";
+import {
+  refusedStatus,
+  withMcpClients,
+  type ServerClient,
+} from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
@@ -237,11 +241,8 @@ async function listToolsWithToken(
       async (clients) => await fetchToolList(connector, clients),
     );
   } catch (error) {
-    if (MCPClientError.isInstance(error)) {
-      if (error.statusCode === 401 || error.statusCode === 403) {
-        return error.statusCode;
-      }
-    }
+    const status = refusedStatus(error);
+    if (status) return status;
     throw error;
   }
 }

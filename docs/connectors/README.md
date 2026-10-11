@@ -167,7 +167,15 @@ A tool runs without asking only when its `kind` is `read` and the server doesn't
 
 ### When a connection stops working
 
-A tool call the vendor refuses with a 401 refreshes the token and runs once more. The connection needs reconnecting when the vendor refuses the refresh, refuses the new token too, or answers 403, when its tokens are damaged, or when a tool-list refresh gets the same answers. The call then fails with the `NEEDS_RECONNECT` code, the reply shows a Reconnect chip, and the connection offers no tools until the user reconnects. When the vendor can't be reached for a token refresh, every later call to that connection in the reply fails without trying again.
+A tool call the vendor refuses with a 401 refreshes the token and runs once more. A tool call it refuses with a 403 makes a8 list the server's tools with the same token. If the list works, the 403 is about that one tool, like a scope the user unticked or a feature their plan lacks, such as Calendly booking. Only that call fails, and the connection stays connected. The connection needs reconnecting in these cases:
+
+- The vendor refuses the token refresh, or refuses the refreshed token.
+- It answers 403 to a tool call and refuses the tool list too.
+- It answers 403 to opening the MCP client.
+- The connection's tokens are damaged.
+- A tool-list refresh gets a 403, or gets a 401 and then the refreshed token is refused.
+
+The call then fails with the `NEEDS_RECONNECT` code, the reply shows a Reconnect chip, and the connection offers no tools until the user reconnects. When the vendor can't be reached for a token refresh, every later call to that connection in the reply fails without trying again.
 
 ### The encryption key
 
