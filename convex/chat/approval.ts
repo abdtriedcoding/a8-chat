@@ -69,6 +69,7 @@ export const decideAction = mutation({
       promptMessageId: messageId,
       order,
       timeZone: resolveTimeZone(timeZone),
+      continuing: true,
       // Each step saves one message from the model.
       stepsTaken: turn.filter((message) => message.message?.role === "assistant")
         .length,
