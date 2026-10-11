@@ -1,6 +1,6 @@
 // A reply's connector tools (ADR 0003, ADR 0005). toolLoading.ts picks
 // which of them the reply loads (ADR 0006). They're built from each
-// connection's cached tool list, so building them sends nothing to the
+// connection's stored tool list, so building them sends nothing to the
 // vendor. A connector's MCP client opens on the first call to one of its
 // tools in the reply, and the reply closes it when it ends. A call the
 // vendor refuses with a 401 refreshes the token and runs once more. A 403
@@ -23,6 +23,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { ConnectionTokens } from "../connectors";
 import { limitConnectorToolCall } from "../rateLimits";
+import type { ConnectionWithToolList } from "../toolLists";
 import {
   connectionAccessToken,
   type AccessTokenResult,
@@ -36,7 +37,7 @@ import {
   type Connector,
   type ConnectorTool,
 } from "./connectors";
-import { estimateToolTokens, type ConnectorToolGroup } from "./toolLoading";
+import type { ConnectorToolGroup } from "./toolLoading";
 
 /** The most of a tool result the model sees, in UTF-8 bytes. */
 const MAX_RESULT_BYTES = 20_000;
@@ -73,37 +74,33 @@ export type ConnectorTools = {
  * The reply's tools from the user's connections. Only `connected`
  * connections get tools, and only the allowlisted ones. A tool list over a
  * day old is used as is, and a fresh one is fetched in the background for
- * later replies. Each call counts against the user's daily connector tool
+ * later replies. A connection with no stored list gets no tools until one
+ * is fetched. Each call counts against the user's daily connector tool
  * call limit first.
  */
 export async function createConnectorTools(
   ctx: ActionCtx,
-  connections: Doc<"connections">[],
+  connections: ConnectionWithToolList[],
 ): Promise<ConnectorTools> {
   const groups: ConnectorToolGroup[] = [];
   const toolApproval: Record<string, ToolApprovalStatus> = {};
   const replyConnections: ReplyConnection[] = [];
 
-  for (const connection of connections) {
+  for (const { connection, toolList } of connections) {
     const connector = findConnector(connection.connectorId);
     if (!connector || connection.status !== "connected") continue;
-    if (Date.now() - connection.toolListFetchedAt > TOOL_LIST_MAX_AGE_MS) {
+    if (!toolList || Date.now() - toolList.fetchedAt > TOOL_LIST_MAX_AGE_MS) {
       await scheduleToolListRefresh(ctx, connection);
     }
+    if (!toolList) continue;
     const replyConnection = new ReplyConnection(ctx, connector, connection);
     replyConnections.push(replyConnection);
 
     const tools: ToolSet = {};
-    let estimatedTokens = 0;
-    const allowed = allowedTools(connector, connection.toolList);
+    const allowed = allowedTools(connector, toolList.tools);
     for (const { entry, mcpTool } of allowed) {
       const name = modelToolName(connector, mcpTool.name);
       if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
-      estimatedTokens += estimateToolTokens({
-        name,
-        description: mcpTool.description,
-        inputSchema: mcpTool.inputSchema,
-      });
       tools[name] = tool({
         description: mcpTool.description,
         // storedToolList adds `properties`, but a list stored before it
@@ -138,7 +135,13 @@ export async function createConnectorTools(
         },
       });
     }
-    groups.push({ connector, tools, estimatedTokens });
+    // Counted when the list was stored. Until the next refresh, it still
+    // counts a tool the allowlist has since dropped.
+    groups.push({
+      connector,
+      tools,
+      estimatedTokens: toolList.estimatedTokens,
+    });
   }
 
   return {
@@ -362,7 +365,7 @@ async function scheduleToolListRefresh(
   ctx: ActionCtx,
   connection: Doc<"connections">,
 ) {
-  await ctx.runMutation(internal.connectors.requestToolListRefresh, {
+  await ctx.runMutation(internal.toolLists.requestToolListRefresh, {
     connectionId: connection._id,
   });
 }
