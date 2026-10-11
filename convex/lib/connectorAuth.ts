@@ -341,6 +341,16 @@ export async function withMcpClients<T>(
   }
 }
 
+/**
+ * The status if an MCP client's request failed because the vendor refused
+ * the access token with a 401 or a 403, or else undefined.
+ */
+export function refusedStatus(error: unknown): 401 | 403 | undefined {
+  if (!MCPClientError.isInstance(error)) return undefined;
+  const status = error.statusCode;
+  return status === 401 || status === 403 ? status : undefined;
+}
+
 function assertPinnedOrigin(
   connector: Connector,
   input: string | URL | Request,

@@ -5,15 +5,12 @@
 // the vendor. Each of a connector's MCP servers gets a client on the first
 // call to one of its tools in the reply, and the reply closes them when it
 // ends. A call the vendor refuses with a 401 refreshes the token and runs
-// once more. A 403 means the connection needs reconnecting. The other call
-// is the account label tool, which a8 calls once after sign-in. Both read
-// their results with readToolResult.
+// once more. A call it refuses with a 403 fails, and the connection needs
+// reconnecting only if the vendor refuses the server's tool list too. The
+// other call is the account label tool, which a8 calls once after sign-in.
+// Both read their results with readToolResult.
 
-import {
-  MCPClientError,
-  type CallToolResult,
-  type MCPClient,
-} from "@ai-sdk/mcp";
+import type { CallToolResult, MCPClient } from "@ai-sdk/mcp";
 import {
   jsonSchema,
   tool,
@@ -30,7 +27,12 @@ import {
   connectionAccessToken,
   type AccessTokenResult,
 } from "./connectionTokens";
-import { labelAt, openMcpClient, type ServerClient } from "./connectorAuth";
+import {
+  labelAt,
+  openMcpClient,
+  refusedStatus,
+  type ServerClient,
+} from "./connectorAuth";
 import { readStoredTools, type McpTool } from "./connectorToolList";
 import {
   findAllowlistedTool,
@@ -198,14 +200,34 @@ class RefusedTokenError extends Error {
 }
 
 /**
+ * Thrown when the vendor refuses one tool call with a 403 but still lists
+ * the server's tools with the same token. The token may lack that tool's
+ * scope, or the user's plan may lack that tool's feature, so the
+ * connection stays connected.
+ */
+class RefusedToolError extends Error {
+  constructor(connector: Connector) {
+    super(
+      `${connector.name} refused this tool call. The user's account may lack a permission or a plan feature this tool needs. Tell the user, and answer without this tool.`,
+    );
+  }
+}
+
+/**
  * One connection's MCP clients in a reply, one per server. A server's
  * client opens on the first call to one of its tools, with the access
  * token refreshed first if it's about to expire. When the vendor refuses
- * the token with a 401, it refreshes it and tries the call once more. If
- * the refresh is refused, the vendor refuses the new token too, or it
- * answers 403, the connection needs reconnecting, and every later call
- * throws ReconnectError. If the vendor couldn't be reached for the refresh,
- * every later call in the reply fails without trying it again.
+ * the token with a 401, it refreshes it and tries the call once more. When
+ * the vendor refuses a call with a 403, a8 lists the server's tools with
+ * the same token. If the list works, only that call fails, with
+ * RefusedToolError. The connection needs reconnecting, and every later call
+ * throws ReconnectError, in these cases:
+ * - The vendor refuses the refresh or the refreshed token.
+ * - It refuses a call with a 403 and refuses the list too.
+ * - It answers 403 to opening a client.
+ *
+ * If the vendor couldn't be reached for the refresh, every later call in
+ * the reply fails without trying it again.
  */
 class ReplyConnection {
   private tokens: ConnectionTokens;
@@ -255,7 +277,15 @@ class ReplyConnection {
     try {
       return await mcp.callTool(request);
     } catch (error) {
-      throw asRefusedToken(error, tokenVersion);
+      const refused = asRefusedToken(error, tokenVersion);
+      if (
+        refused instanceof RefusedTokenError &&
+        refused.status === 403 &&
+        !(await refusesToolList(mcp, request.options))
+      ) {
+        throw new RefusedToolError(this.connector);
+      }
+      throw refused;
     }
   }
 
@@ -355,11 +385,26 @@ class ReplyConnection {
  * `tokenVersion` with a 401 or a 403, or else the error as it is.
  */
 function asRefusedToken(error: unknown, tokenVersion: number): unknown {
-  if (!MCPClientError.isInstance(error)) return error;
-  const status = error.statusCode;
-  return status === 401 || status === 403
-    ? new RefusedTokenError(tokenVersion, status)
-    : error;
+  const status = refusedStatus(error);
+  return status ? new RefusedTokenError(tokenVersion, status) : error;
+}
+
+/**
+ * Whether the vendor refuses the client's token for the first page of the
+ * server's tool list, with a 401 or a 403. Only then does a tool call's 403
+ * mean the token has no access. Throws if the list fails another way.
+ */
+async function refusesToolList(
+  mcp: MCPClient,
+  options: CallToolRequest["options"],
+): Promise<boolean> {
+  try {
+    await mcp.listTools({ options });
+    return false;
+  } catch (error) {
+    if (refusedStatus(error)) return true;
+    throw error;
+  }
 }
 
 /**
@@ -420,7 +465,8 @@ async function refreshIfUnknownTool(
 /**
  * The tool error the model gets when a call doesn't reach a result. When
  * the server didn't know the tool, this also schedules a tool list refresh.
- * When the deployment is set up wrong, like with another
+ * When the vendor refused only this tool, it passes on RefusedToolError's
+ * message. When the deployment is set up wrong, like with another
  * CONNECTION_ENCRYPTION_KEY, it passes on the MISCONFIGURED message.
  */
 async function callFailedMessage(
@@ -434,6 +480,7 @@ async function callFailedMessage(
     return `${connector.name} no longer has this tool. Answer without it.`;
   }
   console.error(`Calling a ${connector.name} tool failed`, error);
+  if (error instanceof RefusedToolError) return error.message;
   if (isMisconfigured(error)) {
     return `Calling ${connector.name} failed: ${error.data.message} Reconnecting ${connector.name} won't fix it. Tell the user, and answer without it.`;
   }
