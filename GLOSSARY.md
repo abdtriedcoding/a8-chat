@@ -48,6 +48,10 @@ _Avoid_: custom MCP, custom server, my connector
 One user's signed-in link to a connector. A user has at most one connection per connector.
 _Avoid_: account, link, install
 
+**Client registration**:
+The OAuth client a8 registered with a connector's authorization server. A deployment has one per connector, and every user's connection signs in through it. Not to be confused with the MCP client a reply opens to call a connector's tools.
+_Avoid_: connector client, OAuth app
+
 **Handle**:
 The word typed after @ to pick a connector, like `notion`.
 _Avoid_: slug, tag

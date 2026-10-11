@@ -209,9 +209,18 @@ export const CONNECTORS: Connector[] = [
 
 /**
  * Why a sign-in ended without connecting: the user cancelled at the vendor,
- * the sign-in expired or belongs to another user, or a step failed.
+ * the sign-in expired or belongs to another user, this deployment or the
+ * catalog entry is set up wrong, the vendor couldn't be reached, the vendor
+ * rejected a8's client registration, or another step failed.
  */
-export const CONNECT_ERRORS = ["cancelled", "expired", "failed"] as const;
+export const CONNECT_ERRORS = [
+  "cancelled",
+  "expired",
+  "misconfigured",
+  "unreachable",
+  "rejected_client",
+  "failed",
+] as const;
 export type ConnectError = (typeof CONNECT_ERRORS)[number];
 
 export function findConnector(id: string): Connector | undefined {

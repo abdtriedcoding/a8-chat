@@ -43,6 +43,11 @@ function takeFinishFromHash(): Finish | null {
 const ERROR_MESSAGES: Record<ConnectError, string> = {
   cancelled: "Sign-in was cancelled, so nothing was connected.",
   expired: "That sign-in expired. Turn the toggle on to try again.",
+  misconfigured:
+    "This a8 isn't set up to connect that app. Ask whoever runs it to check its settings.",
+  unreachable: "The app didn't respond. Please try again in a few minutes.",
+  rejected_client:
+    "The app didn't accept a8's sign-in. Turn the toggle on to try again.",
   failed: "Couldn't connect. Please try again.",
 };
 

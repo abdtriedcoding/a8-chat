@@ -15,7 +15,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { createConnectorClient } from "./lib/connectorAuth";
+import { openMcpClient } from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
@@ -123,8 +123,8 @@ export const refreshToolList = internalAction({
   returns: v.null(),
   handler: async (ctx, { connectionId }) => {
     const connection = await ctx.runQuery(
-      internal.connectors.getConnectionById,
-      { connectionId },
+      internal.connectorStore.getConnection,
+      { by: { connectionId } },
     );
     const connector = connection && findConnector(connection.connectorId);
     if (connection?.status !== "connected" || !connector) return null;
@@ -132,7 +132,7 @@ export const refreshToolList = internalAction({
     if ("needsReconnect" in token) return null;
     let toolList = await listToolsWithToken(connector, token.accessToken);
     if (toolList === 401) {
-      // settleRefresh marks the connection if the vendor refuses the refresh.
+      // settleTokens marks the connection if the vendor refuses the refresh.
       token = await connectionAccessToken(ctx, connector, token.tokens, {
         refused: true,
       });
@@ -141,9 +141,10 @@ export const refreshToolList = internalAction({
     }
     if (typeof toolList === "number") {
       // The vendor refused a token a8 just refreshed, or answered 403.
-      await ctx.runMutation(internal.connectors.markNeedsReconnect, {
+      await ctx.runMutation(internal.connectorStore.settleTokens, {
         connectionId,
         tokenVersion: token.tokens.tokenVersion,
+        outcome: { kind: "rejected" },
       });
       return null;
     }
@@ -240,7 +241,7 @@ async function listToolsWithToken(
   accessToken: string,
 ): Promise<StoredToolList | 401 | 403> {
   try {
-    const client = await createConnectorClient(connector, accessToken);
+    const client = await openMcpClient(connector, accessToken);
     try {
       return await fetchToolList(connector, client);
     } finally {
