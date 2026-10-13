@@ -36,9 +36,7 @@ import {
   isUntrustedOrigin,
   isVendorUnreachable,
   signInScope,
-  withMcpClients,
 } from "./lib/connectorAuth";
-import { readAccountLabel } from "./lib/connectorTools";
 import {
   CONNECTORS,
   findConnector,
@@ -53,7 +51,6 @@ import {
   isMisconfigured,
 } from "./lib/encryption";
 import { vConnectionStatus } from "./schema";
-import { fetchToolList } from "./toolLists";
 
 const vConnectorStatus = v.object({
   id: vConnectorId,
@@ -200,8 +197,8 @@ export const callback = httpAction(async (ctx, request) => {
 
 /**
  * Finishes the user's sign-in named by `state`: exchanges the code, then
- * stores the encrypted tokens, the granted scopes and the tool list from
- * every server. `code` and `iss` come from the callback's redirect. The
+ * stores the encrypted tokens and the granted scopes. The tool list and a
+ * tool-based account label follow in refreshToolList. `code` and `iss` come from the callback's redirect. The
  * pendingConnects row is gone once this returns, whatever the result.
  */
 export const finishConnect = action({
@@ -234,16 +231,9 @@ export const finishConnect = action({
       });
       const tokens = provider.savedTokens;
       if (!tokens) throw new Error("auth() returned without tokens.");
-      const { toolList, accountLabel } = await withMcpClients(
-        connector,
-        tokens.access_token,
-        async (clients) => ({
-          toolList: await fetchToolList(connector, clients),
-          accountLabel:
-            provider.accountLabel ??
-            (await readAccountLabel(connector, clients)),
-        }),
-      );
+      // Saves right after the exchange, so a failing tool list can't drop
+      // tokens the vendor already granted. saveConnection schedules the tool
+      // list refresh, which also reads a tool-based account label.
       await ctx.runMutation(internal.connections.saveConnection, {
         userId: pending.userId,
         connectorId: connector.id,
@@ -259,9 +249,8 @@ export const finishConnect = action({
           tokens.expires_in === undefined
             ? undefined
             : Date.now() + tokens.expires_in * 1000,
-        accountLabel,
+        accountLabel: provider.accountLabel,
         grantedScopes: grantedScopes(tokens.scope ?? pending.scope),
-        toolList,
       });
       return { connected: connector.id };
     } catch (error) {

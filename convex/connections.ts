@@ -26,7 +26,7 @@ import {
   isLegacySecret,
 } from "./lib/encryption";
 import schema from "./schema";
-import { deleteToolList, vStoredToolList, writeToolList } from "./toolLists";
+import { deleteToolList } from "./toolLists";
 
 /** How many of a user's connections one account cleanup step handles. */
 const PURGE_CONNECTION_BATCH_SIZE = 50;
@@ -82,8 +82,8 @@ export const getConnection = internalQuery({
 });
 
 /**
- * Creates or replaces the user's connection to the connector, and stores
- * its tool list.
+ * Creates or replaces the user's connection to the connector, and schedules
+ * refreshToolList to fetch its tool list.
  */
 export const saveConnection = internalMutation({
   args: {
@@ -94,10 +94,9 @@ export const saveConnection = internalMutation({
     tokenExpiresAt: v.optional(v.number()),
     accountLabel: v.optional(v.string()),
     grantedScopes: v.optional(v.array(v.string())),
-    toolList: vStoredToolList,
   },
   returns: v.null(),
-  handler: async (ctx, { toolList, ...args }) => {
+  handler: async (ctx, args) => {
     const existing = await findConnection(ctx, args.userId, args.connectorId);
     const now = Date.now();
     const connection = {
@@ -114,7 +113,11 @@ export const saveConnection = internalMutation({
     } else {
       connectionId = await ctx.db.insert("connections", connection);
     }
-    await writeToolList(ctx, connectionId, toolList);
+    // A reconnect keeps the row's ID, so drop the old list.
+    await deleteToolList(ctx, connectionId);
+    await ctx.scheduler.runAfter(0, internal.toolLists.refreshToolList, {
+      connectionId,
+    });
     return null;
   },
 });
