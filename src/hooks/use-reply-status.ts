@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
+import type { ThreadMessage } from "@/lib/stopped-turns";
 
 // How long to wait for a reply to start before giving up on it.
 const REPLY_TIMEOUT_MS = 60_000;
@@ -21,8 +21,14 @@ export type ReplyStatus =
   | "streaming"
   | "idle";
 
-/** The reply status of a thread, from its messages (oldest first). */
-export function useReplyStatus(messages: ThreadMessage[]): ReplyStatus {
+/**
+ * The reply status of a thread, from its messages (oldest first) and the
+ * orders of its stopped turns.
+ */
+export function useReplyStatus(
+  messages: ThreadMessage[],
+  stopped: Set<number>,
+): ReplyStatus {
   const last = messages.at(-1);
   // The prompt stays last until the reply's first message arrives. The wait
   // goes by the prompt's id, not its key. Regenerate saves the prompt again
@@ -38,7 +44,7 @@ export function useReplyStatus(messages: ThreadMessage[]): ReplyStatus {
 
   // A stopped turn is over as soon as the user presses Stop, even if the
   // server is still finishing the reply.
-  if (last && stoppedTurns(messages).has(last.order)) return "idle";
+  if (last && stopped.has(last.order)) return "idle";
 
   if (waitingPromptId !== null) return timedOut ? "timedOut" : "waiting";
   if (last?.status === "pending" || last?.status === "streaming") {
