@@ -11,15 +11,13 @@ import {
   MessageContent,
   MessageFooter,
 } from "@/components/ui/message";
-import { replyText } from "@/lib/reply-text";
+import type { ReplyParts } from "@/hooks/use-thread-state";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCard } from "./action-card";
 import {
-  connectorToolCalls,
   ConnectorToolRow,
   failedNeedingReconnect,
   isRunning,
-  isWaitingForApproval,
 } from "./connector-tool-call";
 import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
@@ -35,11 +33,13 @@ import {
 
 export function AssistantMessage({
   message,
+  reply: { text, toolCalls, waitingActions, toolRows },
   stopped,
   continuing = false,
   onRegenerate,
 }: {
   message: ThreadMessage;
+  reply: ReplyParts;
   /** Whether the user stopped this reply. */
   stopped?: boolean;
   /**
@@ -50,7 +50,6 @@ export function AssistantMessage({
   /** Set on the last reply while it can be regenerated. */
   onRegenerate?: () => Promise<void>;
 }) {
-  const text = replyText(message);
   const [visibleText, { isStreaming }] = useSmoothText(text, {
     startStreaming: message.status === "streaming",
   });
@@ -75,10 +74,6 @@ export function AssistantMessage({
   // shows one as running.
   const runningSearch = streaming ? searches.find(isSearching) : undefined;
   const sources = searchSources(searches);
-  const toolCalls = connectorToolCalls(message);
-  // A stopped reply can't continue, so its waiting actions show as rows.
-  const waitingActions = stopped ? [] : toolCalls.filter(isWaitingForApproval);
-  const toolRows = toolCalls.filter((call) => !waitingActions.includes(call));
   const reconnects = [
     ...new Set(
       toolCalls.filter(failedNeedingReconnect).map((call) => call.connector),
