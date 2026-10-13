@@ -58,7 +58,7 @@ const vClaimRefreshResult = v.union(
   v.object({ kind: v.literal("needsReconnect") }),
 );
 
-export type ClaimRefreshResult = Infer<typeof vClaimRefreshResult>;
+type ClaimRefreshResult = Infer<typeof vClaimRefreshResult>;
 
 /**
  * A connection, tokens included: by ID, or the signed-in user's connection
@@ -93,7 +93,6 @@ export const saveConnection = internalMutation({
     encryptedRefreshToken: v.optional(v.string()),
     tokenExpiresAt: v.optional(v.number()),
     accountLabel: v.optional(v.string()),
-    grantedScopes: v.optional(v.array(v.string())),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -350,7 +349,7 @@ export async function readUserConnections(ctx: QueryCtx, userId: string) {
 }
 
 /** The user's connection to the connector, tokens included. */
-export async function findConnection(
+async function findConnection(
   ctx: QueryCtx,
   userId: string,
   connectorId: string,

@@ -24,7 +24,7 @@ import {
   httpAction,
   query,
 } from "./_generated/server";
-import { optionalUser, requireIdentity } from "./lib/guards";
+import { optionalUser } from "./lib/guards";
 import {
   readUserConnections,
   revokeAndDeleteConnection,
@@ -73,7 +73,7 @@ export type ConnectResult = Infer<typeof vConnectResult>;
 
 const vDisconnectResult = v.object({ revoked: v.boolean() });
 
-export type DisconnectResult = Infer<typeof vDisconnectResult>;
+type DisconnectResult = Infer<typeof vDisconnectResult>;
 
 /**
  * The user's connection status for each catalog connector, in catalog
@@ -152,7 +152,6 @@ export const connect = action({
       state: savedState,
       codeVerifier: savedCodeVerifier,
       connectorId: connector.id,
-      scope: authorizationUrl.searchParams.get("scope") ?? undefined,
       authorizationServer: {
         issuer: savedAuthorizationServer.issuer,
         authorizationServerUrl: savedAuthorizationServer.authorizationServerUrl,
@@ -197,7 +196,7 @@ export const callback = httpAction(async (ctx, request) => {
 
 /**
  * Finishes the user's sign-in named by `state`: exchanges the code, then
- * stores the encrypted tokens and the granted scopes. The tool list and a
+ * stores the encrypted tokens. The tool list and a
  * tool-based account label follow in refreshToolList. `code` and `iss` come from the callback's redirect. The
  * pendingConnects row is gone once this returns, whatever the result.
  */
@@ -250,7 +249,6 @@ export const finishConnect = action({
             ? undefined
             : Date.now() + tokens.expires_in * 1000,
         accountLabel: provider.accountLabel,
-        grantedScopes: grantedScopes(tokens.scope ?? pending.scope),
       });
       return { connected: connector.id };
     } catch (error) {
@@ -278,7 +276,6 @@ export const disconnect = action({
   args: { connectorId: vConnectorId },
   returns: vDisconnectResult,
   handler: async (ctx, { connectorId }): Promise<DisconnectResult> => {
-    const userId = await requireIdentity(ctx);
     const connector = findConnector(connectorId);
     if (!connector) {
       throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
@@ -292,7 +289,7 @@ export const disconnect = action({
     const revoked = await revokeAndDeleteConnection(ctx, connection, () =>
       ctx.runMutation(internal.connections.deleteConnection, {
         connectionId: connection._id,
-        userId,
+        userId: connection.userId,
         connectedAt: connection.connectedAt,
       }),
     );
@@ -315,17 +312,6 @@ function finishConnectError(error: unknown): ConnectError {
   if (oauthError === "rejectedGrant") return "expired";
   if (isVendorUnreachable(error)) return "unreachable";
   return "failed";
-}
-
-/**
- * The scopes in a space-separated OAuth `scope`, or undefined if it names
- * none. finishConnect passes the token response's `scope`, or else the one
- * the authorize URL asked for, because RFC 6749 (section 5.1) lets a vendor
- * leave `scope` out of its token response when it granted exactly that.
- */
-function grantedScopes(scope: string | undefined): string[] | undefined {
-  const scopes = scope?.split(" ").filter((name) => name !== "");
-  return scopes?.length ? scopes : undefined;
 }
 
 function redirectToConnectors(

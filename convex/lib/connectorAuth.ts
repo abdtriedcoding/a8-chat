@@ -161,8 +161,10 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
     }
   }
 
+  // Every connector registers dynamically. Without this, auth() throws
+  // instead of registering again when the vendor rejects the client.
   isClientInformationDynamicallyRegistered(): boolean {
-    return this.connector.signIn.kind === "dynamicRegistration";
+    return true;
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {

@@ -49,7 +49,6 @@ export const savePendingConnect = internalMutation({
     state: v.string(),
     codeVerifier: v.string(),
     connectorId: v.string(),
-    scope: v.optional(v.string()),
     authorizationServer: vAuthorizationServer,
   },
   returns: v.null(),
@@ -248,5 +247,30 @@ export const copyConnectorClients = internalMutation({
       copied++;
     }
     return copied;
+  },
+});
+
+/**
+ * Unsets `grantedScopes` on every connection and `scope` on every pending
+ * sign-in, which nothing reads any more. Run it once per deployment with
+ * `npx convex run signIns:clearUnusedScopes`, then remove both fields from
+ * the schema. It's safe to run again. Returns how many rows it changed.
+ */
+export const clearUnusedScopes = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    let cleared = 0;
+    for await (const row of ctx.db.query("connections")) {
+      if (row.grantedScopes === undefined) continue;
+      await ctx.db.patch("connections", row._id, { grantedScopes: undefined });
+      cleared++;
+    }
+    for await (const row of ctx.db.query("pendingConnects")) {
+      if (row.scope === undefined) continue;
+      await ctx.db.patch("pendingConnects", row._id, { scope: undefined });
+      cleared++;
+    }
+    return cleared;
   },
 });

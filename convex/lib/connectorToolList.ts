@@ -12,10 +12,10 @@ import { estimateToolTokens } from "./toolLoading";
 export type McpTool = ListToolsResult["tools"][number];
 
 /** A tool as a8 stores it, with the key of the server that listed it. */
-export type StoredTool = McpTool & { server: string };
+type StoredTool = McpTool & { server: string };
 
 /** One server's tools, as the server listed them. */
-export type ServerTools = { server: ConnectorServer; tools: McpTool[] };
+type ServerTools = { server: ConnectorServer; tools: McpTool[] };
 
 /** A tool list as a8 stores it. */
 export type StoredToolList = {

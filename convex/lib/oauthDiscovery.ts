@@ -6,7 +6,7 @@
 export type Metadata = Record<string, unknown>;
 
 /** One request metadata discovery made, and how it went. */
-export type MetadataAttempt = { url: string } & (
+type MetadataAttempt = { url: string } & (
   | { response: Response; outcome: "found" | "notOk" | "notJson" }
   | { error: unknown }
 );

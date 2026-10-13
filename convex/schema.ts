@@ -86,9 +86,8 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
-    // The OAuth scopes the vendor granted at sign-in: the token response's
-    // `scope`, or the scope sign-in asked for when the response has none.
-    // Unset when neither named any, and on rows from before it existed.
+    // No longer written or read. clearUnusedScopes unsets it on old rows,
+    // and a later change removes the field.
     grantedScopes: v.optional(v.array(v.string())),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
@@ -117,8 +116,8 @@ export default defineSchema({
     codeVerifier: v.string(),
     userId: v.string(),
     connectorId: v.string(),
-    // The `scope` the authorize URL asked for, if any. finishConnect stores
-    // it as the granted scopes when the token response names none.
+    // No longer written or read. clearUnusedScopes unsets it on old rows,
+    // and a later change removes the field.
     scope: v.optional(v.string()),
     // finishConnect checks that the code exchange goes to this server.
     authorizationServer: vAuthorizationServer,
