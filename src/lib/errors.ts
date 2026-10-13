@@ -1,6 +1,6 @@
 import { ConvexError } from "convex/values";
 import { ERROR_CODES } from "../../convex/lib/errors";
-import type { AttachmentNotFound } from "../../convex/attachments";
+import type { AttachmentNotFound } from "../../convex/attachments/load";
 import type { ReplyInProgress } from "../../convex/chat/send";
 import type { RateLimited } from "../../convex/rateLimits";
 

@@ -7,7 +7,7 @@ const crons = cronJobs();
 crons.cron(
   "clean up unsent uploads",
   "0 3 * * *",
-  internal.attachments.cleanUpUnsentUploads,
+  internal.attachments.cleanup.cleanUpUnsentUploads,
   {},
 );
 
@@ -15,7 +15,7 @@ crons.cron(
 crons.cron(
   "clean up upload grants",
   "15 3 * * *",
-  internal.attachments.cleanUpUploadGrants,
+  internal.attachments.cleanup.cleanUpUploadGrants,
   {},
 );
 
@@ -23,7 +23,7 @@ crons.cron(
 crons.cron(
   "clean up orphaned storage",
   "30 3 * * *",
-  internal.attachments.cleanUpOrphanedStorage,
+  internal.attachments.cleanup.cleanUpOrphanedStorage,
   {},
 );
 

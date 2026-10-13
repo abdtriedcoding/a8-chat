@@ -42,16 +42,18 @@ export type UploadedAttachment = {
 
 /**
  * The composer's attachments. `addFiles` checks each file, then uploads it
- * to Convex storage and registers it (convex/attachments.ts). The attach
+ * to Convex storage and registers it (convex/attachments/upload.ts). The attach
  * button, paste and drag-drop all add files through it.
  * `acceptedMediaTypes` lists the media types the current model takes, and
  * is empty while it loads.
  */
 export function useComposerAttachments() {
-  const capabilities = useQuery(api.attachments.capabilities);
+  const capabilities = useQuery(api.attachments.upload.capabilities);
   const acceptedMediaTypes = capabilities?.acceptedMediaTypes ?? [];
-  const generateUploadUrl = useMutation(api.attachments.generateUploadUrl);
-  const registerUpload = useAction(api.attachments.registerUpload);
+  const generateUploadUrl = useMutation(
+    api.attachments.upload.generateUploadUrl,
+  );
+  const registerUpload = useAction(api.attachments.upload.registerUpload);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
 
   // The attachments as of the last change, ahead of the next render. Two

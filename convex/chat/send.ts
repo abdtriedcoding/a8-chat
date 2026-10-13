@@ -4,7 +4,10 @@ import { v, type Infer } from "convex/values";
 import { components, internal } from "../_generated/api";
 import { mutation, type MutationCtx } from "../_generated/server";
 import { chatAgent } from "../agents/chat";
-import { loadPromptAttachments, vAttachmentNotFound } from "../attachments";
+import {
+  loadPromptAttachments,
+  vAttachmentNotFound,
+} from "../attachments/load";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess, requireUser } from "../lib/guards";
 import {
@@ -19,8 +22,8 @@ import { closeUnrunActions } from "./approval";
 import { getStoppedReply } from "./stop";
 import { getLastTurn, hasPendingReply } from "./turns";
 
-// File IDs from registerUpload (convex/attachments.ts). Each Send checks
-// them (loadPromptAttachments).
+// File IDs from registerUpload (convex/attachments/upload.ts). Each Send
+// checks them (loadPromptAttachments).
 const vAttachmentFileIds = v.optional(v.array(v.string()));
 
 // startThread, sendMessage, regenerateReply and editPrompt are the Sends.

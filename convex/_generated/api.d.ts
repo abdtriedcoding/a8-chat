@@ -10,7 +10,9 @@
 
 import type * as agents_chat from "../agents/chat.js";
 import type * as agents_webSearch from "../agents/webSearch.js";
-import type * as attachments from "../attachments.js";
+import type * as attachments_cleanup from "../attachments/cleanup.js";
+import type * as attachments_load from "../attachments/load.js";
+import type * as attachments_upload from "../attachments/upload.js";
 import type * as auth from "../auth.js";
 import type * as chat_approval from "../chat/approval.js";
 import type * as chat_messages from "../chat/messages.js";
@@ -58,7 +60,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   "agents/chat": typeof agents_chat;
   "agents/webSearch": typeof agents_webSearch;
-  attachments: typeof attachments;
+  "attachments/cleanup": typeof attachments_cleanup;
+  "attachments/load": typeof attachments_load;
+  "attachments/upload": typeof attachments_upload;
   auth: typeof auth;
   "chat/approval": typeof chat_approval;
   "chat/messages": typeof chat_messages;
