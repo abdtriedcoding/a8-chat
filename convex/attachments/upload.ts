@@ -12,7 +12,13 @@ import {
 } from "../_generated/server";
 import { chatModel } from "../agents/chat";
 import { requireIdentity, requireUser } from "../lib/guards";
-import { limitUploadRegistration, limitUploadUrl } from "../rateLimits";
+import {
+  checkUploadBytes,
+  countUploadBytes,
+  limitUploadRegistration,
+  limitUploadUrl,
+  MAX_OPEN_UPLOAD_URLS,
+} from "../rateLimits";
 import {
   cleanFilename,
   getAcceptedMediaTypes,
@@ -34,11 +40,18 @@ const vUploadRejected = v.object({
   message: v.string(),
 });
 
+/** Why generateUploadUrl refused a URL. It returns this instead of throwing. */
+const vUploadUrlRejected = v.object({
+  code: v.literal(ERROR_CODES.RATE_LIMITED),
+  message: v.string(),
+});
+
 /** What claimUpload reads from the stored file's metadata. */
 const vClaimedUpload = v.object({ size: v.number(), sha256: v.string() });
 
 type RegisteredUpload = Infer<typeof vRegisteredUpload>;
 type UploadRejected = Infer<typeof vUploadRejected>;
+type UploadUrlRejected = Infer<typeof vUploadUrlRejected>;
 type ClaimedUpload = Infer<typeof vClaimedUpload>;
 
 /**
@@ -61,17 +74,38 @@ export const UPLOAD_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  * for the user, which registerUpload spends to claim the file. Convex can't
  * say who uploaded a file, so a grant, and the claim that follows it, are how
  * a file gets tied to its uploader.
+ *
+ * It refuses once the user's daily upload bytes are spent. A URL whose file
+ * isn't registered yet counts as the largest file a8 takes, so a user can't
+ * get URLs, upload any size to them, and never register the files. It
+ * returns the refusal instead of throwing it, like registerUpload.
  */
 export const generateUploadUrl = mutation({
   args: {},
-  returns: v.string(),
-  handler: async (ctx) => {
+  returns: v.union(v.string(), vUploadUrlRejected),
+  handler: async (ctx): Promise<string | UploadUrlRejected> => {
     const user = await requireUser(ctx);
+    // Grants from the last 24 hours that no claim has spent.
+    const openGrants = await ctx.db
+      .query("uploadGrants")
+      .withIndex("by_userId_and_storageId", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("storageId", undefined)
+          .gte("_creationTime", Date.now() - UPLOAD_GRANT_MAX_AGE_MS),
+      )
+      .take(MAX_OPEN_UPLOAD_URLS);
+    if (!(await checkUploadBytes(ctx, user._id, openGrants.length))) {
+      return {
+        code: ERROR_CODES.RATE_LIMITED,
+        message: "You've reached today's upload limit. Try again tomorrow.",
+      };
+    }
     if (!(await limitUploadUrl(ctx, user._id))) {
-      throw appError(
-        ERROR_CODES.RATE_LIMITED,
-        "Too many uploads. Try again later.",
-      );
+      return {
+        code: ERROR_CODES.RATE_LIMITED,
+        message: "Too many uploads. Try again later.",
+      };
     }
     await ctx.db.insert("uploadGrants", { userId: user._id });
     return await ctx.storage.generateUploadUrl();
@@ -89,7 +123,11 @@ export const generateUploadUrl = mutation({
  * It returns a refusal, and registerUpload deletes nothing, when the file
  * doesn't exist, someone else claimed it, or the user has no grant for it.
  * A refusal looks the same for each, so it doesn't reveal that a file
- * exists. It also refuses a user over their limit.
+ * exists. It also refuses a user over their registration limit.
+ *
+ * A new claim counts the file's size against the user's daily upload bytes,
+ * whether registerUpload goes on to keep the file or not. A retry's claim
+ * doesn't count it again.
  *
  * A user who learns another user's storage ID in the seconds between that
  * user's upload and registration could still claim it first. Storage IDs
@@ -137,6 +175,7 @@ export const claimUpload = internalMutation({
       .first();
     if (!grant) return notFound;
     await ctx.db.patch("uploadGrants", grant._id, { storageId });
+    await countUploadBytes(ctx, user._id, storedFile.size);
     return claimedUpload;
   },
 });

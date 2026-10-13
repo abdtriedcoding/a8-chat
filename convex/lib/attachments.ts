@@ -3,7 +3,10 @@ import { appError, ERROR_CODES } from "./errors";
 /** The most attachments one prompt can carry. */
 export const MAX_ATTACHMENTS_PER_PROMPT = 5;
 
-const BYTES_PER_MB = 1024 * 1024;
+export const BYTES_PER_MB = 1024 * 1024;
+
+/** The largest file a8 takes, a PDF. */
+export const MAX_ATTACHMENT_SIZE_IN_BYTES = 32 * BYTES_PER_MB;
 
 /** The image size limit. Anthropic refuses images over 5 MB. */
 const MAX_IMAGE_SIZE_IN_BYTES = 5 * BYTES_PER_MB;
@@ -22,7 +25,7 @@ const SUPPORTED_FILE_TYPES: Record<
   "image/jpeg": { kind: "image", label: "JPEG", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
   "image/gif": { kind: "image", label: "GIF", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
   "image/webp": { kind: "image", label: "WebP", maxSizeInBytes: MAX_IMAGE_SIZE_IN_BYTES },
-  "application/pdf": { kind: "pdf", label: "PDF", maxSizeInBytes: 32 * BYTES_PER_MB },
+  "application/pdf": { kind: "pdf", label: "PDF", maxSizeInBytes: MAX_ATTACHMENT_SIZE_IN_BYTES },
 };
 
 /**

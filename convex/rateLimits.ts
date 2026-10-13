@@ -2,11 +2,24 @@
 import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import { v, type Infer } from "convex/values";
+import { BYTES_PER_MB, MAX_ATTACHMENT_SIZE_IN_BYTES } from "./lib/attachments";
 import { ERROR_CODES } from "./lib/errors";
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 
 const DAY = 24 * HOUR;
+
+/** How many bytes one user can upload in a day. */
+const DAILY_UPLOAD_BYTES = 500 * BYTES_PER_MB;
+
+/**
+ * How many upload URLs one user can have open, whose files aren't
+ * registered yet. checkUploadBytes counts each as the largest file a8 takes,
+ * and this many fill the day's bytes.
+ */
+export const MAX_OPEN_UPLOAD_URLS = Math.floor(
+  DAILY_UPLOAD_BYTES / MAX_ATTACHMENT_SIZE_IN_BYTES,
+);
 
 /** Any ctx that can run a mutation: an action or a mutation. */
 type RunMutationCtx = ActionCtx | MutationCtx;
@@ -38,6 +51,16 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Each user's registerUpload calls. Higher than userUploadUrls, since a
   // retry registers the same file again.
   userUploadRegistrations: { kind: "fixed window", rate: 120, period: HOUR },
+  // Each user's daily upload bytes. Storage takes a file of any size, and a8
+  // checks the size only after it's stored, so this caps what one account
+  // can store. A full prompt of PDFs is 160 MB, so 500 MB is about
+  // three of them. Windows open at 00:00 UTC, like dailySends.
+  userDailyUploadBytes: {
+    kind: "fixed window",
+    rate: DAILY_UPLOAD_BYTES,
+    period: DAY,
+    start: 0,
+  },
   // Sign-in attempts for one email, wrong passwords included. Better Auth's
   // limit by IP may not see the client IP behind the Next proxy, so this one
   // holds without it. The key is the lowercased email.
@@ -182,6 +205,54 @@ export async function limitUploadUrl(
 }
 
 /**
+ * Whether the user has daily upload bytes left for one more upload URL.
+ * Counts nothing. `openUploadUrls` is how many URLs the user has whose files
+ * aren't registered yet. Storage takes any size, so each of those, and the
+ * new one, counts as the largest file a8 takes. Call countUploadBytes once a
+ * file is registered.
+ */
+export async function checkUploadBytes(
+  ctx: MutationCtx,
+  userId: string,
+  openUploadUrls: number,
+): Promise<boolean> {
+  if (openUploadUrls >= MAX_OPEN_UPLOAD_URLS) return false;
+  const { ok } = await rateLimiter.check(ctx, "userDailyUploadBytes", {
+    key: userId,
+    count: (openUploadUrls + 1) * MAX_ATTACHMENT_SIZE_IN_BYTES,
+  });
+  return ok;
+}
+
+/**
+ * Counts a stored file against the user's daily upload bytes. The file is
+ * already stored, so when it doesn't fit it spends the rest of the day's
+ * bytes. Nothing past them comes off the next day, which starts in full at
+ * 00:00 UTC.
+ */
+export async function countUploadBytes(
+  ctx: MutationCtx,
+  userId: string,
+  bytes: number,
+): Promise<void> {
+  const key = { key: userId };
+  // limit() throws on a count over the whole day's bytes.
+  const count = Math.min(bytes, DAILY_UPLOAD_BYTES);
+  const { ok } = await rateLimiter.limit(ctx, "userDailyUploadBytes", {
+    ...key,
+    count,
+  });
+  if (ok) return;
+  // A fresh window spent in full leaves 0 bytes until 00:00 UTC.
+  await rateLimiter.reset(ctx, "userDailyUploadBytes", key);
+  await rateLimiter.limit(ctx, "userDailyUploadBytes", {
+    ...key,
+    count: DAILY_UPLOAD_BYTES,
+    throws: true,
+  });
+}
+
+/**
  * Counts one registerUpload call against the user's limit. Returns false,
  * and counts nothing, once the limit is hit.
  */
@@ -238,6 +309,7 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userDailyWebSearches", key);
   await rateLimiter.reset(ctx, "userUploadUrls", key);
   await rateLimiter.reset(ctx, "userUploadRegistrations", key);
+  await rateLimiter.reset(ctx, "userDailyUploadBytes", key);
   await rateLimiter.reset(ctx, "userConnectorToolCalls", key);
   await rateLimiter.reset(ctx, "userConnectStarts", key);
   await rateLimiter.reset(ctx, "signInByEmail", {
