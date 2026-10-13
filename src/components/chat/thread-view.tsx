@@ -17,11 +17,9 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useReplyStatus } from "@/hooks/use-reply-status";
+import { useThreadState } from "@/hooks/use-thread-state";
 import { errorMessage, throwIfRefused } from "@/lib/errors";
 import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
-import { replyText } from "@/lib/reply-text";
-import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
 import { api } from "../../../convex/_generated/api";
 import { browserTimeZone } from "../../../convex/lib/timeZone";
 import { DecideActionProvider } from "./action-card";
@@ -52,16 +50,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const editPrompt = useMutation(api.chat.send.editPrompt);
   const decideAction = useMutation(api.chat.approval.decideAction);
 
-  const replyStatus = useReplyStatus(messages);
-  const replyInProgress =
-    replyStatus === "waiting" ||
-    replyStatus === "continuing" ||
-    replyStatus === "streaming";
-  const last = messages.at(-1);
-  // The last turn can be regenerated or edited while no reply is in
-  // progress. A stopped turn counts as done, and so does a reply that timed
-  // out.
-  const canRedoLastTurn = last !== undefined && !replyInProgress;
+  const threadState = useThreadState(messages);
+  const { replyInProgress, canRedoLastTurn, lastReplyText } = threadState;
 
   // Whether the last prompt's editor is open. It closes when the prompt
   // can't be edited anymore, for example when another tab sends a new prompt.
@@ -85,11 +75,6 @@ export function ThreadView({ threadId }: { threadId: string }) {
   async function stop() {
     await stopReply({ threadId });
   }
-
-  const lastReply = messages.findLast(({ role }) => role === "assistant");
-  const lastReplyText =
-    lastReply &&
-    copyableText(lastReply, stoppedTurns(messages).has(lastReply.order));
 
   useThreadShortcuts({
     stopReply: replyInProgress
@@ -151,7 +136,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
             messages={messages}
             status={status}
             onLoadEarlier={() => loadMore(PAGE_SIZE)}
-            replyStatus={replyStatus}
+            threadState={threadState}
             onRegenerate={
               canRedoLastTurn
                 ? async () => {
@@ -213,15 +198,6 @@ export function ThreadView({ threadId }: { threadId: string }) {
       </div>
     </>
   );
-}
-
-/**
- * The text Copy under a reply copies: none while the reply is still being
- * written. A stopped reply keeps the text it had.
- */
-function copyableText(reply: ThreadMessage, stopped: boolean) {
-  const writing = reply.status === "pending" || reply.status === "streaming";
-  return writing && !stopped ? "" : replyText(reply);
 }
 
 async function copyReply(text: string) {

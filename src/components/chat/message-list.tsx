@@ -14,15 +14,14 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
-import type { ReplyStatus } from "@/hooks/use-reply-status";
-import { stoppedTurns, type ThreadMessage } from "@/lib/stopped-turns";
+import type { ThreadState } from "@/hooks/use-thread-state";
+import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCardAnnouncer } from "./action-card";
 import {
   AssistantMessage,
   StoppedMarker,
   ThinkingMessage,
 } from "./assistant-message";
-import { connectorToolCalls, isWaitingForApproval } from "./connector-tool-call";
 import { RegenerateButton } from "./regenerate-button";
 import { UserMessage } from "./user-message";
 
@@ -34,7 +33,7 @@ export function MessageList({
   messages,
   status,
   onLoadEarlier,
-  replyStatus,
+  threadState: { stopped, replyStatus, replies, waitingActions },
   onRegenerate,
   onEdit,
   editingLastPrompt,
@@ -43,7 +42,7 @@ export function MessageList({
   messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
-  replyStatus: ReplyStatus;
+  threadState: ThreadState;
   /** Set while the last turn can be regenerated. Only that turn shows it. */
   onRegenerate?: () => Promise<void>;
   /** Set while the last prompt can be edited. Only that prompt shows it. */
@@ -52,7 +51,6 @@ export function MessageList({
   editingLastPrompt: boolean;
   onEditingLastPromptChange: (editing: boolean) => void;
 }) {
-  const stopped = stoppedTurns(messages);
   const lastPromptIndex = messages.findLastIndex(
     (message) => message.role === "user",
   );
@@ -61,13 +59,6 @@ export function MessageList({
   for (const message of messages) {
     if (message.role === "user") promptIds.set(message.order, message.id);
   }
-  // The actions whose cards show. A stopped reply shows its waiting actions
-  // as rows instead (AssistantMessage).
-  const waitingActions = messages.flatMap((message) =>
-    message.role === "assistant" && !stopped.has(message.order)
-      ? connectorToolCalls(message).filter(isWaitingForApproval)
-      : [],
-  );
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
@@ -121,7 +112,8 @@ export function MessageList({
                   </Fragment>
                 );
               }
-              if (message.role === "assistant") {
+              const reply = replies.get(message.id);
+              if (reply) {
                 // A regenerated reply has the same key as the reply it
                 // replaces, and useSmoothText would go on showing the old
                 // text. Regenerate saves the prompt again with a new id, so
@@ -132,6 +124,7 @@ export function MessageList({
                     <AssistantMessage
                       key={replyKey}
                       message={message}
+                      reply={reply}
                       stopped={stopped.has(message.order)}
                       continuing={
                         i === messages.length - 1 &&
