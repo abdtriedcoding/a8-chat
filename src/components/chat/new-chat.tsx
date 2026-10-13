@@ -1,6 +1,5 @@
 "use client";
 
-import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { LogoMark } from "@/components/icons/logo-mark";
@@ -12,9 +11,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
-import { throwIfRefused } from "@/lib/errors";
-import { api } from "../../../convex/_generated/api";
-import { browserTimeZone } from "../../../convex/lib/timeZone";
+import { useStartThread } from "@/hooks/use-start-thread";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 
@@ -32,7 +29,7 @@ function caretToEnd(textarea: HTMLTextAreaElement | null) {
  */
 export function NewChat({ prompt }: { prompt?: string }) {
   const router = useRouter();
-  const startThread = useMutation(api.chat.send.startThread);
+  const startThread = useStartThread();
   // Creating the thread, then navigating to it: the composer stays off
   // through both, until the thread page takes over.
   const [starting, setStarting] = useState(false);
@@ -41,13 +38,7 @@ export function NewChat({ prompt }: { prompt?: string }) {
   async function send(prompt: string, attachments: UploadedAttachment[]) {
     setStarting(true);
     try {
-      const { threadId } = throwIfRefused(
-        await startThread({
-          prompt,
-          attachmentFileIds: attachments.map(({ fileId }) => fileId),
-          timeZone: browserTimeZone(),
-        }),
-      );
+      const threadId = await startThread(prompt, attachments);
       startNavigation(() => router.push(`/c/${threadId}`));
     } finally {
       setStarting(false);
