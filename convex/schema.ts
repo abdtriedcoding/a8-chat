@@ -46,9 +46,10 @@ export default defineSchema({
   deferredToolThreads: defineTable({
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
-  // Who uploaded each file in the Agent's files table (convex/attachments.ts).
-  // A Send only takes files the user has a row for here. Users who upload the
-  // same file share its Agent row, so a file can have a row per user.
+  // Who uploaded each file in the Agent's files table
+  // (convex/attachments/upload.ts). A Send only takes files the user has a row
+  // for here. Users who upload the same file share its Agent row, so a file
+  // can have a row per user.
   attachments: defineTable({
     userId: v.string(),
     fileId: v.string(),
@@ -57,7 +58,7 @@ export default defineSchema({
     .index("by_userId_and_fileId", ["userId", "fileId"])
     .index("by_fileId", ["fileId"])
     .index("by_storageId", ["storageId"]),
-  // Who may register each storage upload (convex/attachments.ts).
+  // Who may register each storage upload (convex/attachments/upload.ts).
   // generateUploadUrl adds a row with no `storageId`, and registerUpload sets
   // it when the user who got the URL claims the file. Nobody else can claim a
   // file with a row. cleanUpUploadGrants deletes old rows.

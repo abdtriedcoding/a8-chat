@@ -33,7 +33,7 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     start: 0,
   },
   // Each user's upload URLs, so one account can't fill storage. An upload
-  // nobody registers is deleted after a day (convex/attachments.ts).
+  // nobody registers is deleted after a day (convex/attachments/cleanup.ts).
   userUploadUrls: { kind: "fixed window", rate: 60, period: HOUR },
   // Each user's registerUpload calls. Higher than userUploadUrls, since a
   // retry registers the same file again.
