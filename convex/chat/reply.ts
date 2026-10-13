@@ -16,8 +16,8 @@ import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { replyInstructions } from "../lib/instructions";
 import { createReplyTools, type ReplyTools } from "../lib/replyTools";
-import { canSearchWeb } from "../lib/searchWeb";
 import schema from "../schema";
+import { canSearchWeb } from "../tools/webSearch";
 import { getStoppedReply } from "./stop";
 import { getContinuedTurn, listTurnUpTo } from "./turns";
 

@@ -9,7 +9,6 @@
  */
 
 import type * as agents_chat from "../agents/chat.js";
-import type * as agents_webSearch from "../agents/webSearch.js";
 import type * as attachments_cleanup from "../attachments/cleanup.js";
 import type * as attachments_load from "../attachments/load.js";
 import type * as attachments_upload from "../attachments/upload.js";
@@ -41,7 +40,6 @@ import type * as lib_oauthDiscovery from "../lib/oauthDiscovery.js";
 import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_replyFailure from "../lib/replyFailure.js";
 import type * as lib_replyTools from "../lib/replyTools.js";
-import type * as lib_searchWeb from "../lib/searchWeb.js";
 import type * as lib_threadSearchSnippet from "../lib/threadSearchSnippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as lib_toolLoading from "../lib/toolLoading.js";
@@ -50,6 +48,7 @@ import type * as signIns from "../signIns.js";
 import type * as threads from "../threads.js";
 import type * as titles from "../titles.js";
 import type * as toolLists from "../toolLists.js";
+import type * as tools_webSearch from "../tools/webSearch.js";
 
 import type {
   ApiFromModules,
@@ -59,7 +58,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "agents/chat": typeof agents_chat;
-  "agents/webSearch": typeof agents_webSearch;
   "attachments/cleanup": typeof attachments_cleanup;
   "attachments/load": typeof attachments_load;
   "attachments/upload": typeof attachments_upload;
@@ -91,7 +89,6 @@ declare const fullApi: ApiFromModules<{
   "lib/prompt": typeof lib_prompt;
   "lib/replyFailure": typeof lib_replyFailure;
   "lib/replyTools": typeof lib_replyTools;
-  "lib/searchWeb": typeof lib_searchWeb;
   "lib/threadSearchSnippet": typeof lib_threadSearchSnippet;
   "lib/timeZone": typeof lib_timeZone;
   "lib/toolLoading": typeof lib_toolLoading;
@@ -100,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   threads: typeof threads;
   titles: typeof titles;
   toolLists: typeof toolLists;
+  "tools/webSearch": typeof tools_webSearch;
 }>;
 
 /**
