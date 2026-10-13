@@ -1,7 +1,7 @@
 "use client";
 
 import { useUIMessages } from "@convex-dev/agent/react";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -17,11 +17,10 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { useThreadState } from "@/hooks/use-thread-state";
-import { errorMessage, throwIfRefused } from "@/lib/errors";
-import { optimisticallySendPrompt } from "@/lib/optimistic-prompt";
+import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
-import { browserTimeZone } from "../../../convex/lib/timeZone";
 import { DecideActionProvider } from "./action-card";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
@@ -43,12 +42,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
     { initialNumItems: PAGE_SIZE, stream: true },
   );
 
-  const sendMessage = useMutation(api.chat.send.sendMessage);
-
-  const stopReply = useMutation(api.chat.stop.stopReply);
-  const regenerateReply = useMutation(api.chat.send.regenerateReply);
-  const editPrompt = useMutation(api.chat.send.editPrompt);
-  const decideAction = useMutation(api.chat.approval.decideAction);
+  const { send, stop, regenerate, edit, decide } = useThreadActions(threadId);
 
   const threadState = useThreadState(messages);
   const { replyInProgress, canRedoLastTurn, lastReplyText } = threadState;
@@ -70,10 +64,6 @@ export function ThreadView({ threadId }: { threadId: string }) {
       composerRef.current?.focus();
     }
     setEditingLastPrompt(editing);
-  }
-
-  async function stop() {
-    await stopReply({ threadId });
   }
 
   useThreadShortcuts({
@@ -122,46 +112,14 @@ export function ThreadView({ threadId }: { threadId: string }) {
       {thread === undefined || status === "LoadingFirstPage" ? (
         <ConversationSkeleton />
       ) : (
-        <DecideActionProvider
-          decide={async (approvalId, approve) => {
-            await decideAction({
-              threadId,
-              approvalId,
-              approve,
-              timeZone: browserTimeZone(),
-            });
-          }}
-        >
+        <DecideActionProvider decide={decide}>
           <MessageList
             messages={messages}
             status={status}
             onLoadEarlier={() => loadMore(PAGE_SIZE)}
             threadState={threadState}
-            onRegenerate={
-              canRedoLastTurn
-                ? async () => {
-                    throwIfRefused(
-                      await regenerateReply({
-                        threadId,
-                        timeZone: browserTimeZone(),
-                      }),
-                    );
-                  }
-                : undefined
-            }
-            onEdit={
-              canRedoLastTurn
-                ? async (prompt) => {
-                    throwIfRefused(
-                      await editPrompt({
-                        threadId,
-                        prompt,
-                        timeZone: browserTimeZone(),
-                      }),
-                    );
-                  }
-                : undefined
-            }
+            onRegenerate={canRedoLastTurn ? regenerate : undefined}
+            onEdit={canRedoLastTurn ? edit : undefined}
             editingLastPrompt={editingLastPrompt}
             onEditingLastPromptChange={changeEditingLastPrompt}
           />
@@ -169,26 +127,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
       )}
       <div className="shrink-0 px-4 pb-4">
         <Composer
-          onSend={async (prompt, attachments) => {
-            // Set up for each Send, since the optimistic prompt shows the
-            // attachments' URLs, and the mutation only takes their IDs.
-            const sendMessageWithOptimisticPrompt =
-              sendMessage.withOptimisticUpdate((localStore) =>
-                optimisticallySendPrompt(localStore, {
-                  threadId,
-                  prompt,
-                  attachments,
-                }),
-              );
-            throwIfRefused(
-              await sendMessageWithOptimisticPrompt({
-                threadId,
-                prompt,
-                attachmentFileIds: attachments.map(({ fileId }) => fileId),
-                timeZone: browserTimeZone(),
-              }),
-            );
-          }}
+          onSend={send}
           onStop={replyInProgress ? stop : undefined}
           disabled={replyInProgress}
           autoFocus
