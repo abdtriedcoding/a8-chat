@@ -1,6 +1,6 @@
 // Every read and write of sign-ins in progress (pendingConnects) and OAuth
-// client registrations (connectorClients). All internal: convex/connectors.ts
-// holds the public functions.
+// client registrations (oauthClientRegistrations). All internal:
+// convex/connectors.ts holds the public functions.
 
 import { v } from "convex/values";
 import { appError, ERROR_CODES } from "./lib/errors";
@@ -14,7 +14,10 @@ import {
 } from "./_generated/server";
 import { requireUser } from "./lib/guards";
 import { limitConnectStart } from "./rateLimits";
-import schema, { vAuthorizationServer, vClientRegistration } from "./schema";
+import schema, {
+  vAuthorizationServer,
+  vOAuthClientRegistration,
+} from "./schema";
 
 /** How long a sign-in can take before its pendingConnects row expires. */
 const PENDING_CONNECT_TTL_MS = 10 * 60 * 1000;
@@ -162,11 +165,11 @@ async function findPendingConnect(ctx: QueryCtx, state: string) {
 
 // OAuth client registrations
 
-export const getClientRegistration = internalQuery({
+export const getOAuthClientRegistration = internalQuery({
   args: { connectorId: v.string() },
-  returns: v.union(schema.doc("connectorClients"), v.null()),
+  returns: v.union(schema.doc("oauthClientRegistrations"), v.null()),
   handler: async (ctx, { connectorId }) => {
-    return await findClientRegistration(ctx, connectorId);
+    return await findOAuthClientRegistration(ctx, connectorId);
   },
 });
 
@@ -175,11 +178,11 @@ export const getClientRegistration = internalQuery({
  * registered first, it throws, because this sign-in's authorize URL names
  * a client that won't be stored. Trying again uses the stored one.
  */
-export const saveClientRegistration = internalMutation({
-  args: vClientRegistration.fields,
+export const saveOAuthClientRegistration = internalMutation({
+  args: vOAuthClientRegistration.fields,
   returns: v.null(),
   handler: async (ctx, registration) => {
-    const existing = await findClientRegistration(
+    const existing = await findOAuthClientRegistration(
       ctx,
       registration.connectorId,
     );
@@ -190,29 +193,60 @@ export const saveClientRegistration = internalMutation({
       );
     }
     if (existing) {
-      await ctx.db.replace("connectorClients", existing._id, registration);
+      await ctx.db.replace("oauthClientRegistrations", existing._id, registration);
     } else {
-      await ctx.db.insert("connectorClients", registration);
+      await ctx.db.insert("oauthClientRegistrations", registration);
     }
     return null;
   },
 });
 
-export const deleteClientRegistration = internalMutation({
+export const deleteOAuthClientRegistration = internalMutation({
   args: { connectorId: v.string() },
   returns: v.null(),
   handler: async (ctx, { connectorId }) => {
-    const registration = await findClientRegistration(ctx, connectorId);
+    const registration = await findOAuthClientRegistration(ctx, connectorId);
     if (registration) {
-      await ctx.db.delete("connectorClients", registration._id);
+      await ctx.db.delete("oauthClientRegistrations", registration._id);
     }
     return null;
   },
 });
 
-async function findClientRegistration(ctx: QueryCtx, connectorId: string) {
+async function findOAuthClientRegistration(
+  ctx: QueryCtx,
+  connectorId: string,
+) {
   return await ctx.db
-    .query("connectorClients")
+    .query("oauthClientRegistrations")
     .withIndex("by_connectorId", (q) => q.eq("connectorId", connectorId))
     .unique();
 }
+
+/**
+ * Copies every connectorClients row into oauthClientRegistrations, the
+ * table's new name. Run it once per deployment with
+ * `npx convex run signIns:copyConnectorClients`. It's safe to run again: a
+ * connector that already has a registration keeps it. Returns how many rows
+ * it copied.
+ */
+export const copyConnectorClients = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    let copied = 0;
+    const rows = await ctx.db.query("connectorClients").collect();
+    for (const row of rows) {
+      if (await findOAuthClientRegistration(ctx, row.connectorId)) continue;
+      const registration: Partial<typeof row> = { ...row };
+      delete registration._id;
+      delete registration._creationTime;
+      await ctx.db.insert(
+        "oauthClientRegistrations",
+        registration as Omit<typeof row, "_id" | "_creationTime">,
+      );
+      copied++;
+    }
+    return copied;
+  },
+});

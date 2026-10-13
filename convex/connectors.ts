@@ -32,7 +32,7 @@ import {
 import {
   classifyOAuthError,
   ConnectorOAuthProvider,
-  forgetClientRegistration,
+  forgetOAuthClientRegistration,
   isUntrustedOrigin,
   isVendorUnreachable,
   signInScope,
@@ -268,7 +268,7 @@ export const finishConnect = action({
       console.error(`Finishing ${connector.name} sign-in failed`, error);
       const connectError = finishConnectError(error);
       if (connectError === "rejected_client") {
-        await forgetClientRegistration(ctx, connector);
+        await forgetOAuthClientRegistration(ctx, connector);
       }
       return { error: connectError };
     }
