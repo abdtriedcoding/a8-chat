@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/files
-import type { FilePart, ImagePart } from "ai";
+import { getFile } from "@convex-dev/agent";
 import { v, type Infer } from "convex/values";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { components, internal } from "./_generated/api";
@@ -19,7 +19,6 @@ import {
   checkAttachmentCount,
   cleanFilename,
   getAcceptedMediaTypes,
-  getAttachmentKind,
   getAttachmentRejectionReason,
   getOversizeReason,
   readMediaType,
@@ -636,29 +635,28 @@ export async function loadPromptAttachments(
           q.eq("userId", userId).eq("fileId", fileId),
         )
         .first();
-      const agentFile =
-        userAttachment &&
-        (await ctx.runQuery(components.agent.files.get, { fileId }));
-      const fileUrl =
-        agentFile && (await ctx.storage.getUrl(userAttachment.storageId));
-      if (!agentFile || !fileUrl) return null;
+      if (!userAttachment) return null;
+      const agentFile = await getFile(ctx, components.agent, fileId).catch(
+        rethrowUnlessFileNotFound,
+      );
+      if (!agentFile) return null;
 
-      const mediaType = agentFile.mediaType ?? "";
-      if (!acceptedMediaTypes.includes(mediaType)) {
+      const { file, filePart, imagePart } = agentFile;
+      if (!acceptedMediaTypes.includes(filePart.mediaType)) {
         throw appError(
           ERROR_CODES.UNSUPPORTED_ATTACHMENT,
           "This model can't read this kind of file.",
         );
       }
-      const filename = agentFile.filename ?? UNNAMED_FILE;
-      // Keep these parts URLs. The Agent stores inline bytes over 64 KB as
-      // its own file, with no attachments row, and cleanUpOrphanedStorage
-      // would delete it a day later.
-      const part: ImagePart | FilePart =
-        getAttachmentKind(mediaType) === "image"
-          ? { type: "image", image: new URL(fileUrl), mediaType }
-          : { type: "file", data: new URL(fileUrl), mediaType, filename };
-      return { fileId, filename, part };
+      // getFile's parts hold the file's URL. Don't swap in the bytes. The
+      // Agent stores inline bytes over 64 KB as its own file, with no
+      // attachments row, and cleanUpOrphanedStorage would delete it a day
+      // later.
+      return {
+        fileId,
+        filename: file.filename ?? UNNAMED_FILE,
+        part: imagePart ?? filePart,
+      };
     }),
   );
   const attachments = loadedAttachments.filter(
@@ -677,4 +675,15 @@ export async function loadPromptAttachments(
     filenames: attachments.map((attachment) => attachment.filename),
     parts: attachments.map((attachment) => attachment.part),
   };
+}
+
+/**
+ * Returns null for the error getFile throws when the Agent's file row or its
+ * storage object is gone, and rethrows any other error.
+ */
+function rethrowUnlessFileNotFound(error: unknown): null {
+  if (error instanceof Error && error.message.startsWith("File not found")) {
+    return null;
+  }
+  throw error;
 }
