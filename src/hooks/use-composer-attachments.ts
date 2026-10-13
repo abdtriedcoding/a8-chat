@@ -8,6 +8,7 @@ import {
   getAttachmentKind,
   getAttachmentRejectionReason,
   MAX_ATTACHMENTS_PER_PROMPT,
+  readMediaType,
 } from "../../convex/lib/attachments";
 
 /** A file in the composer, from the moment the user picks it. */
@@ -88,12 +89,18 @@ export function useComposerAttachments() {
     );
   }
 
-  async function uploadFile(attachmentId: string, file: File) {
+  async function uploadFile(
+    attachmentId: string,
+    file: File,
+    mediaType: string,
+  ) {
     try {
       const uploadUrl = await generateUploadUrl();
+      // Storage serves the file with this type, so it's the one the bytes
+      // show. file.type comes from the name.
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
-        headers: { "Content-Type": file.type },
+        headers: { "Content-Type": mediaType },
         body: file,
       });
       if (!uploadResponse.ok) {
@@ -121,15 +128,18 @@ export function useComposerAttachments() {
 
   /**
    * Checks the files and starts uploading the ones that pass. The rest are
-   * refused with a toast, before any upload.
+   * refused with a toast, before any upload. It checks the type each file's
+   * first bytes show, like the server, so an image named .pdf is an image.
    */
-  function addFiles(files: File[]) {
+  async function addFiles(files: File[]) {
+    const mediaTypes = await Promise.all(files.map(readMediaType));
     const freeSlots =
       MAX_ATTACHMENTS_PER_PROMPT - latestAttachments.current.length;
     const newAttachments: ComposerAttachment[] = [];
-    for (const file of files) {
+    for (const [i, file] of files.entries()) {
+      const mediaType = mediaTypes[i];
       const rejectionReason = getAttachmentRejectionReason(
-        file,
+        { name: file.name, type: mediaType, size: file.size },
         acceptedMediaTypes,
       );
       if (rejectionReason) {
@@ -143,7 +153,7 @@ export function useComposerAttachments() {
         break;
       }
       let previewUrl: string | undefined;
-      if (getAttachmentKind(file.type) === "image") {
+      if (getAttachmentKind(mediaType) === "image") {
         previewUrl = URL.createObjectURL(file);
         previewUrlsInUse.current.add(previewUrl);
       }
@@ -152,11 +162,11 @@ export function useComposerAttachments() {
         id: attachmentId,
         filename: file.name,
         sizeInBytes: file.size,
-        mediaType: file.type,
+        mediaType,
         previewUrl,
         uploadStatus: "uploading",
       });
-      void uploadFile(attachmentId, file);
+      void uploadFile(attachmentId, file, mediaType);
     }
     changeAttachments((currentAttachments) => [
       ...currentAttachments,
