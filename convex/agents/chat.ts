@@ -4,8 +4,7 @@ import { Agent, type UsageHandler } from "@convex-dev/agent";
 import type { ToolSet } from "ai";
 import { components } from "../_generated/api";
 import { env } from "../_generated/server";
-import { canSearchWeb } from "../lib/searchWeb";
-import { webSearch } from "./webSearch";
+import { canSearchWeb, webSearch } from "../tools/webSearch";
 
 /**
  * The most model calls one reply makes, reached only with connector tools.

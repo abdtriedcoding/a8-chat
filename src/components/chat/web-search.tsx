@@ -1,10 +1,12 @@
 import { GlobeIcon } from "lucide-react";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import type { ThreadMessage } from "@/lib/stopped-turns";
-import type { WebSearchOutput } from "../../../convex/agents/webSearch";
-import type { WebSearchResult } from "../../../convex/lib/searchWeb";
+import type {
+  WebSearchOutput,
+  WebSearchResult,
+} from "../../../convex/tools/webSearch";
 
-/** A reply's call to the web search tool (convex/agents/webSearch.ts). */
+/** A reply's call to the web search tool (convex/tools/webSearch.ts). */
 type WebSearchPart = {
   type: "tool-webSearch";
   state: string;
