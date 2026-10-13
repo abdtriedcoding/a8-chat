@@ -19,10 +19,14 @@ const KEY_ID_LENGTH = 8;
 /** CONNECTION_ENCRYPTION_KEY, imported, and its key id. */
 export type EncryptionKey = { cryptoKey: CryptoKey; id: string };
 
+// The import promise for the last raw env value seen. A changed env var
+// misses the cache, and a failed import is dropped so the next call retries.
+let cached: { raw: string; key: Promise<EncryptionKey> } | undefined;
+
 /**
- * Imports CONNECTION_ENCRYPTION_KEY. Throws a ConvexError that names the
- * env var if it isn't a base64-encoded 32-byte key. Call it before storing
- * anything, so a misconfigured deployment stores nothing.
+ * Imports CONNECTION_ENCRYPTION_KEY once per runtime. Throws a ConvexError
+ * that names the env var if it isn't a base64-encoded 32-byte key. Call it
+ * before storing anything, so a misconfigured deployment stores nothing.
  */
 export async function getEncryptionKey(): Promise<EncryptionKey> {
   const raw = env.CONNECTION_ENCRYPTION_KEY;
@@ -32,12 +36,27 @@ export async function getEncryptionKey(): Promise<EncryptionKey> {
   } catch {
     bytes = undefined;
   }
-  if (bytes?.length !== 32) {
+  if (!raw || bytes?.length !== 32) {
     throw appError(
       ERROR_CODES.MISCONFIGURED,
       "Connectors need CONNECTION_ENCRYPTION_KEY, a base64-encoded 32-byte key. Ask whoever runs this a8 to set it.",
     );
   }
+  if (cached?.raw === raw) return await cached.key;
+  const key = importKey(bytes);
+  const entry = { raw, key };
+  cached = entry;
+  try {
+    return await key;
+  } catch (error) {
+    if (cached === entry) cached = undefined;
+    throw error;
+  }
+}
+
+async function importKey(
+  bytes: Uint8Array<ArrayBuffer>,
+): Promise<EncryptionKey> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return {
     cryptoKey: await crypto.subtle.importKey("raw", bytes, "AES-GCM", false, [
