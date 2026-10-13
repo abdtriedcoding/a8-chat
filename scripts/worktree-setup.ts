@@ -63,4 +63,33 @@ env += `\nNEXT_PUBLIC_SITE_URL=${siteUrl}\nPORT=${port}\n`;
 writeFileSync(envPath, env);
 
 convex("dev", "--once");
+
+// Seed the shared e2e login so agents sign in instead of signing up each time.
+// E2E_EMAIL and E2E_PASSWORD_HASH come from the main checkout's .env.local,
+// copied above. Skip when they're not set.
+const envVar = (key: string) => readFileSync(envPath, "utf8").match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]?.trim();
+const e2eEmail = envVar("E2E_EMAIL");
+const e2eHash = envVar("E2E_PASSWORD_HASH");
+if (e2eEmail && e2eHash) {
+  const component = ["--component", "betterAuth"];
+  const found = convex(
+    "run", ...target, ...component, "adapter:findOne",
+    JSON.stringify({ model: "user", where: [{ field: "email", value: e2eEmail }] }),
+  ).trim();
+  if (!found || found === "null") {
+    const create = (model: string, data: object) =>
+      JSON.parse(convex("run", ...target, ...component, "adapter:create", JSON.stringify({ input: { model, data } })));
+    const now = Date.now();
+    const user = create("user", { name: "E2E Test", email: e2eEmail, emailVerified: true, createdAt: now, updatedAt: now });
+    create("account", {
+      accountId: user._id,
+      providerId: "credential",
+      userId: user._id,
+      password: e2eHash,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
 console.log(`worktree ${name}: ${siteUrl}, deployment dev/${name}`);

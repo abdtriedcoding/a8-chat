@@ -22,7 +22,7 @@ Use the Playwright MCP tools (`mcp__playwright__browser_*`), which `.mcp.json` r
 
 ## Signing in
 
-The browser keeps its own profile, so a session carries over between runs. If a page lands on `/sign-in`, go to `/sign-up` and create a throwaway account: name `E2E Test`, email `e2e-<random>@example.com`, any password of 8 or more characters. Email accounts need no verification. Don't use Google sign-in.
+The browser keeps its own profile, so a session carries over between runs. If a page lands on `/sign-in`, sign in with the shared dev e2e account. Read `E2E_EMAIL` and `E2E_PASSWORD` from this checkout's `.env.local` (gitignored; copied from the main checkout into worktrees). It's email-verified and already has threads and connections. The main dev deployment has it, and the worktree setup hook seeds it into each new worktree deployment. Only sign up a new account if that sign-in fails. Don't use Google sign-in.
 
 Sending a chat message costs a model call, so only send one when the check needs a reply.
 
