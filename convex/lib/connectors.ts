@@ -14,12 +14,6 @@ import {
   type ServerKey,
 } from "./connectorView";
 
-/**
- * How a8 gets an OAuth client for a connector's MCP server. With dynamic
- * registration, a8 registers itself once per deployment.
- */
-export type ConnectorSignIn = { kind: "dynamicRegistration" };
-
 /** One tool a8 offers the model from an MCP server. */
 export type ConnectorTool = ConnectorToolView;
 
@@ -52,7 +46,7 @@ export type ConnectorServer = {
  *   reads the result's structured content, or else its first text part as
  *   JSON.
  */
-export type AccountLabelSource<Tool extends string = string> =
+type AccountLabelSource<Tool extends string = string> =
   | { from: "tokenResponse"; field: string }
   | {
       from: "tool";
@@ -61,7 +55,10 @@ export type AccountLabelSource<Tool extends string = string> =
       field: string;
     };
 
-/** How a8 signs in to a connector and what it may contact. */
+/**
+ * How a8 signs in to a connector and what it may contact. a8 gets an OAuth
+ * client by dynamic registration, once per deployment.
+ */
 type ConnectorAccess<Tool extends string> = {
   /**
    * Every origin a8 talks to for this connector: each MCP server's, and
@@ -70,7 +67,6 @@ type ConnectorAccess<Tool extends string> = {
    * server whose origin isn't listed here (ADR 0003).
    */
   pinnedOrigins: string[];
-  signIn: ConnectorSignIn;
   /**
    * The scopes sign-in asks for. Without them, a8 asks for the scopes the
    * first server's protected resource metadata lists, if it lists any.
@@ -117,7 +113,7 @@ export type Connector = Omit<ConnectorView, "id" | "servers"> &
   };
 
 /** A connector from a8's catalog. */
-export type CatalogConnector = Connector & { id: ConnectorId };
+type CatalogConnector = Connector & { id: ConnectorId };
 
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
@@ -127,7 +123,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       },
     },
     pinnedOrigins: ["https://mcp.notion.com"],
-    signIn: { kind: "dynamicRegistration" },
     accountLabel: { from: "tokenResponse", field: "workspace_name" },
   },
   linear: {
@@ -137,7 +132,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       },
     },
     pinnedOrigins: ["https://mcp.linear.app"],
-    signIn: { kind: "dynamicRegistration" },
     accountLabel: { from: "tool", tool: "get_workspace", field: "name" },
   },
   todoist: {
@@ -147,7 +141,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       },
     },
     pinnedOrigins: ["https://ai.todoist.net", "https://todoist.com"],
-    signIn: { kind: "dynamicRegistration" },
     accountLabel: { from: "tool", tool: "user-info", field: "email" },
   },
   airtable: {
@@ -157,7 +150,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       },
     },
     pinnedOrigins: ["https://mcp.airtable.com", "https://airtable.com"],
-    signIn: { kind: "dynamicRegistration" },
   },
   calendly: {
     servers: {
@@ -166,7 +158,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       },
     },
     pinnedOrigins: ["https://mcp.calendly.com", "https://calendly.com"],
-    signIn: { kind: "dynamicRegistration" },
     accountLabel: { from: "tool", tool: "users-get_current_user", field: "resource.email" },
   },
 };

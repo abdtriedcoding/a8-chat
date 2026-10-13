@@ -536,12 +536,10 @@ type ContentPart = { type: string; text?: unknown };
  * - `data`: the structured content, or else the first text part parsed as
  *   JSON. Undefined if there's neither. The account label is read from
  *   this.
- *
- * Each is worked out only when read.
  */
 export function readToolResult(result: CallToolResult): {
-  readonly text: string;
-  readonly data: unknown;
+  text: string;
+  data: unknown;
 } {
   const content =
     "content" in result && Array.isArray(result.content)
@@ -550,31 +548,42 @@ export function readToolResult(result: CallToolResult): {
   const structured =
     "structuredContent" in result ? result.structuredContent : undefined;
   return {
-    get text() {
-      if (!content) return JSON.stringify(structured ?? result);
-      if (content.length === 0 && structured != null) {
-        return JSON.stringify(structured);
-      }
-      return content
-        .map((part) => {
-          const text = textOf(part);
-          if (text !== undefined) return text;
-          if (part.type === "image") return "[image]";
-          return JSON.stringify(part);
-        })
-        .join("\n\n");
-    },
-    get data() {
-      if (structured) return structured;
-      const text = content?.map(textOf).find((text) => text !== undefined);
-      if (text === undefined) return undefined;
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        return undefined;
-      }
-    },
+    text: resultText(result, content, structured),
+    data: resultData(content, structured),
   };
+}
+
+function resultText(
+  result: CallToolResult,
+  content: ContentPart[] | undefined,
+  structured: unknown,
+): string {
+  if (!content) return JSON.stringify(structured ?? result);
+  if (content.length === 0 && structured != null) {
+    return JSON.stringify(structured);
+  }
+  return content
+    .map((part) => {
+      const text = textOf(part);
+      if (text !== undefined) return text;
+      if (part.type === "image") return "[image]";
+      return JSON.stringify(part);
+    })
+    .join("\n\n");
+}
+
+function resultData(
+  content: ContentPart[] | undefined,
+  structured: unknown,
+): unknown {
+  if (structured) return structured;
+  const text = content?.map(textOf).find((text) => text !== undefined);
+  if (text === undefined) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A content part's text, or undefined if it isn't a text part. */
