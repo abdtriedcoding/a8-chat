@@ -98,6 +98,7 @@ export function useComposerAttachments() {
   ) {
     try {
       const uploadUrl = await generateUploadUrl();
+      if (typeof uploadUrl !== "string") throw new ConvexError(uploadUrl);
       // Storage serves the file with this type, so it's the one the bytes
       // show. file.type comes from the name.
       const uploadResponse = await fetch(uploadUrl, {
@@ -120,11 +121,12 @@ export function useComposerAttachments() {
         fileUrl: registration.fileUrl,
       });
     } catch (error) {
-      updateAttachment(attachmentId, {
-        uploadStatus: "error",
-        uploadError:
-          error instanceof ConvexError ? errorMessage(error) : "Upload failed.",
-      });
+      const uploadError =
+        error instanceof ConvexError ? errorMessage(error) : "Upload failed.";
+      updateAttachment(attachmentId, { uploadStatus: "error", uploadError });
+      // The chip cuts off a long message, so the toast shows all of it. Files
+      // that fail for the same reason share one toast.
+      toast.error(uploadError, { id: uploadError });
     }
   }
 
