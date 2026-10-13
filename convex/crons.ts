@@ -31,7 +31,7 @@ crons.cron(
 crons.interval(
   "clean up expired connects",
   { hours: 1 },
-  internal.connectorStore.cleanUpExpiredConnects,
+  internal.signIns.cleanUpExpiredConnects,
   {},
 );
 

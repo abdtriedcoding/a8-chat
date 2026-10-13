@@ -5,11 +5,13 @@ a8 reaches each app through the vendor's own MCP server, with a8 as the OAuth an
 ## Where the code lives
 
 - `convex/connectors.ts`: the public functions, `list`, `connect`, `finishConnect` and `disconnect`, and the OAuth callback route, `/connectors/callback`. `list` returns each catalog connector's status only. The UI takes names and logos from the client-safe view.
-- `convex/connectorStore.ts`: every write to connections, sign-ins in progress (`pendingConnects`) and OAuth client registrations (`connectorClients`), the refresh lease mutations, and the revoke-then-delete that disconnect and account deletion share.
+- `convex/connections.ts`: connection rows, the refresh lease mutations, the revoke-then-delete that disconnect and account deletion share, and re-encrypting stored secrets.
+- `convex/signIns.ts`: sign-ins in progress (`pendingConnects`), OAuth client registrations (`connectorClients`), the connect rate limit check and expired sign-in cleanup.
+- `convex/lib/oauthDiscovery.ts`: OAuth metadata discovery, used by revocation and the probe script.
 - `convex/toolLists.ts`: each connection's stored tool list, in `connectionToolLists`. It fetches, stores and refreshes the list.
 - `convex/lib/connectorView.ts`: the client-safe view of the catalog.
 - `convex/lib/connectors.ts`: the server catalog.
-- `convex/lib/connectorAuth.ts`: the OAuth provider `auth()` signs in with, the pinned fetch, metadata discovery, revocation, the OAuth error classifier, and opening MCP clients.
+- `convex/lib/connectorAuth.ts`: the OAuth provider `auth()` signs in with, the pinned fetch, revocation, the OAuth error classifier, and opening MCP clients.
 - `convex/lib/connectionTokens.ts`: a connection's access token, refreshed under the lease (ADR 0003).
 - `convex/lib/encryption.ts`: encrypts and decrypts the stored tokens and client secrets under `CONNECTION_ENCRYPTION_KEY`.
 - `convex/lib/connectorToolList.ts`: what a8 keeps of a server's tool list, and the token estimate.
@@ -99,7 +101,7 @@ For a catalog connector with several servers, the metadata comes from the first 
 - the scopes named in the challenge, the resource metadata and the authorization server metadata
 - every origin it reached or found in the metadata, with what uses each one
 
-Metadata discovery is a8's own code from `convex/lib/connectorAuth.ts`, without the pinned origins.
+Metadata discovery is a8's own code from `convex/lib/oauthDiscovery.ts`, without the pinned origins.
 
 To list tools from a server that needs sign-in, it needs an access token. There are two ways to give it one:
 
@@ -185,7 +187,7 @@ a8 stores each secret as `v2.<keyId>.<iv>.<ciphertext>`. The key id is the first
 Secrets stored before key ids are `v1.<iv>.<ciphertext>`. a8 still decrypts them, but it can't tell a wrong key from a damaged `v1` secret, so a wrong key still marks those connections. Rewrite them as `v2` once per deployment, with the right key set:
 
 ```bash
-npx convex run connectorStore:reencryptSecrets
+npx convex run connections:reencryptSecrets
 ```
 
 Add `--prod` for the production deployment. It returns how many secrets it rewrote and how many didn't decrypt, and it's safe to run again. a8 doesn't support changing the key on purpose yet. Every connection and client registration would need its secrets rewritten under the new key.

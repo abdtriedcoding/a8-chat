@@ -28,7 +28,7 @@ import { optionalUser, requireIdentity } from "./lib/guards";
 import {
   readUserConnections,
   revokeAndDeleteConnection,
-} from "./connectorStore";
+} from "./connections";
 import {
   classifyOAuthError,
   ConnectorOAuthProvider,
@@ -115,7 +115,7 @@ export const connect = action({
   handler: async (ctx, { connectorId }): Promise<string> => {
     // Checks the session and the rate limit before any outbound fetch, since
     // discovery and client registration call the vendor.
-    await ctx.runMutation(internal.connectorStore.checkConnectStart, {});
+    await ctx.runMutation(internal.signIns.checkConnectStart, {});
     const connector = findConnector(connectorId);
     if (!connector) {
       throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
@@ -151,7 +151,7 @@ export const connect = action({
     ) {
       throw new Error("auth() returned without starting a sign-in.");
     }
-    await ctx.runMutation(internal.connectorStore.savePendingConnect, {
+    await ctx.runMutation(internal.signIns.savePendingConnect, {
       state: savedState,
       codeVerifier: savedCodeVerifier,
       connectorId: connector.id,
@@ -183,7 +183,7 @@ export const callback = httpAction(async (ctx, request) => {
     // Anyone can put `error` in this URL, so it never drops the shared
     // client registration. finishConnect and auth() drop it when Notion
     // itself rejects the client.
-    await ctx.runMutation(internal.connectorStore.deletePendingConnect, {
+    await ctx.runMutation(internal.signIns.deletePendingConnect, {
       state,
     });
     return redirectToConnectors({
@@ -210,7 +210,7 @@ export const finishConnect = action({
   handler: async (ctx, { state, code, iss }): Promise<ConnectResult> => {
     // takePendingConnect checks the session before any outbound fetch.
     const pending = await ctx.runMutation(
-      internal.connectorStore.takePendingConnect,
+      internal.signIns.takePendingConnect,
       { state },
     );
     if (!pending) return { error: "expired" };
@@ -244,7 +244,7 @@ export const finishConnect = action({
             (await readAccountLabel(connector, clients)),
         }),
       );
-      await ctx.runMutation(internal.connectorStore.saveConnection, {
+      await ctx.runMutation(internal.connections.saveConnection, {
         userId: pending.userId,
         connectorId: connector.id,
         encryptedAccessToken: await encryptSecret(
@@ -295,13 +295,13 @@ export const disconnect = action({
       throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
     }
     const connection = await ctx.runQuery(
-      internal.connectorStore.getConnection,
+      internal.connections.getConnection,
       { by: { connectorId } },
     );
     // Already disconnected, maybe from another tab. a8 holds no token.
     if (!connection) return { revoked: true };
     const revoked = await revokeAndDeleteConnection(ctx, connection, () =>
-      ctx.runMutation(internal.connectorStore.deleteConnection, {
+      ctx.runMutation(internal.connections.deleteConnection, {
         connectionId: connection._id,
         userId,
         connectedAt: connection.connectedAt,

@@ -9,7 +9,7 @@ import { env } from "../_generated/server";
 // means the deployment runs with the wrong key. A value with this key id
 // that doesn't decrypt is damaged. Values stored before key ids are
 // "v1.<iv>.<ciphertext>". They still decrypt, and
-// reencryptSecrets (convex/connectorStore.ts) rewrites them as v2.
+// reencryptSecrets (convex/connections.ts) rewrites them as v2.
 
 const VERSION = "v2";
 const LEGACY_VERSION = "v1";
