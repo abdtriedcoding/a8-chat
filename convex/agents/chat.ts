@@ -23,12 +23,12 @@ const anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
 /**
  * The model that writes replies and thread titles. Replies need a model
- * with Anthropic's tool search (toolSearch). Haiku 4.5 isn't in the AI
- * SDK's list, but the tool search spike
- * (docs/connectors/tool-search-spike.md) found it searches well when the
- * system prompt names the user's connections.
+ * with Anthropic's tool search (toolSearch). The tool search spike
+ * (docs/connectors/tool-search-spike.md) ran on Haiku 4.5 and found it
+ * searches well when the system prompt names the user's connections. Haiku
+ * 5.5 is newer, so it supports tool search too.
  */
-export const chatModel = anthropic("claude-haiku-4-5-20251001");
+export const chatModel = anthropic("claude-haiku-5-5");
 
 /**
  * The tool a reply that defers connector tools offers for finding them

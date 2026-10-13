@@ -13,7 +13,7 @@ Whether a tool asks for approval is ADR 0008's rule.
 - **Mention only (ADR 0004):** lowest token cost, but the model can't reach a connected app on its own.
 - **Every tool the server lists, always:** no lists to keep up, but Notion and GitHub together pass 80 tools.
 - **Only mentioned connectors above a 40-tool cap (ADR 0005):** replaced by ADR 0006's token budget. One tool's schema can be ten times the size of another's, and the model couldn't reach an unmentioned connector at all.
-- **Only mentioned connectors, on models without tool search:** built as a "mentions" loading mode, then deleted in #148. The chat model is Haiku 4.5, which supports tool search. Re-add it when a8 runs a model without tool search (Stage 9).
+- **Only mentioned connectors, on models without tool search:** built as a "mentions" loading mode, then deleted in #148. The chat model is Haiku 5.5, which supports tool search. Re-add it when a8 runs a model without tool search (Stage 9).
 - **A "+" picker in the composer:** dropped so there is one way in. Typing @ opens a menu of every connector, connected ones first.
 
 ## Consequences
