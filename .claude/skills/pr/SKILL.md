@@ -1,10 +1,10 @@
 ---
 name: pr
-description: "Commit the current work, push it, and open a GitHub PR whose description walks the reviewer through the feature flow step by step (FE to BE and back) with pseudocode. Returns the PR URL. Use when the user runs /pr or asks to open a PR for the current work."
+description: "Commit the current work, push it, and open a GitHub PR whose description walks the reviewer through the feature flow step by step (FE to BE and back) with pseudocode. Then babysit the PR: fix CodeRabbit comments that matter, wait for approval, merge, delete the worktree's Convex dev deployment. Use when the user runs /pr or asks to open a PR for the current work."
 disable-model-invocation: true
 ---
 
-Open a PR for the work on the current branch and reply with its URL. Running /pr is the user's go-ahead to commit and push, so don't ask.
+Open a PR for the work on the current branch, babysit it through CodeRabbit review, merge it, and clean up. Running /pr is the user's go-ahead to commit, push, fix review comments, and merge, so don't ask.
 
 Apply /unslop to the commit message and the PR description.
 
@@ -88,4 +88,22 @@ End the description with the attribution line from the system reminder.
 2. Write the description to a file in the scratchpad directory and run `gh pr create --base main --title "<commit-style title>" --body-file <file>`.
 3. If a PR already exists for the branch, update its body with `gh pr edit --body-file <file>` instead.
 
-Reply with the PR URL and one line on anything that needs the user's attention, such as a fixed lint error or a gap listed under "Not in this PR".
+Don't reply yet. Babysit the PR first.
+
+## 7. Babysit until CodeRabbit approves, then merge
+
+Poll every few minutes with `gh pr checks <n>`, `gh pr view <n> --comments` and `gh api repos/abdtriedcoding/a8-chat/pulls/<n>/comments`.
+
+1. Read each CodeRabbit comment. Fix the ones that point at a real bug, a missed requirement, or a standards violation. Skip nitpicks, style taste, and suggestions that contradict the issue or `GLOSSARY.md`. Reply on the thread with one line saying why you skipped.
+2. After fixes, rerun `bun run typecheck` and `bun run lint`, commit, push, and poll again. CodeRabbit re-reviews each push.
+3. Repeat until CodeRabbit approves (or reports no actionable comments) and every other check passes.
+4. If CodeRabbit says the free OSS reviews ran out, don't wait. Merge once the other checks pass.
+5. Merge with `gh pr merge <n> --merge`. Never pass `--delete-branch`; keep the local and remote branch.
+6. Stop and ask only if a comment needs a product decision, or checks keep failing after two fix attempts.
+
+## 8. Clean up
+
+1. In a linked worktree, run `bun scripts/worktree-teardown.ts`. It deletes this worktree's Convex dev deployment, and it refuses anything that isn't a non-default dev deployment. Do this only after the merge, since the deployment holds the browser-verify data. In the main checkout it does nothing. If you skip it, the deployment still expires 14 days after creation.
+2. Update `main`. In the main checkout run `git switch main && git pull --ff-only`. In a linked worktree `main` is checked out elsewhere, so run `git -C <main checkout> pull --ff-only` instead.
+
+Reply with the PR URL, the merge result, and one line on anything that needs the user's attention, such as a fixed lint error, a skipped CodeRabbit comment, or a gap listed under "Not in this PR".

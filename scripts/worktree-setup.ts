@@ -37,25 +37,21 @@ if (!existsSync(resolve(worktree, "node_modules"))) run(["bun", "install", "--fr
 // Start from the main checkout's .env.local, then point it at a new deployment.
 const envPath = resolve(worktree, ".env.local");
 writeFileSync(envPath, readFileSync(resolve(root, ".env.local")));
-const mainEnv = run(["bunx", "convex", "env", "list"], root) // main deployment, before selecting
-  .split(/\r?\n/)
-  .map((l) => l.trim())
-  .filter(Boolean);
-
 // Create fails when the deployment already exists (a re-run), which is fine.
+// It expires on its own as a safety net if worktree-teardown.ts never runs.
+// New dev deployments start with the project's default env vars (see below).
 try {
-  convex("deployment", "create", `dev/${name}`, "--type", "dev");
+  convex("deployment", "create", `dev/${name}`, "--type", "dev", "--expiration", "in 14 days");
 } catch {}
 convex("deployment", "select", `dev/${name}`); // rewrites the Convex lines in .env.local
 const target = ["--deployment", `dev/${name}`]; // never fall back to main's deployment
 
-// Copy the main deployment's variables, except the ones tied to the port.
-for (const line of mainEnv) {
-  const i = line.indexOf("=");
-  const key = line.slice(0, i);
-  if (!key || key === "SITE_URL") continue;
-  convex("env", "set", ...target, key, line.slice(i + 1));
-}
+// Everything except SITE_URL comes from the project's dev env defaults. Set them
+// once with `bunx convex env default set --type dev NAME value`. Fail early
+// instead of leaving a worktree with a half-configured deployment.
+const defaults = convex("env", "default", "list", "--type", "dev", "--names-only").split(/\r?\n/).map((l) => l.trim());
+const missing = ["ANTHROPIC_API_KEY", "BETTER_AUTH_SECRET", "CONNECTION_ENCRYPTION_KEY"].filter((k) => !defaults.includes(k));
+if (missing.length) throw new Error(`project dev env defaults are missing ${missing.join(", ")}`);
 convex("env", "set", ...target, "SITE_URL", siteUrl);
 
 let env = readFileSync(envPath, "utf8").replace(/^(NEXT_PUBLIC_SITE_URL|PORT)=.*\r?\n?/gm, "");
