@@ -32,6 +32,10 @@ Sending a chat message costs a model call, so only send one when the check needs
 - The tool returns the image. Look at it, and only call it proof once it shows the change.
 - Attach them to the PR yourself with `gh`'s `--attach` flag, written as `<file>#<alt text>`. It works on `gh pr create`, `gh pr edit <n>` and `gh pr comment <n>`, and you can repeat it up to 50 times per command. If the body references a file as `![alt](./.playwright-mcp/x.png)`, gh rewrites that reference to the uploaded image; files the body doesn't reference get added to the end. Don't ask the user to drag them in.
 
+## Close the browser when done
+
+Once every check passes and the screenshots are saved (and attached to the PR, if there is one), call `browser_close` so the Chrome window doesn't stay open. Do it as the last step of every run, even if a check failed. If you opened extra tabs, close them too (`browser_tabs`). Don't close it mid-run. A later run reopens it on its own, and the profile keeps the sign-in.
+
 ## If the tools aren't there
 
 MCP servers load when a session starts, and the user approves this project's server once. If there are no `mcp__playwright__` tools, tell the user to approve `playwright` under `/mcp`, or to restart the session.
