@@ -69,14 +69,46 @@ export function getAttachmentRejectionReason(
       : `${file.name} isn't a ${joinWithOr(acceptedLabels)} file.`;
   }
   if (file.size > fileType.maxSizeInBytes) {
-    const maxSizeInMb = fileType.maxSizeInBytes / BYTES_PER_MB;
-    return `${file.name} is over the ${maxSizeInMb} MB limit.`;
+    return describeOversize(file.name, fileType.maxSizeInBytes);
   }
   return null;
 }
 
+/**
+ * Why a file is too big for every type a model accepts, or null if it fits
+ * one of them. It needs no media type, so the server can check an upload's
+ * size before reading its bytes.
+ */
+export function getOversizeReason(
+  file: { name: string; size: number },
+  acceptedMediaTypes: readonly string[],
+): string | null {
+  if (acceptedMediaTypes.length === 0) return null;
+  const maxSizeInBytes = Math.max(
+    ...acceptedMediaTypes.map(
+      (mediaType) => SUPPORTED_FILE_TYPES[mediaType].maxSizeInBytes,
+    ),
+  );
+  return file.size > maxSizeInBytes
+    ? describeOversize(file.name, maxSizeInBytes)
+    : null;
+}
+
+function describeOversize(filename: string, maxSizeInBytes: number) {
+  return `${filename} is over the ${maxSizeInBytes / BYTES_PER_MB} MB limit.`;
+}
+
 /** How many bytes from the start of a file detectMediaType needs. */
-export const FILE_SIGNATURE_LENGTH = 12;
+const FILE_SIGNATURE_LENGTH = 12;
+
+/**
+ * The media type a file's first bytes show (detectMediaType), or "" if they
+ * match no type a8 takes. getAttachmentRejectionReason refuses "".
+ */
+export async function readMediaType(file: Blob): Promise<string> {
+  const firstBytes = await file.slice(0, FILE_SIGNATURE_LENGTH).arrayBuffer();
+  return detectMediaType(new Uint8Array(firstBytes)) ?? "";
+}
 
 /**
  * The media type a file's first bytes show, or null if they don't match a

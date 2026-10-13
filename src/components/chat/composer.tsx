@@ -159,7 +159,7 @@ export function Composer({
         multiple
         hidden
         onChange={(event) => {
-          addFiles(Array.from(event.target.files ?? []));
+          void addFiles(Array.from(event.target.files ?? []));
           // Lets the same file be picked again after it's removed.
           event.target.value = "";
         }}
@@ -243,7 +243,7 @@ export function Composer({
               return;
             }
             event.preventDefault();
-            addFiles(pastedFiles);
+            void addFiles(pastedFiles);
           }}
           onKeyDown={(event) => {
             if (mentions.onKeyDown(event)) return;

@@ -7,7 +7,6 @@ import type { Id } from "./_generated/dataModel";
 import {
   action,
   internalMutation,
-  internalQuery,
   mutation,
   query,
   type ActionCtx,
@@ -19,11 +18,11 @@ import { limitUploadRegistration, limitUploadUrl } from "./rateLimits";
 import {
   checkAttachmentCount,
   cleanFilename,
-  detectMediaType,
-  FILE_SIGNATURE_LENGTH,
   getAcceptedMediaTypes,
   getAttachmentKind,
   getAttachmentRejectionReason,
+  getOversizeReason,
+  readMediaType,
   UNNAMED_FILE,
 } from "./lib/attachments";
 
@@ -50,8 +49,12 @@ export const vAttachmentNotFound = v.object({
   message: v.string(),
 });
 
+/** What claimUpload reads from the stored file's metadata. */
+const vClaimedUpload = v.object({ size: v.number(), sha256: v.string() });
+
 type RegisteredUpload = Infer<typeof vRegisteredUpload>;
 type UploadRejected = Infer<typeof vUploadRejected>;
+type ClaimedUpload = Infer<typeof vClaimedUpload>;
 export type AttachmentNotFound = Infer<typeof vAttachmentNotFound>;
 
 /**
@@ -92,8 +95,9 @@ export const generateUploadUrl = mutation({
 });
 
 /**
- * Ties an uploaded file to the user registering it, or refuses. A user can
- * claim a file if:
+ * Ties an uploaded file to the user registering it, and returns the file's
+ * size and hash, or refuses. Actions can't read storage metadata, so it
+ * returns them for registerUpload. A user can claim a file if:
  * - nobody has claimed it, and the user has a grant from the last 24 hours
  *   that's older than the file, which the claim then spends, or
  * - the user already claimed it, as on a retry.
@@ -109,8 +113,11 @@ export const generateUploadUrl = mutation({
  */
 export const claimUpload = internalMutation({
   args: { storageId: v.id("_storage") },
-  returns: v.union(v.null(), vUploadRejected),
-  handler: async (ctx, { storageId }): Promise<UploadRejected | null> => {
+  returns: v.union(vClaimedUpload, vUploadRejected),
+  handler: async (
+    ctx,
+    { storageId },
+  ): Promise<ClaimedUpload | UploadRejected> => {
     const user = await requireUser(ctx);
     if (!(await limitUploadRegistration(ctx, user._id))) {
       return {
@@ -124,13 +131,14 @@ export const claimUpload = internalMutation({
     };
     const storedFile = await ctx.db.system.get("_storage", storageId);
     if (!storedFile) return notFound;
+    const claimedUpload = { size: storedFile.size, sha256: storedFile.sha256 };
 
     const claim = await ctx.db
       .query("uploadGrants")
       .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
       .first();
     if (claim) {
-      return claim.userId === user._id ? null : notFound;
+      return claim.userId === user._id ? claimedUpload : notFound;
     }
 
     const grant = await ctx.db
@@ -145,15 +153,15 @@ export const claimUpload = internalMutation({
       .first();
     if (!grant) return notFound;
     await ctx.db.patch("uploadGrants", grant._id, { storageId });
-    return null;
+    return claimedUpload;
   },
 });
 
 /**
  * Registers a file the user uploaded, so a Send can attach it. The browser's
- * checks can be skipped, so it checks the file again:
- * - the type the upload declared, and the size, from the storage metadata
- * - the type the file's first bytes show, which is the type it's saved with
+ * checks can be skipped, so it checks the file again: its size, and the type
+ * its first bytes show, which is the type it's saved with. The browser sets
+ * the type the upload declared, so registerUpload ignores it.
  *
  * It's an action because only actions can read a stored file. saveUpload
  * then adds the file to the Agent's files table, and records that the user
@@ -172,66 +180,42 @@ export const registerUpload = action({
   ): Promise<RegisteredUpload | UploadRejected> => {
     await requireIdentity(ctx);
     // Nothing below deletes a file until the user has claimed it.
-    const refusal = await ctx.runMutation(internal.attachments.claimUpload, {
-      storageId,
-    });
-    if (refusal) return refusal;
-    const storageMetadata = await ctx.runQuery(
-      internal.attachments.getStorageMetadata,
+    const claimedUpload: ClaimedUpload | UploadRejected = await ctx.runMutation(
+      internal.attachments.claimUpload,
       { storageId },
     );
-    if (!storageMetadata) {
-      throw appError(ERROR_CODES.NOT_FOUND, "Upload not found.");
-    }
+    if ("code" in claimedUpload) return claimedUpload;
     const safeFilename = cleanFilename(filename);
     const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
 
-    // The declared type is checked first, so an upload over its type's size
-    // limit is refused without being read.
-    const declaredTypeRejection = getAttachmentRejectionReason(
-      {
-        name: safeFilename,
-        type: storageMetadata.contentType ?? "",
-        size: storageMetadata.size,
-      },
+    // registerUpload refuses a file too big for every type before reading it.
+    const oversizeReason = getOversizeReason(
+      { name: safeFilename, size: claimedUpload.size },
       acceptedMediaTypes,
     );
-    if (declaredTypeRejection) {
-      return await rejectUpload(ctx, storageId, declaredTypeRejection);
+    if (oversizeReason) {
+      return await rejectUpload(ctx, storageId, oversizeReason);
     }
 
     // An empty type, for bytes that match no type a8 takes, is refused here.
-    const detectedMediaType = (await readMediaType(ctx, storageId)) ?? "";
-    const detectedTypeRejection = getAttachmentRejectionReason(
-      {
-        name: safeFilename,
-        type: detectedMediaType,
-        size: storageMetadata.size,
-      },
+    const storedFile = await ctx.storage.get(storageId);
+    const mediaType = storedFile ? await readMediaType(storedFile) : "";
+    const rejectionReason = getAttachmentRejectionReason(
+      { name: safeFilename, type: mediaType, size: claimedUpload.size },
       acceptedMediaTypes,
     );
-    if (detectedTypeRejection) {
-      return await rejectUpload(ctx, storageId, detectedTypeRejection);
+    if (rejectionReason) {
+      return await rejectUpload(ctx, storageId, rejectionReason);
     }
 
     return await ctx.runMutation(internal.attachments.saveUpload, {
       storageId,
       filename: safeFilename,
-      mediaType: detectedMediaType,
-      sha256: storageMetadata.sha256,
+      mediaType,
+      sha256: claimedUpload.sha256,
     });
   },
 });
-
-/** The media type the stored file's first bytes show (detectMediaType). */
-async function readMediaType(ctx: ActionCtx, storageId: Id<"_storage">) {
-  const storedFile = await ctx.storage.get(storageId);
-  if (!storedFile) return null;
-  const firstBytes = await storedFile
-    .slice(0, FILE_SIGNATURE_LENGTH)
-    .arrayBuffer();
-  return detectMediaType(new Uint8Array(firstBytes));
-}
 
 /** Deletes a refused upload from storage, and returns the refusal. */
 async function rejectUpload(
@@ -242,24 +226,6 @@ async function rejectUpload(
   await ctx.storage.delete(storageId);
   return { code: ERROR_CODES.INVALID_ATTACHMENT, message: rejectionReason };
 }
-
-export const getStorageMetadata = internalQuery({
-  args: { storageId: v.id("_storage") },
-  returns: v.union(
-    v.null(),
-    v.object({
-      size: v.number(),
-      contentType: v.optional(v.string()),
-      sha256: v.string(),
-    }),
-  ),
-  handler: async (ctx, { storageId }) => {
-    const storageMetadata = await ctx.db.system.get("_storage", storageId);
-    if (!storageMetadata) return null;
-    const { size, contentType, sha256 } = storageMetadata;
-    return { size, contentType, sha256 };
-  },
-});
 
 /**
  * Saves an upload registerUpload checked: adds it to the Agent's files
