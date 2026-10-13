@@ -41,7 +41,7 @@ writeFileSync(envPath, readFileSync(resolve(root, ".env.local")));
 // It expires on its own as a safety net if worktree-teardown.ts never runs.
 // New dev deployments start with the project's default env vars (see below).
 try {
-  convex("deployment", "create", `dev/${name}`, "--type", "dev", "--expiration", "in 14 days");
+  convex("deployment", "create", `dev/${name}`, "--type", "dev", "--expiration", "in 5 days");
 } catch {}
 convex("deployment", "select", `dev/${name}`); // rewrites the Convex lines in .env.local
 const target = ["--deployment", `dev/${name}`]; // never fall back to main's deployment

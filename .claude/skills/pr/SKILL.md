@@ -103,7 +103,7 @@ Poll every few minutes with `gh pr checks <n>`, `gh pr view <n> --comments` and 
 
 ## 8. Clean up
 
-1. In a linked worktree, run `bun scripts/worktree-teardown.ts`. It deletes this worktree's Convex dev deployment, and it refuses anything that isn't a non-default dev deployment. Do this only after the merge, since the deployment holds the browser-verify data. In the main checkout it does nothing. If you skip it, the deployment still expires 14 days after creation.
+1. In a linked worktree, run `bun scripts/worktree-teardown.ts`. It deletes this worktree's Convex dev deployment, and it refuses anything that isn't a non-default dev deployment. Do this only after the merge, since the deployment holds the browser-verify data. In the main checkout it does nothing. If you skip it, the deployment still expires 5 days after creation.
 2. Update `main`. In the main checkout run `git switch main && git pull --ff-only`. In a linked worktree `main` is checked out elsewhere, so run `git -C <main checkout> pull --ff-only` instead.
 
 Reply with the PR URL, the merge result, and one line on anything that needs the user's attention, such as a fixed lint error, a skipped CodeRabbit comment, or a gap listed under "Not in this PR".
