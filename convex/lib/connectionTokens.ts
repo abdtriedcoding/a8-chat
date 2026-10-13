@@ -7,7 +7,7 @@
 import { auth, type OAuthTokens } from "@ai-sdk/mcp";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-import type { ConnectionTokens } from "../connectorStore";
+import type { ConnectionTokens } from "../connections";
 import {
   classifyOAuthError,
   ConnectorOAuthProvider,
@@ -67,7 +67,7 @@ export async function connectionAccessToken(
   if (!fresh) return { needsReconnect: true };
   const accessToken = await decryptOrUndefined(key, fresh.encryptedAccessToken);
   if (accessToken === undefined) {
-    await ctx.runMutation(internal.connectorStore.settleTokens, {
+    await ctx.runMutation(internal.connections.settleTokens, {
       connectionId: fresh._id,
       tokenVersion: fresh.tokenVersion,
       outcome: { kind: "rejected" },
@@ -98,7 +98,7 @@ async function refresh(
   const args = { connectionId: seen._id, tokenVersion: seen.tokenVersion };
   for (;;) {
     const claim = await ctx.runMutation(
-      internal.connectorStore.claimRefresh,
+      internal.connections.claimRefresh,
       args,
     );
     if (claim.kind === "needsReconnect") return null;
@@ -123,7 +123,7 @@ async function refresh(
     // connection. a8 can't tell that apart from a request that never landed.
     outcome = { kind: "failed", error };
   }
-  const settled = await ctx.runMutation(internal.connectorStore.settleTokens, {
+  const settled = await ctx.runMutation(internal.connections.settleTokens, {
     ...args,
     outcome:
       outcome.kind === "refreshed"

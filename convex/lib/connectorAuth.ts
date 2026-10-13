@@ -1,6 +1,7 @@
 // The OAuth side of connectors (ADR 0003): the provider auth() signs in
-// with, the fetch that only reaches a connector's pinned origins, metadata
-// discovery, revocation, and what an OAuth error from the vendor means.
+// with, the fetch that only reaches a connector's pinned origins,
+// revocation, and what an OAuth error from the vendor means. Metadata
+// discovery is in oauthDiscovery.ts.
 
 import {
   createMCPClient,
@@ -20,6 +21,12 @@ import {
   type Connector,
   type ConnectorServer,
 } from "./connectors";
+import {
+  authorizationServerMetadataUrls,
+  authorizationServersIn,
+  fetchMetadata,
+  protectedResourceMetadataUrls,
+} from "./oauthDiscovery";
 import {
   decryptSecret,
   encryptOptionalSecret,
@@ -128,8 +135,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   }
 
   authorizationServerInformation():
-    | OAuthAuthorizationServerInformation
-    | undefined {
+    OAuthAuthorizationServerInformation | undefined {
     return this.pending?.authorizationServer;
   }
 
@@ -160,40 +166,15 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {
-    const registration = await this.ctx.runQuery(
-      internal.connectorStore.getClientRegistration,
-      { connectorId: this.connector.id },
+    return await readClientInformation(
+      this.ctx,
+      this.connector,
+      this.encryptionKey,
     );
-    if (!registration) return undefined;
-    // The vendor rejects a client whose secret expired, so a8 forgets it
-    // now. A sign-in then registers again, and a refresh needs a reconnect.
-    if (
-      registration.encryptedClientSecret !== undefined &&
-      registration.clientSecretExpiresAt &&
-      registration.clientSecretExpiresAt * 1000 <= Date.now()
-    ) {
-      await forgetClientRegistration(this.ctx, this.connector);
-      return undefined;
-    }
-    return {
-      client_id: registration.clientId,
-      client_secret:
-        registration.encryptedClientSecret === undefined
-          ? undefined
-          : await decryptSecret(
-              this.encryptionKey,
-              registration.encryptedClientSecret,
-            ),
-      client_id_issued_at: registration.clientIdIssuedAt,
-      client_secret_expires_at: registration.clientSecretExpiresAt,
-      issuer: registration.issuer,
-      authorization_server: registration.authorizationServerUrl,
-      token_endpoint: registration.tokenEndpoint,
-    };
   }
 
   async saveClientInformation(information: OAuthClientInformation) {
-    await this.ctx.runMutation(internal.connectorStore.saveClientRegistration, {
+    await this.ctx.runMutation(internal.signIns.saveClientRegistration, {
       connectorId: this.connector.id,
       clientId: information.client_id,
       encryptedClientSecret: await encryptOptionalSecret(
@@ -398,7 +379,7 @@ export async function forgetClientRegistration(
   ctx: ActionCtx,
   connector: Connector,
 ) {
-  await ctx.runMutation(internal.connectorStore.deleteClientRegistration, {
+  await ctx.runMutation(internal.signIns.deleteClientRegistration, {
     connectorId: connector.id,
   });
 }
@@ -475,111 +456,45 @@ function causes(error: unknown): unknown[] {
   return chain;
 }
 
-/** A JSON object from OAuth metadata. */
-export type Metadata = Record<string, unknown>;
-
-/** One request metadata discovery made, and how it went. */
-export type MetadataAttempt = { url: string } & (
-  | { response: Response; outcome: "found" | "notOk" | "notJson" }
-  | { error: unknown }
-);
-
 /**
- * Where an MCP server's protected resource metadata may be (RFC 9728), in
- * the order an MCP client tries them: the URL from the server's
- * WWW-Authenticate challenge, the path-specific well-known URL, then the
- * root one.
+ * The connector's stored client registration with its secret decrypted, or
+ * undefined if there's none. The vendor rejects a client whose secret
+ * expired, so a8 forgets it now. A sign-in then registers again, and a
+ * refresh needs a reconnect.
  */
-export function protectedResourceMetadataUrls(
-  mcpServerUrl: string,
-  fromChallenge?: string,
-): string[] {
-  const { origin, pathname } = new URL(mcpServerUrl);
-  const path = pathname.replace(/\/$/, "");
-  const wellKnown = `${origin}/.well-known/oauth-protected-resource`;
-  return unique([fromChallenge, path && `${wellKnown}${path}`, wellKnown]);
-}
-
-/**
- * The authorization servers protected resource metadata names. Without
- * any, MCP clients fall back to the MCP server's origin.
- */
-export function authorizationServersIn(
-  resourceMetadata: Metadata | undefined,
-  mcpServerUrl: string,
-): string[] {
-  const named = resourceMetadata?.authorization_servers;
-  if (Array.isArray(named)) {
-    const servers = named.filter((server) => typeof server === "string");
-    if (servers.length > 0) return servers;
+async function readClientInformation(
+  ctx: ActionCtx,
+  connector: Connector,
+  encryptionKey: EncryptionKey,
+): Promise<OAuthClientInformation | undefined> {
+  const registration = await ctx.runQuery(
+    internal.signIns.getClientRegistration,
+    { connectorId: connector.id },
+  );
+  if (!registration) return undefined;
+  if (
+    registration.encryptedClientSecret !== undefined &&
+    registration.clientSecretExpiresAt &&
+    registration.clientSecretExpiresAt * 1000 <= Date.now()
+  ) {
+    await forgetClientRegistration(ctx, connector);
+    return undefined;
   }
-  return [new URL(mcpServerUrl).origin];
-}
-
-/**
- * Where an authorization server's metadata may be, in the order an MCP
- * client tries them: RFC 8414, then OpenID Connect discovery.
- */
-export function authorizationServerMetadataUrls(
-  authorizationServerUrl: string,
-): string[] {
-  const { origin, pathname } = new URL(authorizationServerUrl);
-  const path = pathname.replace(/\/$/, "");
-  return unique([
-    `${origin}/.well-known/oauth-authorization-server${path}`,
-    `${origin}/.well-known/openid-configuration${path}`,
-    path && `${origin}${path}/.well-known/openid-configuration`,
-  ]);
-}
-
-/**
- * Fetches each URL in turn and returns the first JSON object, with the URL
- * and response it came from. A URL that fails, answers an error status or
- * isn't a JSON object is skipped. `onAttempt` hears how each request went.
- */
-export async function fetchMetadata(
-  fetchFn: (url: string, init: RequestInit) => Promise<Response>,
-  urls: string[],
-  {
-    signal,
-    onAttempt,
-  }: {
-    signal?: AbortSignal;
-    onAttempt?: (attempt: MetadataAttempt) => void;
-  } = {},
-): Promise<{ metadata: Metadata; url: string; response: Response } | undefined> {
-  for (const url of urls) {
-    let response: Response;
-    try {
-      response = await fetchFn(url, {
-        headers: { Accept: "application/json" },
-        signal,
-      });
-    } catch (error) {
-      onAttempt?.({ url, error });
-      continue;
-    }
-    if (!response.ok) {
-      onAttempt?.({ url, response, outcome: "notOk" });
-      continue;
-    }
-    const metadata: unknown = await response.json().catch(() => undefined);
-    if (
-      typeof metadata !== "object" ||
-      metadata === null ||
-      Array.isArray(metadata)
-    ) {
-      onAttempt?.({ url, response, outcome: "notJson" });
-      continue;
-    }
-    onAttempt?.({ url, response, outcome: "found" });
-    return { metadata: metadata as Metadata, url, response };
-  }
-  return undefined;
-}
-
-function unique(urls: (string | undefined)[]): string[] {
-  return [...new Set(urls.filter((url): url is string => Boolean(url)))];
+  return {
+    client_id: registration.clientId,
+    client_secret:
+      registration.encryptedClientSecret === undefined
+        ? undefined
+        : await decryptSecret(
+            encryptionKey,
+            registration.encryptedClientSecret,
+          ),
+    client_id_issued_at: registration.clientIdIssuedAt,
+    client_secret_expires_at: registration.clientSecretExpiresAt,
+    issuer: registration.issuer,
+    authorization_server: registration.authorizationServerUrl,
+    token_endpoint: registration.tokenEndpoint,
+  };
 }
 
 /** How long each revocation request can take before a8 gives up on it. */
@@ -600,20 +515,17 @@ export async function revokeConnection(
     "encryptedAccessToken" | "encryptedRefreshToken"
   >,
 ): Promise<boolean> {
-  const registration = await new ConnectorOAuthProvider(
+  const registration = await readClientInformation(
     ctx,
     connector,
     encryptionKey,
-  ).clientInformation();
+  );
   if (!registration) return false;
   const fetchPinned = pinnedFetch(connector);
   const endpoint = await findRevocationEndpoint(
     fetchPinned,
     registration.authorization_server ??
-      (await findAuthorizationServer(
-        fetchPinned,
-        signInServer(connector).url,
-      )),
+      (await findAuthorizationServer(fetchPinned, signInServer(connector).url)),
   );
   if (!endpoint) return false;
 

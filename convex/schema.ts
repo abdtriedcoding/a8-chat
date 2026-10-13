@@ -124,7 +124,7 @@ export default defineSchema({
     .index("by_expiresAt", ["expiresAt"])
     .index("by_userId", ["userId"]),
   // OAuth client registrations: the client a8 registered with a connector's
-  // authorization server (convex/connectorStore.ts). The table keeps an
+  // authorization server (convex/signIns.ts). The table keeps an
   // older name, and has nothing to do with MCP clients. One row per
   // connector per deployment, shared by every user. Notion orphans earlier
   // grants when a client registers again, so a8 only registers again after

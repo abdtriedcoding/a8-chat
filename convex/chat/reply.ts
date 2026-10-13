@@ -13,7 +13,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { chatAgent } from "../agents/chat";
-import { readUserConnections } from "../connectorStore";
+import { readUserConnections } from "../connections";
 import { replyInstructions } from "../lib/instructions";
 import { createReplyTools, type ReplyTools } from "../lib/replyTools";
 import { canSearchWeb } from "../lib/searchWeb";

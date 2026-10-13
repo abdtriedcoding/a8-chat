@@ -106,7 +106,7 @@ export const refreshToolList = internalAction({
   returns: v.null(),
   handler: async (ctx, { connectionId }) => {
     const connection = await ctx.runQuery(
-      internal.connectorStore.getConnection,
+      internal.connections.getConnection,
       { by: { connectionId } },
     );
     const connector = connection && findConnector(connection.connectorId);
@@ -124,7 +124,7 @@ export const refreshToolList = internalAction({
     }
     if (typeof toolList === "number") {
       // The vendor refused a token a8 just refreshed, or answered 403.
-      await ctx.runMutation(internal.connectorStore.settleTokens, {
+      await ctx.runMutation(internal.connections.settleTokens, {
         connectionId,
         tokenVersion: token.tokens.tokenVersion,
         outcome: { kind: "rejected" },

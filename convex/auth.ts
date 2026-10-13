@@ -157,11 +157,11 @@ export const purgeAccount = internalAction({
   handler: async (ctx, { userId, email }): Promise<null> => {
     await ctx.runMutation(internal.threads.purgeUserThreads, { userId });
     await ctx.runMutation(internal.attachments.purgeUserUploads, { userId });
-    await ctx.runMutation(internal.connectorStore.purgeUserPendingConnects, {
+    await ctx.runMutation(internal.signIns.purgeUserPendingConnects, {
       userId,
     });
     await ctx.runMutation(internal.auth.purgeAccountLimits, { userId, email });
-    await ctx.runAction(internal.connectorStore.purgeUserConnections, {
+    await ctx.runAction(internal.connections.purgeUserConnections, {
       userId,
     });
     return null;

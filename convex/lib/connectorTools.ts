@@ -21,7 +21,7 @@ import {
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import type { ConnectionTokens } from "../connectorStore";
+import type { ConnectionTokens } from "../connections";
 import { limitConnectorToolCall } from "../rateLimits";
 import {
   connectionAccessToken,
@@ -359,7 +359,7 @@ class ReplyConnection {
   private async markNeedsReconnect(
     tokenVersion: number,
   ): Promise<ReconnectError> {
-    await this.ctx.runMutation(internal.connectorStore.settleTokens, {
+    await this.ctx.runMutation(internal.connections.settleTokens, {
       connectionId: this.tokens._id,
       tokenVersion,
       outcome: { kind: "rejected" },

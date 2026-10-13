@@ -2,7 +2,7 @@
  * Prints what a catalog entry needs from a vendor's MCP server: its OAuth
  * metadata, every origin the sign-in touches, scopes and tools. Given a
  * catalog connector's ID, it also checks that entry against the live server.
- * Metadata discovery is a8's own (convex/lib/connectorAuth.ts), without the
+ * Metadata discovery is a8's own (convex/lib/oauthDiscovery.ts), without the
  * pinned origins. A dev helper, not a test. USAGE below lists the options,
  * and docs/connectors/README.md explains the output.
  */
@@ -18,13 +18,7 @@ import {
   type OAuthClientProvider,
   type OAuthTokens,
 } from "@ai-sdk/mcp";
-import {
-  authorizationServerMetadataUrls,
-  authorizationServersIn,
-  fetchMetadata,
-  protectedResourceMetadataUrls,
-  signInScope,
-} from "../convex/lib/connectorAuth";
+import { signInScope } from "../convex/lib/connectorAuth";
 import {
   findAllowlistedTool,
   findConnector,
@@ -33,6 +27,12 @@ import {
   type ConnectorServer,
 } from "../convex/lib/connectors";
 import { modelToolName } from "../convex/lib/connectorView";
+import {
+  authorizationServerMetadataUrls,
+  authorizationServersIn,
+  fetchMetadata,
+  protectedResourceMetadataUrls,
+} from "../convex/lib/oauthDiscovery";
 
 /** How long each request to the vendor can take. */
 const TIMEOUT_MS = 15_000;
