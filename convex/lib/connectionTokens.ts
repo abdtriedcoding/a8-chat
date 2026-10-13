@@ -11,7 +11,7 @@ import type { ConnectionTokens } from "../connections";
 import {
   classifyOAuthError,
   ConnectorOAuthProvider,
-  forgetClientRegistration,
+  forgetOAuthClientRegistration,
   pinnedFetch,
 } from "./connectorAuth";
 import { signInServer, type Connector } from "./connectors";
@@ -188,7 +188,7 @@ async function requestTokens(
   // was refused, not a rate limit or an outage.
   const rejection = classifyOAuthError(rejectedError ?? provider.refreshError);
   if (rejection === "rejectedClient") {
-    await forgetClientRegistration(ctx, connector);
+    await forgetOAuthClientRegistration(ctx, connector);
   }
   if (rejection !== "other") return null;
   const { refreshError } = provider;

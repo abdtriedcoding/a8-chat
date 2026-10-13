@@ -6,7 +6,7 @@ a8 reaches each app through the vendor's own MCP server, with a8 as the OAuth an
 
 - `convex/connectors.ts`: the public functions, `list`, `connect`, `finishConnect` and `disconnect`, and the OAuth callback route, `/connectors/callback`. `list` returns each catalog connector's status only. The UI takes names and logos from the client-safe view.
 - `convex/connections.ts`: connection rows, the refresh lease mutations, the revoke-then-delete that disconnect and account deletion share, and re-encrypting stored secrets.
-- `convex/signIns.ts`: sign-ins in progress (`pendingConnects`), OAuth client registrations (`connectorClients`), the connect rate limit check and expired sign-in cleanup.
+- `convex/signIns.ts`: sign-ins in progress (`pendingConnects`), OAuth client registrations (`oauthClientRegistrations`), the connect rate limit check and expired sign-in cleanup.
 - `convex/lib/oauthDiscovery.ts`: OAuth metadata discovery, used by revocation and the probe script.
 - `convex/toolLists.ts`: each connection's stored tool list, in `connectionToolLists`. It fetches, stores and refreshes the list.
 - `convex/lib/connectorView.ts`: the client-safe view of the catalog.

@@ -385,8 +385,8 @@ const vStoredSecret = v.union(
     value: v.string(),
   }),
   v.object({
-    table: v.literal("connectorClients"),
-    id: v.id("connectorClients"),
+    table: v.literal("oauthClientRegistrations"),
+    id: v.id("oauthClientRegistrations"),
     field: v.literal("encryptedClientSecret"),
     value: v.string(),
   }),
@@ -395,7 +395,7 @@ const vStoredSecret = v.union(
 type StoredSecret = Infer<typeof vStoredSecret>;
 
 /**
- * Rewrites every v1 secret in `connections` and `connectorClients` as v2,
+ * Rewrites every v1 secret in `connections` and `oauthClientRegistrations` as v2,
  * with the current key's id (lib/encryption.ts). Run it once per
  * deployment with `npx convex run connections:reencryptSecrets`. It's
  * safe to run again: later runs find no v1 values. It leaves a v1 value
@@ -410,7 +410,7 @@ export const reencryptSecrets = internalAction({
     const key = await getEncryptionKey();
     let reencrypted = 0;
     let failed = 0;
-    for (const table of ["connections", "connectorClients"] as const) {
+    for (const table of ["connections", "oauthClientRegistrations"] as const) {
       let cursor: string | null = null;
       for (;;) {
         const page: { secrets: StoredSecret[]; cursor: string | null } =
@@ -453,7 +453,7 @@ export const reencryptSecrets = internalAction({
  */
 export const listLegacySecrets = internalQuery({
   args: {
-    table: v.union(v.literal("connections"), v.literal("connectorClients")),
+    table: v.union(v.literal("connections"), v.literal("oauthClientRegistrations")),
     paginationOpts: paginationOptsValidator,
   },
   returns: v.object({
@@ -480,7 +480,7 @@ export const listLegacySecrets = internalQuery({
       };
     }
     const { page, isDone, continueCursor } = await ctx.db
-      .query("connectorClients")
+      .query("oauthClientRegistrations")
       .paginate(paginationOpts);
     return {
       secrets: page.flatMap(({ _id, encryptedClientSecret: value }) =>
@@ -513,9 +513,9 @@ export const replaceSecrets = internalMutation({
         if (connection?.[secret.field] !== secret.value) continue;
         await ctx.db.patch("connections", secret.id, { [secret.field]: value });
       } else {
-        const registration = await ctx.db.get("connectorClients", secret.id);
+        const registration = await ctx.db.get("oauthClientRegistrations", secret.id);
         if (registration?.encryptedClientSecret !== secret.value) continue;
-        await ctx.db.patch("connectorClients", secret.id, {
+        await ctx.db.patch("oauthClientRegistrations", secret.id, {
           encryptedClientSecret: value,
         });
       }

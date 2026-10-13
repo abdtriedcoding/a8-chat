@@ -15,16 +15,20 @@ export const vAuthorizationServer = v.object({
 });
 
 /** The OAuth client registration a8 made for a connector. */
-export const vClientRegistration = v.object({
+export const vOAuthClientRegistration = v.object({
   connectorId: v.string(),
   clientId: v.string(),
   encryptedClientSecret: v.optional(v.string()),
   clientIdIssuedAt: v.optional(v.number()),
   // Seconds since the epoch (RFC 7591). 0 means the secret never expires.
   clientSecretExpiresAt: v.optional(v.number()),
-  issuer: v.optional(v.string()),
-  authorizationServerUrl: v.optional(v.string()),
-  tokenEndpoint: v.optional(v.string()),
+  // The authorization server it registered with. Unset on rows from before
+  // a8 stored it.
+  issuer: vAuthorizationServer.fields.issuer,
+  authorizationServerUrl: v.optional(
+    vAuthorizationServer.fields.authorizationServerUrl,
+  ),
+  tokenEndpoint: v.optional(vAuthorizationServer.fields.tokenEndpoint),
 });
 
 export default defineSchema({
@@ -124,12 +128,19 @@ export default defineSchema({
     .index("by_expiresAt", ["expiresAt"])
     .index("by_userId", ["userId"]),
   // OAuth client registrations: the client a8 registered with a connector's
-  // authorization server (convex/signIns.ts). The table keeps an
-  // older name, and has nothing to do with MCP clients. One row per
-  // connector per deployment, shared by every user. Notion orphans earlier
-  // grants when a client registers again, so a8 only registers again after
-  // the vendor rejects this client or its secret expires.
-  connectorClients: defineTable(vClientRegistration).index("by_connectorId", [
-    "connectorId",
-  ]),
+  // authorization server (convex/signIns.ts). One row per connector per
+  // deployment, shared by every user. Notion orphans earlier grants when a
+  // client registers again, so a8 only registers again after the vendor
+  // rejects this client or its secret expires.
+  oauthClientRegistrations: defineTable(vOAuthClientRegistration).index(
+    "by_connectorId",
+    ["connectorId"],
+  ),
+  // The old name of oauthClientRegistrations. Nothing reads or writes it.
+  // copyConnectorClients copies its rows across. Drop it from the schema
+  // once it's empty everywhere.
+  connectorClients: defineTable(vOAuthClientRegistration).index(
+    "by_connectorId",
+    ["connectorId"],
+  ),
 });

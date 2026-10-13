@@ -53,7 +53,7 @@ export function signInScope(connector: Connector): string | undefined {
 
 /**
  * The OAuth provider `@ai-sdk/mcp`'s `auth()` runs a connector's sign-in
- * with (ADR 0003). The client registration lives in connectorClients. What
+ * with (ADR 0003). The client registration lives in oauthClientRegistrations. What
  * a sign-in produces (state, PKCE verifier, authorization server, tokens) is
  * kept on the provider for the caller to store. connect saves a
  * pendingConnects row, and finishConnect saves the connection.
@@ -174,7 +174,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   }
 
   async saveClientInformation(information: OAuthClientInformation) {
-    await this.ctx.runMutation(internal.signIns.saveClientRegistration, {
+    await this.ctx.runMutation(internal.signIns.saveOAuthClientRegistration, {
       connectorId: this.connector.id,
       clientId: information.client_id,
       encryptedClientSecret: await encryptOptionalSecret(
@@ -193,7 +193,7 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   // registration makes the next sign-in register again.
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier") {
     if (scope === "all" || scope === "client") {
-      await forgetClientRegistration(this.ctx, this.connector);
+      await forgetOAuthClientRegistration(this.ctx, this.connector);
     }
   }
 
@@ -375,11 +375,11 @@ export function labelAt(data: unknown, path: string): string | undefined {
  * registers again. Only for a client the vendor rejected or whose secret
  * expired.
  */
-export async function forgetClientRegistration(
+export async function forgetOAuthClientRegistration(
   ctx: ActionCtx,
   connector: Connector,
 ) {
-  await ctx.runMutation(internal.signIns.deleteClientRegistration, {
+  await ctx.runMutation(internal.signIns.deleteOAuthClientRegistration, {
     connectorId: connector.id,
   });
 }
@@ -468,7 +468,7 @@ async function readClientInformation(
   encryptionKey: EncryptionKey,
 ): Promise<OAuthClientInformation | undefined> {
   const registration = await ctx.runQuery(
-    internal.signIns.getClientRegistration,
+    internal.signIns.getOAuthClientRegistration,
     { connectorId: connector.id },
   );
   if (!registration) return undefined;
@@ -477,7 +477,7 @@ async function readClientInformation(
     registration.clientSecretExpiresAt &&
     registration.clientSecretExpiresAt * 1000 <= Date.now()
   ) {
-    await forgetClientRegistration(ctx, connector);
+    await forgetOAuthClientRegistration(ctx, connector);
     return undefined;
   }
   return {
