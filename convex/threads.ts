@@ -20,7 +20,7 @@ import {
   optionalUser,
 } from "./lib/guards";
 import { checkTitle } from "./lib/prompt";
-import { snippetAround } from "./lib/snippet";
+import { snippetAround } from "./lib/threadSearchSnippet";
 
 const vThreadSummary = v.object({
   _id: v.string(),

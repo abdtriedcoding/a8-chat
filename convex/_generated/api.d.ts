@@ -38,7 +38,7 @@ import type * as lib_oauthDiscovery from "../lib/oauthDiscovery.js";
 import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_replyFailure from "../lib/replyFailure.js";
 import type * as lib_replyTools from "../lib/replyTools.js";
-import type * as lib_snippet from "../lib/snippet.js";
+import type * as lib_threadSearchSnippet from "../lib/threadSearchSnippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as lib_toolLoading from "../lib/toolLoading.js";
 import type * as rateLimits from "../rateLimits.js";
@@ -85,7 +85,7 @@ declare const fullApi: ApiFromModules<{
   "lib/prompt": typeof lib_prompt;
   "lib/replyFailure": typeof lib_replyFailure;
   "lib/replyTools": typeof lib_replyTools;
-  "lib/snippet": typeof lib_snippet;
+  "lib/threadSearchSnippet": typeof lib_threadSearchSnippet;
   "lib/timeZone": typeof lib_timeZone;
   "lib/toolLoading": typeof lib_toolLoading;
   rateLimits: typeof rateLimits;
