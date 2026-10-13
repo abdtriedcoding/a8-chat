@@ -1,12 +1,13 @@
-// What the browser knows about each catalog connector: its card, its tool
-// labels, mention parsing and the error codes the UI reads. The UI imports
-// this module and never the server catalog (connectors.ts), so nothing here
-// may name an MCP server, a pinned origin, a sign-in or a tool's kind.
+// What the browser knows about each catalog connector: its card, its tools
+// (label, kind and target), mention parsing and the error codes the UI
+// reads. The UI imports this module and never the server catalog
+// (connectors.ts), so nothing here may name an MCP server URL, a pinned
+// origin or a sign-in.
 //
-// Each connector's id, card fields and tool labels live only here. The
-// server catalog keys its entries by these ids, its MCP servers by these
-// server keys and its tool kinds by these tool names, so a connector,
-// server or tool missing from either file fails the typecheck.
+// Each connector's id, card fields and tools live only here. The server
+// catalog keys its entries by these ids and its MCP servers by these server
+// keys, so a connector or server missing from either file fails the
+// typecheck.
 
 import { ERROR_CODES } from "./errors";
 
@@ -17,8 +18,16 @@ import { ERROR_CODES } from "./errors";
  */
 export type CardNote = { text: string; link?: { label: string; url: string } };
 
-/** What a reply shows for one of a connector's tools. */
+/**
+ * Whether a8 counts a tool as a read or an action. A read runs without
+ * asking, unless the server marks the tool not read-only. An action always
+ * waits on an action card (ADR 0008).
+ */
+export type ToolKind = "read" | "action";
+
+/** One tool a8 offers the model: its kind, and what a reply shows for it. */
 export type ConnectorToolView = {
+  kind: ToolKind;
   /** What the tool's row in a reply says, like "Searching Notion". */
   label: string;
   /**
@@ -42,8 +51,7 @@ export type ConnectorServerView = {
   toolPrefix?: string;
   /**
    * The MCP tools a8 offers the model from this server, by their name on
-   * the server, like `notion-search`. Every other tool stays hidden. The
-   * server catalog gives each one its kind.
+   * the server, like `notion-search`. Every other tool stays hidden.
    */
   tools: Record<string, ConnectorToolView>;
 };
@@ -85,33 +93,39 @@ const ENTRIES = [
     servers: {
       notion: {
         tools: {
-          "notion-search": { label: "Searching Notion" },
-          "notion-fetch": { label: "Reading Notion" },
-          "notion-query-data-sources": { label: "Reading a Notion database" },
-          "notion-get-comments": { label: "Reading Notion comments" },
-          "notion-get-users": { label: "Finding Notion users" },
-          "notion-get-teams": { label: "Finding Notion teamspaces" },
+          "notion-search": { kind: "read", label: "Searching Notion" },
+          "notion-fetch": { kind: "read", label: "Reading Notion" },
+          "notion-query-data-sources": { kind: "read", label: "Reading a Notion database" },
+          "notion-get-comments": { kind: "read", label: "Reading Notion comments" },
+          "notion-get-users": { kind: "read", label: "Finding Notion users" },
+          "notion-get-teams": { kind: "read", label: "Finding Notion teamspaces" },
           "notion-create-pages": {
+            kind: "action",
             label: "Creating Notion pages",
             target: ["parent"],
           },
           "notion-update-page": {
+            kind: "action",
             label: "Updating a Notion page",
             target: ["page_id"],
           },
           "notion-move-pages": {
+            kind: "action",
             label: "Moving Notion pages",
             target: ["page_or_database_ids", "new_parent"],
           },
           "notion-duplicate-page": {
+            kind: "action",
             label: "Duplicating a Notion page",
             target: ["page_id"],
           },
           "notion-create-database": {
+            kind: "action",
             label: "Creating a Notion database",
             target: ["parent"],
           },
           "notion-create-comment": {
+            kind: "action",
             label: "Commenting in Notion",
             target: ["page_id", "discussion_id"],
           },
@@ -127,21 +141,23 @@ const ENTRIES = [
     servers: {
       linear: {
         tools: {
-          list_issues: { label: "Searching Linear issues" },
-          get_issue: { label: "Reading a Linear issue" },
-          list_comments: { label: "Reading Linear comments" },
-          list_projects: { label: "Finding Linear projects" },
-          list_teams: { label: "Finding Linear teams" },
-          list_users: { label: "Finding Linear users" },
-          list_issue_statuses: { label: "Finding Linear statuses" },
-          list_issue_labels: { label: "Finding Linear labels" },
-          get_workspace: { label: "Reading the Linear workspace" },
+          list_issues: { kind: "read", label: "Searching Linear issues" },
+          get_issue: { kind: "read", label: "Reading a Linear issue" },
+          list_comments: { kind: "read", label: "Reading Linear comments" },
+          list_projects: { kind: "read", label: "Finding Linear projects" },
+          list_teams: { kind: "read", label: "Finding Linear teams" },
+          list_users: { kind: "read", label: "Finding Linear users" },
+          list_issue_statuses: { kind: "read", label: "Finding Linear statuses" },
+          list_issue_labels: { kind: "read", label: "Finding Linear labels" },
+          get_workspace: { kind: "read", label: "Reading the Linear workspace" },
           // Both save tools create without `id` and update the item with it.
           save_issue: {
+            kind: "action",
             label: "Saving a Linear issue",
             target: ["id", "team", "project", "parentId"],
           },
           save_comment: {
+            kind: "action",
             label: "Commenting in Linear",
             target: [
               "id",
@@ -166,19 +182,20 @@ const ENTRIES = [
     servers: {
       todoist: {
         tools: {
-          "find-tasks": { label: "Searching Todoist tasks" },
-          "find-tasks-by-date": { label: "Finding Todoist tasks by date" },
-          "find-completed-tasks": { label: "Finding completed Todoist tasks" },
-          "find-projects": { label: "Finding Todoist projects" },
-          "find-sections": { label: "Finding Todoist sections" },
-          "find-labels": { label: "Finding Todoist labels" },
-          "find-comments": { label: "Reading Todoist comments" },
-          "get-overview": { label: "Reading a Todoist project overview" },
-          "user-info": { label: "Reading the Todoist account" },
+          "find-tasks": { kind: "read", label: "Searching Todoist tasks" },
+          "find-tasks-by-date": { kind: "read", label: "Finding Todoist tasks by date" },
+          "find-completed-tasks": { kind: "read", label: "Finding completed Todoist tasks" },
+          "find-projects": { kind: "read", label: "Finding Todoist projects" },
+          "find-sections": { kind: "read", label: "Finding Todoist sections" },
+          "find-labels": { kind: "read", label: "Finding Todoist labels" },
+          "find-comments": { kind: "read", label: "Reading Todoist comments" },
+          "get-overview": { kind: "read", label: "Reading a Todoist project overview" },
+          "user-info": { kind: "read", label: "Reading the Todoist account" },
           // Each task names its own project inside `tasks`, so no top-level
           // argument is the target.
-          "add-tasks": { label: "Adding Todoist tasks" },
+          "add-tasks": { kind: "action", label: "Adding Todoist tasks" },
           "complete-tasks": {
+            kind: "action",
             label: "Completing Todoist tasks",
             target: ["ids"],
           },
@@ -194,20 +211,22 @@ const ENTRIES = [
     servers: {
       airtable: {
         tools: {
-          list_workspaces: { label: "Finding Airtable workspaces" },
-          list_bases: { label: "Finding Airtable bases" },
-          search_bases: { label: "Searching Airtable bases" },
-          list_tables_for_base: { label: "Reading an Airtable base" },
-          get_table_schema: { label: "Reading an Airtable table" },
-          list_records_for_table: { label: "Reading Airtable records" },
-          search_records: { label: "Searching Airtable records" },
-          analyze_table: { label: "Analyzing an Airtable table" },
-          list_record_comments: { label: "Reading Airtable comments" },
+          list_workspaces: { kind: "read", label: "Finding Airtable workspaces" },
+          list_bases: { kind: "read", label: "Finding Airtable bases" },
+          search_bases: { kind: "read", label: "Searching Airtable bases" },
+          list_tables_for_base: { kind: "read", label: "Reading an Airtable base" },
+          get_table_schema: { kind: "read", label: "Reading an Airtable table" },
+          list_records_for_table: { kind: "read", label: "Reading Airtable records" },
+          search_records: { kind: "read", label: "Searching Airtable records" },
+          analyze_table: { kind: "read", label: "Analyzing an Airtable table" },
+          list_record_comments: { kind: "read", label: "Reading Airtable comments" },
           create_records_for_table: {
+            kind: "action",
             label: "Adding Airtable records",
             target: ["baseId", "tableId"],
           },
           update_records_for_table: {
+            kind: "action",
             label: "Updating Airtable records",
             target: ["baseId", "tableId"],
           },
@@ -224,20 +243,20 @@ const ENTRIES = [
     servers: {
       calendly: {
         tools: {
-          "users-get_current_user": { label: "Reading the Calendly account" },
-          "event_types-list_event_types": { label: "Finding Calendly event types" },
-          "event_types-get_event_type": { label: "Reading a Calendly event type" },
-          "event_types-list_event_type_available_times": { label: "Finding open Calendly times" },
-          "availability-list_user_busy_times": { label: "Checking Calendly busy times" },
-          "meetings-list_events": { label: "Finding Calendly meetings" },
-          "meetings-get_event": { label: "Reading a Calendly meeting" },
-          "meetings-list_event_invitees": { label: "Finding Calendly invitees" },
-          "locations-list_user_meeting_locations": { label: "Finding Calendly meeting locations" },
+          "users-get_current_user": { kind: "read", label: "Reading the Calendly account" },
+          "event_types-list_event_types": { kind: "read", label: "Finding Calendly event types" },
+          "event_types-get_event_type": { kind: "read", label: "Reading a Calendly event type" },
+          "event_types-list_event_type_available_times": { kind: "read", label: "Finding open Calendly times" },
+          "availability-list_user_busy_times": { kind: "read", label: "Checking Calendly busy times" },
+          "meetings-list_events": { kind: "read", label: "Finding Calendly meetings" },
+          "meetings-get_event": { kind: "read", label: "Reading a Calendly meeting" },
+          "meetings-list_event_invitees": { kind: "read", label: "Finding Calendly invitees" },
+          "locations-list_user_meeting_locations": { kind: "read", label: "Finding Calendly meeting locations" },
           // The actions below mark no target until someone checks their input
           // schemas on a signed-in probe.
-          "meetings-create_invitee": { label: "Booking a Calendly meeting" },
-          "meetings-cancel_event": { label: "Cancelling a Calendly meeting" },
-          "scheduling_links-create_single_use_scheduling_link": { label: "Creating a Calendly scheduling link" },
+          "meetings-create_invitee": { kind: "action", label: "Booking a Calendly meeting" },
+          "meetings-cancel_event": { kind: "action", label: "Cancelling a Calendly meeting" },
+          "scheduling_links-create_single_use_scheduling_link": { kind: "action", label: "Creating a Calendly scheduling link" },
         },
       },
     },
@@ -256,17 +275,13 @@ type Entry<Id extends ConnectorId> = Extract<
 export type ServerKey<Id extends ConnectorId> = keyof Entry<Id>["servers"] &
   string;
 
-/** The MCP names of one server's tools, like `notion-search`. */
-export type ServerToolName<
-  Id extends ConnectorId,
-  Key extends ServerKey<Id>,
-> = Entry<Id>["servers"][Key] extends { tools: infer Tools }
-  ? keyof Tools & string
-  : never;
-
 /** The MCP names of a catalog connector's tools on all its servers. */
 export type ConnectorToolName<Id extends ConnectorId> = {
-  [Key in ServerKey<Id>]: ServerToolName<Id, Key>;
+  [Key in ServerKey<Id>]: Entry<Id>["servers"][Key] extends {
+    tools: infer Tools;
+  }
+    ? keyof Tools & string
+    : never;
 }[ServerKey<Id>];
 
 /** A catalog connector as the UI shows it. */
@@ -400,7 +415,9 @@ function fnv1a(text: string): string {
 }
 
 /** A connector tool as a reply shows it: its connector, label and target. */
-export type FoundConnectorTool = ConnectorToolView & { connector: ConnectorView };
+export type FoundConnectorTool = Omit<ConnectorToolView, "kind"> & {
+  connector: ConnectorView;
+};
 
 /** Every offered tool's connector, label and target, by the tool's model name. */
 const TOOLS_BY_MODEL_NAME = new Map(

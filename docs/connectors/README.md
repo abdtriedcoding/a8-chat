@@ -25,10 +25,10 @@ In the browser, the Connectors page is `src/app/(chat)/connectors/page.tsx` and 
 
 A catalog connector is an entry in two files. Write each entry from what the vendor's server reports, and check it with the probe below.
 
-- `convex/lib/connectorView.ts` holds what the browser shows: the id, name, handle, description, example prompt, card note, and for each MCP server its key, its tool prefix if it has one, each tool's label and each action's target arguments.
-- `convex/lib/connectors.ts` holds what only the server needs, under the same id: each server's URL and each tool's kind, the pinned origins, sign-in, scopes, authorize parameters and account label source.
+- `convex/lib/connectorView.ts` holds what the browser shows: the id, name, handle, description, example prompt, card note, and for each MCP server its key and its tool prefix if it has one. It also lists every tool once, with its kind, its label and, for an action, its target arguments.
+- `convex/lib/connectors.ts` holds what only the server needs, under the same id: each server's URL, the pinned origins, sign-in, scopes, authorize parameters and account label source. It reads tool names, kinds and targets from the view.
 
-The ids in the view file make up the `ConnectorId` type. The server file keys its entries by those ids, its servers by the view's server keys and its tool kinds by the view's tool names, so a connector, server or tool missing from either file, or a misspelled one, fails the typecheck. So does an account label tool that isn't one of the connector's tools. The typecheck doesn't check the logo file, that a handle is unique, or that a target names a real argument.
+The ids in the view file make up the `ConnectorId` type. The server file keys its entries by those ids and its servers by the view's server keys, so a connector or server missing from either file, or a misspelled one, fails the typecheck. So does an account label tool that isn't one of the connector's tools. The typecheck doesn't check the logo file, that a handle is unique, or that a target names a real argument.
 
 A connector with one server, as both files write it:
 
@@ -42,8 +42,12 @@ A connector with one server, as both files write it:
   servers: {
     notion: {
       tools: {
-        "notion-search": { label: "Searching Notion" },
-        "notion-update-page": { label: "Updating a Notion page", target: ["page_id"] },
+        "notion-search": { kind: "read", label: "Searching Notion" },
+        "notion-update-page": {
+          kind: "action",
+          label: "Updating a Notion page",
+          target: ["page_id"],
+        },
       },
     },
   },
@@ -52,10 +56,7 @@ A connector with one server, as both files write it:
 // connectors.ts
 notion: {
   servers: {
-    notion: {
-      url: "https://mcp.notion.com/mcp",
-      toolKinds: { "notion-search": "read", "notion-update-page": "action" },
-    },
+    notion: { url: "https://mcp.notion.com/mcp" },
   },
   pinnedOrigins: ["https://mcp.notion.com"],
   signIn: { kind: "dynamicRegistration" },
@@ -71,7 +72,7 @@ A server key names the server in stored tool lists, so never change it. A connec
 
 ### The client-safe view
 
-`connectorView.ts` is the only connector module the browser loads, so it may never name an MCP server URL, a pinned origin, a sign-in or a tool's kind. Besides the card fields and tool labels, it has:
+`connectorView.ts` is the only connector module the browser loads, so it may never name an MCP server URL, a pinned origin or a sign-in. Besides the card fields and tools, it has:
 
 - `findMentions`, which finds the connectors a prompt mentions. The composer and the reply both use it.
 - `modelToolName`, the model's name for an MCP tool, and `findConnectorTool`, the connector, label and target behind a model's tool name. A reply's tool rows and action cards use `findConnectorTool`.
@@ -206,9 +207,9 @@ Add `--prod` for the production deployment. It returns how many secrets it rewro
 
    An answer with a `client_id` means the vendor accepts it.
 3. Pick the allowlist from the probe's tool list. Take the reads and the common actions, about 10 tools and never more than 15. Set each tool's `kind` to `read` or `action` by what it does, not by its annotations. A read only fetches. Anything that writes, sends or deletes is an action. The `kind` decides whether the tool asks for approval, and the server's `readOnlyHint: false` can only make a read ask too (ADR 0008).
-4. Add the view entry to `ENTRIES` in `convex/lib/connectorView.ts`: the id (lowercase letters and digits), name, description, example prompt, a handle only if it differs from the id, a card note if the account needs something first, and under `servers`, for each server, its tools. Key a single server by the connector id. Each allowlisted tool gets a label, and each action whose input schema has top-level arguments that say where it writes, like `page_id`, gets a `target`. The action card shows those under Target and the other arguments under Content. An action without a `target` shows all its arguments under Details. Its place in `ENTRIES` sets its order on the Connectors page.
-5. Add the server entry to `ENTRIES` in `convex/lib/connectors.ts` under the same id: under `servers`, each server's URL and a `kind` for each of its tools, then the pinned origins, `signIn: { kind: "dynamicRegistration" }`, scopes and authorize parameters if the vendor needs them, and the account label source. List the server sign-in uses first. `pinnedOrigins` lists every origin the probe's catalog check needs: each MCP server's, and each authorization server, token or registration host the sign-in uses. The account label comes from a field of the token response, like Notion's `workspace_name`, or from a tool a8 calls once after sign-in, with a dot path to the label in its result. a8 calls that tool without asking, so it must be a `read` on the allowlist.
+4. Add the view entry to `ENTRIES` in `convex/lib/connectorView.ts`: the id (lowercase letters and digits), name, description, example prompt, a handle only if it differs from the id, a card note if the account needs something first, and under `servers`, for each server, its tools. Key a single server by the connector id. Each allowlisted tool gets its `kind` and a label, and each action whose input schema has top-level arguments that say where it writes, like `page_id`, gets a `target`. The action card shows those under Target and the other arguments under Content. An action without a `target` shows all its arguments under Details. Its place in `ENTRIES` sets its order on the Connectors page.
+5. Add the server entry to `ENTRIES` in `convex/lib/connectors.ts` under the same id: under `servers`, each server's URL, then the pinned origins, `signIn: { kind: "dynamicRegistration" }`, scopes and authorize parameters if the vendor needs them, and the account label source. List the server sign-in uses first. `pinnedOrigins` lists every origin the probe's catalog check needs: each MCP server's, and each authorization server, token or registration host the sign-in uses. The account label comes from a field of the token response, like Notion's `workspace_name`, or from a tool a8 calls once after sign-in, with a dot path to the label in its result. a8 calls that tool without asking, so it must be a `read` on the allowlist.
 6. Add the logo at `public/connectors/<id>.svg`. The logo sits on a white tile in both themes, so draw it for a light background.
-7. Run `bun run typecheck`. It fails on a connector, server or tool that's in one file and not the other.
+7. Run `bun run typecheck`. It fails on a connector or server that's in one file and not the other.
 8. Run the probe on the new connector's ID with `--sign-in`, like `bun run probe example --sign-in`. Every check should print `ok`.
 9. Run the browser checks with the `browser-verify` skill: connect, answer a prompt with a read, approve an action card and disconnect. Put the screenshots on the PR.

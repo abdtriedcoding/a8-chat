@@ -1,8 +1,7 @@
 // The server's side of the catalog: how a8 reaches each connector's MCP
-// servers, how it signs in, and whether each tool is a read or an action.
-// The UI never imports this module. Ids, card fields, server keys and tool
-// labels live in connectorView.ts, and the maps here are keyed by its ids,
-// server keys and tool names.
+// servers and how it signs in. The UI never imports this module. Ids, card
+// fields, server keys and tools (label, kind and target) live in
+// connectorView.ts, and the maps here are keyed by its ids and server keys.
 
 import { v } from "convex/values";
 import {
@@ -10,11 +9,9 @@ import {
   RECONNECT_ERROR_CODE,
   type ConnectorId,
   type ConnectorToolName,
-  type ConnectorServerView,
   type ConnectorToolView,
   type ConnectorView,
   type ServerKey,
-  type ServerToolName,
 } from "./connectorView";
 
 /**
@@ -23,15 +20,8 @@ import {
  */
 export type ConnectorSignIn = { kind: "dynamicRegistration" };
 
-/**
- * Whether a8 counts a tool as a read or an action. A read runs without
- * asking, unless the server marks the tool not read-only. An action always
- * waits on an action card (ADR 0008).
- */
-export type ToolKind = "read" | "action";
-
 /** One tool a8 offers the model from an MCP server. */
-export type ConnectorTool = ConnectorToolView & { kind: ToolKind };
+export type ConnectorTool = ConnectorToolView;
 
 /** One of a connector's MCP servers. */
 export type ConnectorServer = {
@@ -106,15 +96,12 @@ type ConnectorEntry<Id extends ConnectorId> = ConnectorAccess<
 > & {
   /**
    * Each MCP server connectorView.ts lists for the connector, by its key,
-   * with its URL and the kind of each of its tools. Sign-in reads the
+   * with its URL. Sign-in reads the
    * OAuth metadata of the first server here, and the token it gets must
    * work on every server.
    */
   servers: {
-    [Key in ServerKey<Id>]: {
-      url: string;
-      toolKinds: Record<ServerToolName<Id, Key>, ToolKind>;
-    };
+    [Key in ServerKey<Id>]: { url: string };
   };
 };
 
@@ -137,20 +124,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     servers: {
       notion: {
         url: "https://mcp.notion.com/mcp",
-        toolKinds: {
-          "notion-search": "read",
-          "notion-fetch": "read",
-          "notion-query-data-sources": "read",
-          "notion-get-comments": "read",
-          "notion-get-users": "read",
-          "notion-get-teams": "read",
-          "notion-create-pages": "action",
-          "notion-update-page": "action",
-          "notion-move-pages": "action",
-          "notion-duplicate-page": "action",
-          "notion-create-database": "action",
-          "notion-create-comment": "action",
-        },
       },
     },
     pinnedOrigins: ["https://mcp.notion.com"],
@@ -161,19 +134,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     servers: {
       linear: {
         url: "https://mcp.linear.app/mcp",
-        toolKinds: {
-          list_issues: "read",
-          get_issue: "read",
-          list_comments: "read",
-          list_projects: "read",
-          list_teams: "read",
-          list_users: "read",
-          list_issue_statuses: "read",
-          list_issue_labels: "read",
-          get_workspace: "read",
-          save_issue: "action",
-          save_comment: "action",
-        },
       },
     },
     pinnedOrigins: ["https://mcp.linear.app"],
@@ -184,19 +144,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     servers: {
       todoist: {
         url: "https://ai.todoist.net/mcp",
-        toolKinds: {
-          "find-tasks": "read",
-          "find-tasks-by-date": "read",
-          "find-completed-tasks": "read",
-          "find-projects": "read",
-          "find-sections": "read",
-          "find-labels": "read",
-          "find-comments": "read",
-          "get-overview": "read",
-          "user-info": "read",
-          "add-tasks": "action",
-          "complete-tasks": "action",
-        },
       },
     },
     pinnedOrigins: ["https://ai.todoist.net", "https://todoist.com"],
@@ -207,19 +154,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     servers: {
       airtable: {
         url: "https://mcp.airtable.com/mcp",
-        toolKinds: {
-          list_workspaces: "read",
-          list_bases: "read",
-          search_bases: "read",
-          list_tables_for_base: "read",
-          get_table_schema: "read",
-          list_records_for_table: "read",
-          search_records: "read",
-          analyze_table: "read",
-          list_record_comments: "read",
-          create_records_for_table: "action",
-          update_records_for_table: "action",
-        },
       },
     },
     pinnedOrigins: ["https://mcp.airtable.com", "https://airtable.com"],
@@ -229,20 +163,6 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     servers: {
       calendly: {
         url: "https://mcp.calendly.com",
-        toolKinds: {
-          "users-get_current_user": "read",
-          "event_types-list_event_types": "read",
-          "event_types-get_event_type": "read",
-          "event_types-list_event_type_available_times": "read",
-          "availability-list_user_busy_times": "read",
-          "meetings-list_events": "read",
-          "meetings-get_event": "read",
-          "meetings-list_event_invitees": "read",
-          "locations-list_user_meeting_locations": "read",
-          "meetings-create_invitee": "action",
-          "meetings-cancel_event": "action",
-          "scheduling_links-create_single_use_scheduling_link": "action",
-        },
       },
     },
     pinnedOrigins: ["https://mcp.calendly.com", "https://calendly.com"],
@@ -253,36 +173,26 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
 
 /**
  * Every connector a8 ships with, in catalog order. Each one's servers keep
- * their order in ENTRIES, so the first there signs in.
+ * their order in connectorView.ts, so the first there signs in.
  */
 export const CONNECTORS: CatalogConnector[] = CONNECTOR_VIEWS.map(
   ({ servers: serverViews, ...view }) => {
     const { servers, ...access } = ENTRIES[view.id];
-    const views: Record<string, ConnectorServerView> = serverViews;
-    const entries: [string, ServerEntry][] = Object.entries(servers);
+    const urls: Record<string, { url: string }> = servers;
     return {
       ...view,
       ...access,
-      servers: entries.map(([key, { url, toolKinds }]) => {
-        const { toolPrefix, tools } = views[key];
-        return {
+      servers: Object.entries(serverViews).map(
+        ([key, { toolPrefix, tools }]) => ({
           key,
-          url,
+          url: urls[key].url,
           toolPrefix,
-          tools: new Map(
-            Object.entries(tools).map(([name, tool]) => [
-              name,
-              { ...tool, kind: toolKinds[name] },
-            ]),
-          ),
-        };
-      }),
+          tools: new Map(Object.entries(tools)),
+        }),
+      ),
     };
   },
 );
-
-/** One server of a catalog entry, with its tool names as plain strings. */
-type ServerEntry = { url: string; toolKinds: Record<string, ToolKind> };
 
 /** Accepts only a catalog connector's id. Stored ids stay `v.string()`. */
 export const vConnectorId = v.union(
