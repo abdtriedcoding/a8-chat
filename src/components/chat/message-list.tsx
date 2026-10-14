@@ -1,10 +1,8 @@
 "use client";
 
 import type { PaginationStatus } from "convex/react";
-import { CircleAlertIcon } from "lucide-react";
 import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
-import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -17,12 +15,8 @@ import { Spinner } from "@/components/ui/spinner";
 import type { ThreadState } from "@/hooks/use-thread-state";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCardAnnouncer } from "./action-card";
-import {
-  AssistantMessage,
-  StoppedMarker,
-  ThinkingMessage,
-} from "./assistant-message";
-import { RegenerateButton } from "./regenerate-button";
+import { AssistantMessage, ThinkingMessage } from "./assistant-message";
+import { TurnMarker } from "./turn-marker";
 import { UserMessage } from "./user-message";
 
 /**
@@ -33,64 +27,49 @@ export function MessageList({
   messages,
   status,
   onLoadEarlier,
-  threadState: { stopped, replyStatus, replies, waitingActions },
-  onRegenerate,
-  onEdit,
-  editingLastPrompt,
-  onEditingLastPromptChange,
+  threadState: { stopped, replyStatus, replies, promptIds, waitingActions },
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
   threadState: ThreadState;
-  /** Set while the last turn can be regenerated. Only that turn shows it. */
-  onRegenerate?: () => Promise<void>;
-  /** Set while the last prompt can be edited. Only that prompt shows it. */
-  onEdit?: (prompt: string) => Promise<void>;
-  /** Whether the last prompt's editor is open. */
-  editingLastPrompt: boolean;
-  onEditingLastPromptChange: (editing: boolean) => void;
 }) {
   const lastPromptIndex = messages.findLastIndex(
     (message) => message.role === "user",
   );
-  // The id of each turn's prompt, by order.
-  const promptIds = new Map<number, string>();
-  for (const message of messages) {
-    if (message.role === "user") promptIds.set(message.order, message.id);
-  }
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
         <MessageScrollerViewport>
+          {/* Outside the content on purpose. The scroller keeps its place
+              when earlier messages load only if the content's first child
+              moves down, and this button would always stay first. */}
+          {(status === "CanLoadMore" || status === "LoadingMore") && (
+            <div className="mx-auto flex w-full max-w-3xl justify-center px-4 pt-6 pb-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={status === "LoadingMore"}
+                onClick={onLoadEarlier}
+              >
+                {status === "LoadingMore" && (
+                  <Spinner data-icon="inline-start" />
+                )}
+                Load earlier messages
+              </Button>
+            </div>
+          )}
           <MessageScrollerContent
             aria-busy={replyStatus === "streaming"}
             className="mx-auto w-full max-w-3xl px-4 py-6"
           >
-            {(status === "CanLoadMore" || status === "LoadingMore") && (
-              <MessageScrollerItem className="flex justify-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={status === "LoadingMore"}
-                  onClick={onLoadEarlier}
-                >
-                  {status === "LoadingMore" && (
-                    <Spinner data-icon="inline-start" />
-                  )}
-                  Load earlier messages
-                </Button>
-              </MessageScrollerItem>
-            )}
-
             {/* React Compiler can't cache the elements made in this map, so
                 UserMessage and AssistantMessage use memo. useStableMessages
                 keeps their props the same objects while a message is
                 unchanged, so on a stream chunk only the streaming reply's
                 message renders again. */}
             {messages.map((message, i) => {
-              const regenerate =
-                i === messages.length - 1 ? onRegenerate : undefined;
+              const lastTurn = i === messages.length - 1;
               if (message.role === "user") {
                 return (
                   <Fragment key={message.key}>
@@ -98,9 +77,7 @@ export function MessageList({
                       <UserMessage
                         text={message.text}
                         parts={message.parts}
-                        onEdit={i === lastPromptIndex ? onEdit : undefined}
-                        editing={i === lastPromptIndex && editingLastPrompt}
-                        onEditingChange={onEditingLastPromptChange}
+                        lastPrompt={i === lastPromptIndex}
                       />
                     </MessageScrollerItem>
                     {/* Stopped before any reply was saved, so mark the prompt instead. */}
@@ -109,7 +86,7 @@ export function MessageList({
                         <MessageScrollerItem
                           messageId={`${message.key}-stopped`}
                         >
-                          <StoppedMarker onRegenerate={regenerate} />
+                          <TurnMarker kind="stopped" regenerate={lastTurn} />
                         </MessageScrollerItem>
                       )}
                   </Fragment>
@@ -119,8 +96,10 @@ export function MessageList({
               if (reply) {
                 // A regenerated reply has the same key as the reply it
                 // replaces, and useSmoothText would go on showing the old
-                // text. Regenerate saves the prompt again with a new id, so
-                // keying the reply on its prompt's id mounts a fresh one.
+                // text. Keying the reply on its prompt's id mounts a fresh
+                // one. The item keeps its key: when "load earlier" brings in
+                // the prompt, the scroller still has the element it anchors
+                // to.
                 const replyKey = promptIds.get(message.order) ?? message.key;
                 return (
                   <MessageScrollerItem key={message.key} messageId={message.key}>
@@ -129,11 +108,8 @@ export function MessageList({
                       message={message}
                       reply={reply}
                       stopped={stopped.has(message.order)}
-                      continuing={
-                        i === messages.length - 1 &&
-                        replyStatus === "continuing"
-                      }
-                      onRegenerate={regenerate}
+                      continuing={lastTurn && replyStatus === "continuing"}
+                      lastTurn={lastTurn}
                     />
                   </MessageScrollerItem>
                 );
@@ -148,15 +124,7 @@ export function MessageList({
             )}
             {replyStatus === "timedOut" && (
               <MessageScrollerItem messageId="reply-timed-out">
-                <Marker>
-                  <MarkerIcon>
-                    <CircleAlertIcon />
-                  </MarkerIcon>
-                  <MarkerContent>No reply received. Try again.</MarkerContent>
-                  {onRegenerate && (
-                    <RegenerateButton onRegenerate={onRegenerate} labelled />
-                  )}
-                </Marker>
+                <TurnMarker kind="timedOut" regenerate />
               </MessageScrollerItem>
             )}
           </MessageScrollerContent>

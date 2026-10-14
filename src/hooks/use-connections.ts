@@ -1,16 +1,13 @@
-import { useConvexAuth, useQuery } from "convex/react";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { api } from "../../convex/_generated/api";
 import type { ConnectorStatus } from "../../convex/connectors";
 
 /**
  * The user's connection status for each catalog connector, in catalog
- * order, or undefined while it loads. It waits for the session to load
- * first. Before then the query sees no user and would report every
- * connector as disconnected.
+ * order, or undefined while it loads.
  */
 export function useConnections(): ConnectorStatus[] | undefined {
-  const { isLoading } = useConvexAuth();
-  return useQuery(api.connectors.list, isLoading ? "skip" : {});
+  return useAuthQuery(api.connectors.list);
 }
 
 /**

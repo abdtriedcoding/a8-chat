@@ -1,51 +1,25 @@
 "use client";
 
-import { createContext, use, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/errors";
 import type { ConnectorToolCall } from "./connector-tool-call";
-
-/** Approves or cancels the action waiting on the card with this approval ID. */
-export type DecideAction = (
-  approvalId: string,
-  approve: boolean,
-) => Promise<void>;
-
-const DecideActionContext = createContext<DecideAction | null>(null);
-
-/** Gives every ActionCard inside it the thread's DecideAction. */
-export function DecideActionProvider({
-  decide,
-  children,
-}: {
-  decide: DecideAction;
-  children: ReactNode;
-}) {
-  return <DecideActionContext value={decide}>{children}</DecideActionContext>;
-}
-
-function useDecideAction(): DecideAction {
-  const decide = use(DecideActionContext);
-  if (!decide) {
-    throw new Error("ActionCard must be inside a DecideActionProvider.");
-  }
-  return decide;
-}
+import { useThreadActionsContext } from "./thread-actions-context";
 
 /**
  * The card for an action waiting in a reply (ADR 0002): the connector, the
  * target and the content, with Approve and Cancel. a8 sends nothing to the
  * app until the user approves. Once they decide, the reply shows the call as
- * a row instead. It must be inside a DecideActionProvider.
+ * a row instead. It must be inside a ThreadActionsProvider.
  *
  * The catalog marks which arguments are the action's target. A tool without
  * marked targets shows every argument under Details.
  */
 export function ActionCard({ call }: { call: ConnectorToolCall }) {
-  const decideAction = useDecideAction();
+  const { decide: decideAction } = useThreadActionsContext();
   const [deciding, setDeciding] = useState<"approve" | "cancel">();
   const args = Object.entries(isRecord(call.input) ? call.input : {});
   const isTarget = ([name]: [string, unknown]) =>

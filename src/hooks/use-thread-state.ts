@@ -32,6 +32,11 @@ export type ThreadState = {
   /** Each reply's parts, by message id. */
   replies: Map<string, ReplyParts>;
   /**
+   * Each turn's prompt id, by order. Regenerate saves the prompt again with
+   * a new id, so this tells a regenerated reply from the one it replaces.
+   */
+  promptIds: Map<number, string>;
+  /**
    * The text Copy under the last reply copies. Empty while the reply is
    * being written.
    */
@@ -52,8 +57,10 @@ export function useThreadState(messages: ThreadMessage[]): ThreadState {
   const canRedoLastTurn = messages.length > 0 && !replyInProgress;
 
   const replies = new Map<string, ReplyParts>();
+  const promptIds = new Map<number, string>();
   let lastReplyText = "";
   for (const message of messages) {
+    if (message.role === "user") promptIds.set(message.order, message.id);
     if (message.role !== "assistant") continue;
     const replyStopped = stopped.has(message.order);
     const reply = replyParts(message, replyStopped);
@@ -67,6 +74,7 @@ export function useThreadState(messages: ThreadMessage[]): ThreadState {
     replyInProgress,
     canRedoLastTurn,
     replies,
+    promptIds,
     lastReplyText,
     waitingActions: [...replies.values()].flatMap(
       ({ waitingActions }) => waitingActions,

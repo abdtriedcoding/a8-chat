@@ -1,11 +1,9 @@
 "use client";
 
 import { useSmoothText } from "@convex-dev/agent/react";
-import { CircleStopIcon } from "lucide-react";
 import { memo } from "react";
 import { LogoMark } from "@/components/icons/logo-mark";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {
   Message,
   MessageAvatar,
@@ -24,6 +22,8 @@ import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
 import { ReconnectChip } from "./reconnect-chip";
 import { RegenerateButton } from "./regenerate-button";
+import { useThreadActionsContext } from "./thread-actions-context";
+import { TurnMarker } from "./turn-marker";
 import {
   isSearching,
   searchSources,
@@ -37,7 +37,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   reply: { text, toolCalls, waitingActions, toolRows },
   stopped,
   continuing = false,
-  onRegenerate,
+  lastTurn = false,
 }: {
   message: ThreadMessage;
   reply: ReplyParts;
@@ -48,9 +48,10 @@ export const AssistantMessage = memo(function AssistantMessage({
    * hasn't picked up again yet.
    */
   continuing?: boolean;
-  /** Set on the last reply while it can be regenerated. */
-  onRegenerate?: () => Promise<void>;
+  /** Whether this is the last turn's reply, which can be regenerated. */
+  lastTurn?: boolean;
 }) {
+  const { regenerate } = useThreadActionsContext();
   const [visibleText, { isStreaming }] = useSmoothText(text, {
     startStreaming: message.status === "streaming",
   });
@@ -67,7 +68,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   // A stopped reply with no text shows only "Stopped".
   if (stopped && !text) {
-    return <StoppedMarker onRegenerate={onRegenerate} />;
+    return <TurnMarker kind="stopped" regenerate={lastTurn} />;
   }
 
   const searches = webSearchParts(message);
@@ -91,7 +92,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   const failed = message.status === "failed" && !stopped;
   // A failed reply has Regenerate in its error bubble, so the row under it
   // leaves Regenerate out.
-  const footerRegenerate = failed ? undefined : onRegenerate;
+  const footerRegenerate = lastTurn && !failed && regenerate !== undefined;
 
   return (
     <Message align="start">
@@ -133,26 +134,17 @@ export const AssistantMessage = memo(function AssistantMessage({
         )}
         {sources.length > 0 && <SourcesRow sources={sources} />}
         {failed && (
-          <Bubble variant="destructive">
-            <BubbleContent className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <span>
-                Couldn&apos;t get a reply.
-                {message.metadata?.failureReason &&
-                  ` ${message.metadata.failureReason}`}
-              </span>
-              {onRegenerate && (
-                <RegenerateButton onRegenerate={onRegenerate} labelled />
-              )}
-            </BubbleContent>
-          </Bubble>
+          <TurnMarker
+            kind="failed"
+            reason={message.metadata?.failureReason}
+            regenerate={lastTurn}
+          />
         )}
-        {stopped && <StoppedMarker />}
+        {stopped && <TurnMarker kind="stopped" />}
         {!streaming && (text || footerRegenerate) && (
           <MessageFooter className="-mt-1.5 gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
             {text && <CopyReplyButton text={text} />}
-            {footerRegenerate && (
-              <RegenerateButton onRegenerate={footerRegenerate} />
-            )}
+            {footerRegenerate && <RegenerateButton />}
           </MessageFooter>
         )}
       </MessageContent>
@@ -174,27 +166,5 @@ export function ThinkingMessage() {
         </Bubble>
       </MessageContent>
     </Message>
-  );
-}
-
-/**
- * The "Stopped" label under a reply the user stopped. With `onRegenerate`,
- * a Regenerate button follows the label.
- */
-export function StoppedMarker({
-  onRegenerate,
-}: {
-  onRegenerate?: () => Promise<void>;
-}) {
-  return (
-    <Marker>
-      <MarkerIcon>
-        <CircleStopIcon />
-      </MarkerIcon>
-      <MarkerContent>Stopped</MarkerContent>
-      {onRegenerate && (
-        <RegenerateButton onRegenerate={onRegenerate} labelled />
-      )}
-    </Marker>
   );
 }
