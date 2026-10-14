@@ -1,7 +1,6 @@
 "use client";
 
 import { useUIMessages } from "@convex-dev/agent/react";
-import { useConvexAuth, useQuery } from "convex/react";
 import { MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -17,6 +16,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuthQuery, useSkipUntilSignedIn } from "@/hooks/use-auth-query";
 import { useThreadActions } from "@/hooks/use-thread-actions";
 import { useThreadState } from "@/hooks/use-thread-state";
 import { errorMessage } from "@/lib/errors";
@@ -29,8 +29,7 @@ import { MessageList } from "./message-list";
 const PAGE_SIZE = 20;
 
 export function ThreadView({ threadId }: { threadId: string }) {
-  const { isLoading, isAuthenticated } = useConvexAuth();
-  const thread = useQuery(api.threads.get, isLoading ? "skip" : { threadId });
+  const thread = useAuthQuery(api.threads.get, { threadId });
 
   const {
     results: messages,
@@ -38,7 +37,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
     loadMore,
   } = useUIMessages(
     api.chat.messages.listThreadMessages,
-    isAuthenticated ? { threadId } : "skip",
+    // A missing thread has no messages to fetch.
+    useSkipUntilSignedIn(thread === null ? "skip" : { threadId }),
     { initialNumItems: PAGE_SIZE, stream: true },
   );
 
