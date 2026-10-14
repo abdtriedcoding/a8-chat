@@ -23,26 +23,29 @@ import { errorMessage } from "@/lib/errors";
 import { getAttachmentKind } from "../../../convex/lib/attachments";
 import { checkPrompt } from "../../../convex/lib/prompt";
 import { SentImageThumbnail, SentPdfChip } from "./attachments";
+import { useThreadActionsContext } from "./thread-actions-context";
 
 /**
- * A prompt's bubble, with its attachments above it. With `onEdit`, a pencil
- * next to it opens an editor in its place. Editing changes only the text.
- * The caller owns whether the editor is open, so a shortcut can open it too.
+ * A prompt's bubble, with its attachments above it. On the last prompt, while
+ * it can be edited, a pencil next to it opens an editor in its place. Editing
+ * changes only the text. The thread owns whether the editor is open, so a
+ * shortcut can open it too.
  */
 export function UserMessage({
   text,
   attachments,
-  onEdit,
-  editing = false,
-  onEditingChange,
+  lastPrompt = false,
 }: {
   text: string;
   attachments: FileUIPart[];
-  /** Set on the last prompt while it can be edited. */
-  onEdit?: (prompt: string) => Promise<void>;
-  editing?: boolean;
-  onEditingChange?: (editing: boolean) => void;
+  lastPrompt?: boolean;
 }) {
+  const {
+    edit: editLastPrompt,
+    editingLastPrompt,
+    setEditingLastPrompt,
+  } = useThreadActionsContext();
+  const edit = lastPrompt ? editLastPrompt : undefined;
   return (
     <Message align="end">
       <MessageContent>
@@ -64,26 +67,26 @@ export function UserMessage({
             )}
           </div>
         )}
-        {editing && onEdit ? (
+        {edit && editingLastPrompt ? (
           <PromptEditor
             text={text}
             attachmentCount={attachments.length}
             onSave={async (prompt) => {
-              await onEdit(prompt);
-              onEditingChange?.(false);
+              await edit(prompt);
+              setEditingLastPrompt(false);
             }}
-            onCancel={() => onEditingChange?.(false)}
+            onCancel={() => setEditingLastPrompt(false)}
           />
         ) : (
           <div className="flex items-end justify-end gap-1">
-            {onEdit && (
+            {edit && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-                    onClick={() => onEditingChange?.(true)}
+                    onClick={() => setEditingLastPrompt(true)}
                   >
                     <PencilIcon />
                     <span className="sr-only">Edit</span>

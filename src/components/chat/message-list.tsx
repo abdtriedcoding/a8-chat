@@ -1,10 +1,8 @@
 "use client";
 
 import type { PaginationStatus } from "convex/react";
-import { CircleAlertIcon } from "lucide-react";
 import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
-import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -17,12 +15,8 @@ import { Spinner } from "@/components/ui/spinner";
 import type { ThreadState } from "@/hooks/use-thread-state";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCardAnnouncer } from "./action-card";
-import {
-  AssistantMessage,
-  StoppedMarker,
-  ThinkingMessage,
-} from "./assistant-message";
-import { RegenerateButton } from "./regenerate-button";
+import { AssistantMessage, ThinkingMessage } from "./assistant-message";
+import { TurnMarker } from "./turn-marker";
 import { UserMessage } from "./user-message";
 
 /**
@@ -34,22 +28,11 @@ export function MessageList({
   status,
   onLoadEarlier,
   threadState: { stopped, replyStatus, replies, waitingActions },
-  onRegenerate,
-  onEdit,
-  editingLastPrompt,
-  onEditingLastPromptChange,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
   threadState: ThreadState;
-  /** Set while the last turn can be regenerated. Only that turn shows it. */
-  onRegenerate?: () => Promise<void>;
-  /** Set while the last prompt can be edited. Only that prompt shows it. */
-  onEdit?: (prompt: string) => Promise<void>;
-  /** Whether the last prompt's editor is open. */
-  editingLastPrompt: boolean;
-  onEditingLastPromptChange: (editing: boolean) => void;
 }) {
   const lastPromptIndex = messages.findLastIndex(
     (message) => message.role === "user",
@@ -84,8 +67,7 @@ export function MessageList({
             )}
 
             {messages.map((message, i) => {
-              const regenerate =
-                i === messages.length - 1 ? onRegenerate : undefined;
+              const lastTurn = i === messages.length - 1;
               if (message.role === "user") {
                 return (
                   <Fragment key={message.key}>
@@ -95,9 +77,7 @@ export function MessageList({
                         attachments={message.parts.filter(
                           (part) => part.type === "file",
                         )}
-                        onEdit={i === lastPromptIndex ? onEdit : undefined}
-                        editing={i === lastPromptIndex && editingLastPrompt}
-                        onEditingChange={onEditingLastPromptChange}
+                        lastPrompt={i === lastPromptIndex}
                       />
                     </MessageScrollerItem>
                     {/* Stopped before any reply was saved, so mark the prompt instead. */}
@@ -106,7 +86,7 @@ export function MessageList({
                         <MessageScrollerItem
                           messageId={`${message.key}-stopped`}
                         >
-                          <StoppedMarker onRegenerate={regenerate} />
+                          <TurnMarker kind="stopped" regenerate={lastTurn} />
                         </MessageScrollerItem>
                       )}
                   </Fragment>
@@ -126,11 +106,8 @@ export function MessageList({
                       message={message}
                       reply={reply}
                       stopped={stopped.has(message.order)}
-                      continuing={
-                        i === messages.length - 1 &&
-                        replyStatus === "continuing"
-                      }
-                      onRegenerate={regenerate}
+                      continuing={lastTurn && replyStatus === "continuing"}
+                      lastTurn={lastTurn}
                     />
                   </MessageScrollerItem>
                 );
@@ -145,15 +122,7 @@ export function MessageList({
             )}
             {replyStatus === "timedOut" && (
               <MessageScrollerItem messageId="reply-timed-out">
-                <Marker>
-                  <MarkerIcon>
-                    <CircleAlertIcon />
-                  </MarkerIcon>
-                  <MarkerContent>No reply received. Try again.</MarkerContent>
-                  {onRegenerate && (
-                    <RegenerateButton onRegenerate={onRegenerate} labelled />
-                  )}
-                </Marker>
+                <TurnMarker kind="timedOut" regenerate />
               </MessageScrollerItem>
             )}
           </MessageScrollerContent>
