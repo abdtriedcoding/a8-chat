@@ -290,13 +290,33 @@ export async function openMcpClient(
   server: ConnectorServer,
   accessToken: string,
 ): Promise<MCPClient> {
+  return await createClient(server, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    fetchFn: pinnedFetch(connector),
+  });
+}
+
+/**
+ * Like openMcpClient, but every request goes through `fetchFn`, which sets
+ * the Authorization header itself. A client opened this way follows token
+ * refreshes without being replaced.
+ */
+export async function openMcpClientWithFetch(
+  server: ConnectorServer,
+  fetchFn: typeof fetch,
+): Promise<MCPClient> {
+  return await createClient(server, { fetchFn });
+}
+
+async function createClient(
+  server: ConnectorServer,
+  {
+    headers,
+    fetchFn,
+  }: { headers?: Record<string, string>; fetchFn: typeof fetch },
+): Promise<MCPClient> {
   return await createMCPClient({
-    transport: {
-      type: "http",
-      url: server.url,
-      headers: { Authorization: `Bearer ${accessToken}` },
-      fetch: pinnedFetch(connector),
-    },
+    transport: { type: "http", url: server.url, headers, fetch: fetchFn },
     // A signal, not `timeout`, so the SDK's error keeps the signal's
     // TimeoutError as its cause. isVendorUnreachable checks for that.
     initializationOptions: {
