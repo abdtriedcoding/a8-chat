@@ -4,21 +4,18 @@
 // them only if the token version still matches. Replies that find the lease
 // taken wait and read the committed tokens.
 
-import { auth, type OAuthTokens } from "@ai-sdk/mcp";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import type { ConnectionTokens } from "../connections";
 import {
-  classifyOAuthError,
-  ConnectorOAuthProvider,
-  forgetOAuthClientRegistration,
-  pinnedFetch,
+  REFRESH_TIMEOUT_MS,
+  refreshTokens,
   refusedStatus,
+  type RefreshedTokens,
 } from "./connectorAuth";
-import { signInServer, type Connector } from "./connectors";
+import type { Connector } from "./connectors";
 import {
   decryptOrUndefined,
-  encryptOptionalSecret,
   encryptSecret,
   getEncryptionKey,
   type EncryptionKey,
@@ -26,9 +23,6 @@ import {
 
 /** How close to expiry an access token gets refreshed before it's used. */
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
-
-/** How long one refresh can take, across all its requests. */
-const REFRESH_TIMEOUT_MS = 30_000;
 
 /**
  * How long a reply holds the refresh lease before another can claim it.
@@ -164,11 +158,19 @@ async function refresh(
   }
 
   let outcome:
-    | { kind: "refreshed"; tokens: OAuthTokens }
+    | { kind: "refreshed"; tokens: RefreshedTokens }
     | { kind: "rejected" }
     | { kind: "failed"; error: unknown };
   try {
-    const refreshed = await requestTokens(ctx, connector, key, seen);
+    // A damaged refresh token can't refresh, so the user signs in again.
+    const refreshToken =
+      seen.encryptedRefreshToken === undefined
+        ? undefined
+        : await decryptOrUndefined(key, seen.encryptedRefreshToken);
+    const refreshed =
+      refreshToken === undefined
+        ? null
+        : await refreshTokens(ctx, connector, key, refreshToken, seen.resource);
     outcome = refreshed
       ? { kind: "refreshed", tokens: refreshed }
       : { kind: "rejected" };
@@ -186,132 +188,19 @@ async function refresh(
             kind: "refreshed",
             encryptedAccessToken: await encryptSecret(
               key,
-              outcome.tokens.access_token,
+              outcome.tokens.accessToken,
             ),
-            encryptedRefreshToken: await encryptOptionalSecret(
+            encryptedRefreshToken: await encryptSecret(
               key,
-              outcome.tokens.refresh_token,
+              outcome.tokens.refreshToken,
             ),
             tokenExpiresAt:
-              outcome.tokens.expires_in === undefined
+              outcome.tokens.expiresIn === undefined
                 ? undefined
-                : Date.now() + outcome.tokens.expires_in * 1000,
+                : Date.now() + outcome.tokens.expiresIn * 1000,
           }
         : { kind: outcome.kind },
   });
   if (outcome.kind === "failed") throw outcome.error;
   return settled;
-}
-
-/**
- * Trades the refresh token for new tokens at the vendor. Returns null if
- * the vendor refused the refresh token or a8's client, or a8 has no client
- * or its refresh token is damaged, so the user has to sign in again.
- * Throws if the vendor couldn't be reached, or with MISCONFIGURED if a
- * secret was encrypted under another key. Only call it while holding the
- * refresh lease.
- */
-async function requestTokens(
-  ctx: ActionCtx,
-  connector: Connector,
-  key: EncryptionKey,
-  tokens: ConnectionTokens,
-): Promise<OAuthTokens | null> {
-  const refreshToken =
-    tokens.encryptedRefreshToken === undefined
-      ? undefined
-      : await decryptOrUndefined(key, tokens.encryptedRefreshToken);
-  if (refreshToken === undefined) return null;
-  const provider = new RefreshOAuthProvider(ctx, connector, key, refreshToken);
-  // Without a client, auth() would register one, and Notion orphans the
-  // grants of earlier clients. The refresh token belongs to the lost client
-  // anyway.
-  if (!(await provider.clientInformation())) return null;
-  let rejectedError: unknown;
-  try {
-    await auth(provider, {
-      serverUrl: signInServer(connector).url,
-      fetchFn: provider.fetch,
-    });
-  } catch (error) {
-    if (classifyOAuthError(error) === "other") throw error;
-    rejectedError = error;
-  }
-  if (provider.savedTokens) return provider.savedTokens;
-  // auth() swallows some refresh errors and goes on to build a sign-in URL,
-  // which a8 drops. Only an OAuth error from the vendor means the refresh
-  // was refused, not a rate limit or an outage.
-  const rejection = classifyOAuthError(rejectedError ?? provider.refreshError);
-  if (rejection === "rejectedClient") {
-    await forgetOAuthClientRegistration(ctx, connector);
-  }
-  if (rejection !== "other") return null;
-  const { refreshError } = provider;
-  throw new Error(
-    `Refreshing the ${connector.name} token failed${refreshError ? `: ${refreshError}` : ""}.`,
-  );
-}
-
-/**
- * The OAuth provider for refreshing a connection's tokens with `auth()`.
- * It hands auth() the refresh token, and keeps what the refresh produced
- * for the caller to store.
- */
-class RefreshOAuthProvider extends ConnectorOAuthProvider {
-  /** The OAuth error the token endpoint answered the refresh with. */
-  refreshError?: string;
-  private readonly deadline = AbortSignal.timeout(REFRESH_TIMEOUT_MS);
-
-  constructor(
-    ctx: ActionCtx,
-    connector: Connector,
-    encryptionKey: EncryptionKey,
-    private refreshToken: string | undefined,
-  ) {
-    super(ctx, connector, encryptionKey);
-  }
-
-  override tokens(): OAuthTokens | undefined {
-    if (this.refreshToken === undefined) return undefined;
-    // auth() only reads the refresh token.
-    return {
-      access_token: "",
-      token_type: "Bearer",
-      refresh_token: this.refreshToken,
-    };
-  }
-
-  // auth() calls this when the vendor refuses the refresh token or the
-  // client, then tries again. Dropping the refresh token keeps it from
-  // sending a refused one twice. The client stays, because auth() would
-  // register a new one on the second try. requestTokens drops it after.
-  override async invalidateCredentials() {
-    this.refreshToken = undefined;
-  }
-
-  override fetch = async (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const response = await pinnedFetch(this.connector)(input, {
-      ...init,
-      signal: init?.signal ?? this.deadline,
-    });
-    if (
-      !response.ok &&
-      init?.body instanceof URLSearchParams &&
-      init.body.get("grant_type") === "refresh_token"
-    ) {
-      const body: unknown = await response
-        .clone()
-        .json()
-        .catch(() => undefined);
-      const error =
-        typeof body === "object" && body !== null
-          ? (body as Record<string, unknown>).error
-          : undefined;
-      if (typeof error === "string") this.refreshError = error;
-    }
-    return response;
-  };
 }

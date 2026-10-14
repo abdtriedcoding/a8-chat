@@ -80,6 +80,10 @@ export default defineSchema({
     // When the access token expires, in ms since the epoch. Unset if the
     // vendor didn't say.
     tokenExpiresAt: v.optional(v.number()),
+    // The `resource` sign-in sent with the code exchange (RFC 8707). A
+    // refresh sends it again (ADR 0010). Unset on rows from before a8
+    // stored it, and then a refresh sends none.
+    resource: v.optional(v.string()),
     // Bumped on every token change, for the refresh lease (ADR 0003).
     tokenVersion: v.number(),
     // Set while a reply holds the refresh lease (claimRefresh), and until

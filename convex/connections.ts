@@ -42,6 +42,7 @@ const vConnectionTokens = v.object({
   encryptedAccessToken: connectionFields.encryptedAccessToken,
   encryptedRefreshToken: connectionFields.encryptedRefreshToken,
   tokenExpiresAt: connectionFields.tokenExpiresAt,
+  resource: connectionFields.resource,
   tokenVersion: connectionFields.tokenVersion,
 });
 
@@ -92,6 +93,7 @@ export const saveConnection = internalMutation({
     encryptedAccessToken: v.string(),
     encryptedRefreshToken: v.optional(v.string()),
     tokenExpiresAt: v.optional(v.number()),
+    resource: v.optional(v.string()),
     accountLabel: v.optional(v.string()),
   },
   returns: v.null(),
@@ -221,7 +223,7 @@ export const settleTokens = internalMutation({
       v.object({
         kind: v.literal("refreshed"),
         encryptedAccessToken: v.string(),
-        encryptedRefreshToken: v.optional(v.string()),
+        encryptedRefreshToken: v.string(),
         tokenExpiresAt: v.optional(v.number()),
       }),
       v.object({ kind: v.literal("rejected") }),
@@ -368,6 +370,7 @@ function connectionTokens(connection: Doc<"connections">): ConnectionTokens {
     encryptedAccessToken: connection.encryptedAccessToken,
     encryptedRefreshToken: connection.encryptedRefreshToken,
     tokenExpiresAt: connection.tokenExpiresAt,
+    resource: connection.resource,
     tokenVersion: connection.tokenVersion,
   };
 }
