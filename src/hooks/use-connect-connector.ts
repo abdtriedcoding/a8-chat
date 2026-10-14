@@ -2,7 +2,11 @@ import { useAction } from "convex/react";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { showConnectResult } from "@/lib/connect-result";
-import { currentPath, saveConnectReturn } from "@/lib/connect-return";
+import {
+  clearConnectReturn,
+  currentPath,
+  saveConnectReturn,
+} from "@/lib/connect-return";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
 import type { ConnectorId } from "../../convex/lib/connectorView";
@@ -65,6 +69,9 @@ export function useConnectConnector(connectorId: ConnectorId) {
     } catch (error) {
       toast.error(errorMessage(error));
     }
+    // The browser stays, so a sign-in saved before from another page is
+    // stale and mustn't send a later callback back to it.
+    if (!onConnectorsPage) clearConnectReturn();
     setStarting(connectorId, false);
   }
 

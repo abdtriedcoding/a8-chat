@@ -220,4 +220,4 @@ Add `--prod` for the production deployment. It returns how many secrets it rewro
 6. Add the logo at `public/connectors/<id>.svg`. The logo sits on a white tile in both themes, so draw it for a light background.
 7. Run `bun run typecheck`. It fails on a connector or server that's in one file and not the other.
 8. Run the probe on the new connector's ID with `--sign-in`, like `bun run probe example --sign-in`, or without it for a connector with no sign-in. Every check should print `ok`.
-9. Run the browser checks with the `browser-verify` skill: connect, answer a prompt with a read, approve an action card and disconnect. Put the screenshots on the PR.
+9. Run the browser checks with the `browser-verify` skill: connect, answer a prompt with a read if the connector has one, approve an action card and disconnect. Put the screenshots on the PR.
