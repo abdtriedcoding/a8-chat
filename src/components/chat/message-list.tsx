@@ -33,7 +33,7 @@ export function MessageList({
   messages,
   status,
   onLoadEarlier,
-  threadState: { stopped, replyStatus, replies, waitingActions },
+  threadState: { stopped, replyStatus, replies, promptIds, waitingActions },
   onRegenerate,
   onEdit,
   editingLastPrompt,
@@ -54,11 +54,6 @@ export function MessageList({
   const lastPromptIndex = messages.findLastIndex(
     (message) => message.role === "user",
   );
-  // The id of each turn's prompt, by order.
-  const promptIds = new Map<number, string>();
-  for (const message of messages) {
-    if (message.role === "user") promptIds.set(message.order, message.id);
-  }
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
@@ -116,8 +111,10 @@ export function MessageList({
               if (reply) {
                 // A regenerated reply has the same key as the reply it
                 // replaces, and useSmoothText would go on showing the old
-                // text. Regenerate saves the prompt again with a new id, so
-                // keying the reply on its prompt's id mounts a fresh one.
+                // text. Keying the reply on its prompt's id mounts a fresh
+                // one. The item keeps its key: when "load earlier" brings in
+                // the prompt, the scroller still has the element it anchors
+                // to.
                 const replyKey = promptIds.get(message.order) ?? message.key;
                 return (
                   <MessageScrollerItem key={message.key} messageId={message.key}>
