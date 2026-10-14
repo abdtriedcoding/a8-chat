@@ -4,7 +4,7 @@ a8 reaches each app through the vendor's own MCP server, with a8 as the OAuth an
 
 ## Where the code lives
 
-- `convex/connectors.ts`: the public functions, `list`, `connect`, `finishConnect` and `disconnect`, and the OAuth callback route, `/connectors/callback`. `list` returns each catalog connector's status only. The UI takes names and logos from the client-safe view.
+- `convex/connectors.ts`: the public functions, `list`, `connect`, `finishConnect` and `disconnect`, and the OAuth callback route, `/connectors/callback`. For a connector with no sign-in, `connect` stores the connection itself. `list` returns each catalog connector's status only. The UI takes names and logos from the client-safe view.
 - `convex/connections.ts`: connection rows, the refresh lease mutations, the revoke-then-delete that disconnect and account deletion share, and re-encrypting stored secrets.
 - `convex/signIns.ts`: sign-ins in progress (`pendingConnects`), OAuth client registrations (`oauthClientRegistrations`), the connect rate limit check and expired sign-in cleanup.
 - `convex/lib/oauthDiscovery.ts`: OAuth metadata discovery, used by revocation and the probe script.
@@ -65,7 +65,14 @@ notion: {
 },
 ```
 
-The handle defaults to the id, and the logo is always `public/connectors/<id>.svg`. a8 registers itself with the vendor once per deployment, by dynamic registration.
+The handle defaults to the id, and the logo is always `public/connectors/<id>.svg`.
+
+### Sign-in
+
+`signIn` in `connectors.ts` says how a connection gets its access:
+
+- `{ kind: "dynamicRegistration" }`, the default when `signIn` is left out. a8 registers itself with the vendor once per deployment, and the user signs in at the vendor's consent screen.
+- `{ kind: "none" }`, for a server that answers without a token, like Excalidraw's. Turning the connector on lists its tools without a token and stores a connection with no tokens, the tool list with it. The browser never leaves the page. A reply calls the server with no `Authorization` header, and disconnecting has nothing to revoke. If the server ever refuses a8 with a 401 or 403, the connection needs reconnecting, as any other would.
 
 A connector with several servers lists each one under its own key in both files, like `drive` and `docs`. Sign-in reads the OAuth metadata of the first server in `connectors.ts`, and the token it gets goes to every server. `scopes` sets the scopes sign-in asks for, and `authorizeParams` adds query parameters to the vendor's authorize URL, like `{ access_type: "offline", prompt: "consent" }`. Without `scopes`, sign-in asks for the scopes the first server's protected resource metadata lists.
 
@@ -119,7 +126,7 @@ With a token, or when `initialize` works without one, it prints every tool on ea
 
 Given a connector ID, the probe ends with a catalog check against the live server. It checks the same things a8 does when it signs in and calls tools:
 
-- the server has a registration endpoint, which dynamic registration needs
+- the server has a registration endpoint, which dynamic registration needs. For a connector with no sign-in, it checks instead that the server answers `initialize` without a token, and skips the authorization server check below.
 - each server's MCP URL origin is in `pinnedOrigins`
 - the probe found authorization server metadata, and each authorization server's origin is in `pinnedOrigins`
 - every origin a8's server contacts is pinned. The check skips the authorization endpoint, because only the browser opens it.
@@ -193,7 +200,7 @@ Add `--prod` for the production deployment. It returns how many secrets it rewro
 
 ## Checklist for a new connector
 
-1. Run the probe on each of the vendor's MCP URLs, like `bun run probe https://mcp.example.com/mcp`. Record the URLs, every origin, whether there's a registration endpoint, the scopes, the tools and their annotations. a8 needs a registration endpoint.
+1. Run the probe on each of the vendor's MCP URLs, like `bun run probe https://mcp.example.com/mcp`. Record the URLs, every origin, whether there's a registration endpoint, the scopes, the tools and their annotations. a8 needs a registration endpoint, unless the server answers without a token. Then the connector has no sign-in, and step 2 doesn't apply.
 2. Check that the vendor accepts a8's redirect URI before writing code. The probe's `--sign-in` uses a localhost redirect URI, so it doesn't prove this. Register a throwaway client by hand with your deployment's redirect URI, `<NEXT_PUBLIC_CONVEX_SITE_URL from .env.local>/connectors/callback`:
 
    ```bash
@@ -209,8 +216,8 @@ Add `--prod` for the production deployment. It returns how many secrets it rewro
    An answer with a `client_id` means the vendor accepts it.
 3. Pick the allowlist from the probe's tool list. Take the reads and the common actions, about 10 tools and never more than 15. Set each tool's `kind` to `read` or `action` by what it does, not by its annotations. A read only fetches. Anything that writes, sends or deletes is an action. The `kind` decides whether the tool asks for approval, and the server's `readOnlyHint: false` can only make a read ask too (ADR 0008).
 4. Add the view entry to `ENTRIES` in `convex/lib/connectorView.ts`: the id (lowercase letters and digits), name, description, example prompt, a handle only if it differs from the id, a card note if the account needs something first, and under `servers`, for each server, its tools. Key a single server by the connector id. Each allowlisted tool gets its `kind` and a label, and each action whose input schema has top-level arguments that say where it writes, like `page_id`, gets a `target`. The action card shows those under Target and the other arguments under Content. An action without a `target` shows all its arguments under Details. Its place in `ENTRIES` sets its order on the Connectors page.
-5. Add the server entry to `ENTRIES` in `convex/lib/connectors.ts` under the same id: under `servers`, each server's URL, then the pinned origins, scopes and authorize parameters if the vendor needs them, and the account label source. List the server sign-in uses first. `pinnedOrigins` lists every origin the probe's catalog check needs: each MCP server's, and each authorization server, token or registration host the sign-in uses. The account label comes from a field of the token response, like Notion's `workspace_name`, or from a tool a8 calls once after sign-in, with a dot path to the label in its result. a8 calls that tool without asking, so it must be a `read` on the allowlist.
+5. Add the server entry to `ENTRIES` in `convex/lib/connectors.ts` under the same id: under `servers`, each server's URL, then the pinned origins, `signIn: { kind: "none" }` if the server needs no token, scopes and authorize parameters if the vendor needs them, and the account label source. List the server sign-in uses first. `pinnedOrigins` lists every origin the probe's catalog check needs: each MCP server's, and each authorization server, token or registration host the sign-in uses. The account label comes from a field of the token response, like Notion's `workspace_name`, or from a tool a8 calls once after sign-in, with a dot path to the label in its result. a8 calls that tool without asking, so it must be a `read` on the allowlist.
 6. Add the logo at `public/connectors/<id>.svg`. The logo sits on a white tile in both themes, so draw it for a light background.
 7. Run `bun run typecheck`. It fails on a connector or server that's in one file and not the other.
-8. Run the probe on the new connector's ID with `--sign-in`, like `bun run probe example --sign-in`. Every check should print `ok`.
+8. Run the probe on the new connector's ID with `--sign-in`, like `bun run probe example --sign-in`, or without it for a connector with no sign-in. Every check should print `ok`.
 9. Run the browser checks with the `browser-verify` skill: connect, answer a prompt with a read, approve an action card and disconnect. Put the screenshots on the PR.

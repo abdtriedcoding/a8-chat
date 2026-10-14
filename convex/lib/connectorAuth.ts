@@ -292,16 +292,20 @@ class UntrustedOriginError extends Error {
 const OPEN_CLIENT_TIMEOUT_MS = 15_000;
 
 /**
- * An MCP client for one of the connector's servers, sending `accessToken`.
- * It only reaches the pinned origins. Close it when done.
+ * An MCP client for one of the connector's servers, sending `accessToken`,
+ * or no token for a connector with no sign-in. It only reaches the pinned
+ * origins. Close it when done.
  */
 export async function openMcpClient(
   connector: Connector,
   server: ConnectorServer,
-  accessToken: string,
+  accessToken: string | undefined,
 ): Promise<MCPClient> {
   return await createClient(server, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers:
+      accessToken === undefined
+        ? undefined
+        : { Authorization: `Bearer ${accessToken}` },
     fetchFn: pinnedFetch(connector),
   });
 }
@@ -339,13 +343,13 @@ async function createClient(
 export type ServerClient = { server: ConnectorServer; mcp: MCPClient };
 
 /**
- * Opens an MCP client to each of the connector's servers, in order, and
- * passes them to `run`. Closes every client it opened once `run` ends or a
+ * Opens an MCP client to each of the connector's servers, in order, with
+ * `accessToken` (openMcpClient), and passes them to `run`. Closes every client it opened once `run` ends or a
  * server fails to open.
  */
 export async function withMcpClients<T>(
   connector: Connector,
-  accessToken: string,
+  accessToken: string | undefined,
   run: (clients: ServerClient[]) => Promise<T>,
 ): Promise<T> {
   const clients: ServerClient[] = [];
@@ -664,10 +668,9 @@ export async function revokeConnection(
   ctx: ActionCtx,
   connector: Connector,
   encryptionKey: EncryptionKey,
-  connection: Pick<
-    Doc<"connections">,
-    "encryptedAccessToken" | "encryptedRefreshToken"
-  >,
+  connection: Pick<Doc<"connections">, "encryptedRefreshToken"> & {
+    encryptedAccessToken: string;
+  },
 ): Promise<boolean> {
   const registration = await readClientInformation(
     ctx,

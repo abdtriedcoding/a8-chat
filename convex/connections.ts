@@ -26,7 +26,7 @@ import {
   isLegacySecret,
 } from "./lib/encryption";
 import schema from "./schema";
-import { deleteToolList } from "./toolLists";
+import { deleteToolList, vStoredToolList, writeToolList } from "./toolLists";
 
 /** How many of a user's connections one account cleanup step handles. */
 const PURGE_CONNECTION_BATCH_SIZE = 50;
@@ -83,21 +83,23 @@ export const getConnection = internalQuery({
 });
 
 /**
- * Creates or replaces the user's connection to the connector, and schedules
- * refreshToolList to fetch its tool list.
+ * Creates or replaces the user's connection to the connector. Stores
+ * `toolList` as its tool list, or schedules refreshToolList to fetch one.
+ * A connector with no sign-in has no tokens to store.
  */
 export const saveConnection = internalMutation({
   args: {
     userId: v.string(),
     connectorId: v.string(),
-    encryptedAccessToken: v.string(),
+    encryptedAccessToken: connectionFields.encryptedAccessToken,
     encryptedRefreshToken: v.optional(v.string()),
     tokenExpiresAt: v.optional(v.number()),
     resource: v.optional(v.string()),
     accountLabel: v.optional(v.string()),
+    toolList: v.optional(vStoredToolList),
   },
   returns: v.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, { toolList, ...args }) => {
     const existing = await findConnection(ctx, args.userId, args.connectorId);
     const now = Date.now();
     const connection = {
@@ -116,9 +118,13 @@ export const saveConnection = internalMutation({
     }
     // A reconnect keeps the row's ID, so drop the old list.
     await deleteToolList(ctx, connectionId);
-    await ctx.scheduler.runAfter(0, internal.toolLists.refreshToolList, {
-      connectionId,
-    });
+    if (toolList) {
+      await writeToolList(ctx, connectionId, toolList);
+    } else {
+      await ctx.scheduler.runAfter(0, internal.toolLists.refreshToolList, {
+        connectionId,
+      });
+    }
     return null;
   },
 });
@@ -283,15 +289,22 @@ export async function revokeAndDeleteConnection(
   return revoked;
 }
 
-/** revokeConnection, with false and a log line if it throws. */
+/**
+ * revokeConnection, with false and a log line if it throws. A connection
+ * with no tokens, to a connector with no sign-in, has nothing to revoke.
+ */
 async function tryRevoke(
   ctx: ActionCtx,
   connector: Connector,
-  tokens: ConnectionTokens,
+  { encryptedAccessToken, encryptedRefreshToken }: ConnectionTokens,
 ): Promise<boolean> {
+  if (encryptedAccessToken === undefined) return true;
   try {
     const encryptionKey = await getEncryptionKey();
-    return await revokeConnection(ctx, connector, encryptionKey, tokens);
+    return await revokeConnection(ctx, connector, encryptionKey, {
+      encryptedAccessToken,
+      encryptedRefreshToken,
+    });
   } catch (error) {
     console.error(`Revoking a8's ${connector.name} access failed`, error);
     return false;

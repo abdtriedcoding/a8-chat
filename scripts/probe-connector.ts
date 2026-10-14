@@ -22,6 +22,7 @@ import { signInScope } from "../convex/lib/connectorAuth";
 import {
   findAllowlistedTool,
   findConnector,
+  needsSignIn,
   signInServer,
   type Connector,
   type ConnectorServer,
@@ -61,6 +62,8 @@ type Findings = {
   /** The authorization servers whose metadata the probe found. */
   authorizationServers: string[];
   registrationEndpoint?: string;
+  /** Whether the sign-in server answered `initialize` without a token. */
+  answersWithoutToken: boolean;
   /** Each server's tools, by server key. Unset if listing failed. */
   tools?: Map<string, Tool[]>;
   /** Why there's no tool list, when there isn't one. */
@@ -99,6 +102,7 @@ const servers: ConnectorServer[] = connector?.servers ?? [
 // Sign-in reads the first server's OAuth metadata (signInServer).
 const mcpUrl = connector ? signInServer(connector).url : target;
 const findings: Findings = {
+  answersWithoutToken: false,
   origins: new Map(),
   authorizationServers: [],
   noToolsReason: "pass --token or --sign-in to list tools",
@@ -116,6 +120,7 @@ heading(
 heading("initialize without a token");
 const anonymous = await initializeWithoutToken(mcpUrl);
 console.log(anonymous.summary);
+findings.answersWithoutToken = anonymous.ok;
 
 heading("Protected resource metadata");
 const resource = await firstJson(
@@ -558,10 +563,18 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
     console.log(`${ok ? "ok  " : "FAIL"}  ${line}`);
   };
 
-  report(
-    findings.registrationEndpoint !== undefined,
-    `dynamic registration: the server has ${findings.registrationEndpoint ? "a" : "no"} registration endpoint`,
-  );
+  const signsIn = needsSignIn(connector);
+  if (signsIn) {
+    report(
+      findings.registrationEndpoint !== undefined,
+      `dynamic registration: the server has ${findings.registrationEndpoint ? "a" : "no"} registration endpoint`,
+    );
+  } else {
+    report(
+      findings.answersWithoutToken,
+      `no sign-in: the server ${findings.answersWithoutToken ? "answers" : "doesn't answer"} initialize without a token`,
+    );
+  }
 
   const pinned = new Set(
     connector.pinnedOrigins.map((url) => new URL(url).origin),
@@ -575,10 +588,12 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
       `${which}'s origin, ${mcpOrigin}, ${pinned.has(mcpOrigin) ? "is" : "isn't"} pinned`,
     );
   }
-  report(
-    findings.authorizationServers.length > 0,
-    `found metadata for ${findings.authorizationServers.length} authorization server(s)`,
-  );
+  if (signsIn) {
+    report(
+      findings.authorizationServers.length > 0,
+      `found metadata for ${findings.authorizationServers.length} authorization server(s)`,
+    );
+  }
   for (const server of findings.authorizationServers) {
     const origin = new URL(server).origin;
     report(

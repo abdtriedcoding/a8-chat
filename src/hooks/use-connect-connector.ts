@@ -1,11 +1,8 @@
 import { useAction } from "convex/react";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import {
-  clearConnectReturn,
-  currentPath,
-  saveConnectReturn,
-} from "@/lib/connect-return";
+import { showConnectResult } from "@/lib/connect-result";
+import { currentPath, saveConnectReturn } from "@/lib/connect-return";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
 import type { ConnectorId } from "../../convex/lib/connectorView";
@@ -33,10 +30,11 @@ function setStarting(connectorId: string, value: boolean) {
  * Starts signing in to a connector. The browser goes to the vendor's
  * sign-in and comes back to the Connectors page. A sign-in started on
  * another page returns to that page once it connects (ConnectReturn), and
- * `draft`, the composer's text, goes back in its composer.
+ * `draft`, the composer's text, goes back in its composer. A connector with
+ * no sign-in connects at once, and the browser stays on the page.
  *
- * `connecting` stays true until the browser leaves, or until the start
- * fails and shows a toast.
+ * `connecting` stays true until the browser leaves, until a connector with
+ * no sign-in has connected, or until the start fails and shows a toast.
  */
 export function useConnectConnector(connectorId: ConnectorId) {
   const connect = useAction(api.connectors.connect);
@@ -49,18 +47,25 @@ export function useConnectConnector(connectorId: ConnectorId) {
   async function startConnect(draft?: string) {
     if (starting.has(connectorId)) return;
     setStarting(connectorId, true);
-    // On the Connectors page there's nowhere to return to. A sign-in saved
-    // from another page stays, so a draft it holds isn't lost.
-    if (window.location.pathname !== "/connectors") {
-      saveConnectReturn({ connectorId, path: currentPath(), draft });
-    }
+    // Read before the await, while the URL is still this event's page.
+    const path = currentPath();
+    const onConnectorsPage = window.location.pathname === "/connectors";
     try {
-      window.location.assign(await connect({ connectorId }));
+      const start = await connect({ connectorId });
+      if ("authorizationUrl" in start) {
+        // On the Connectors page there's nowhere to return to. A sign-in
+        // saved from another page stays, so a draft it holds isn't lost.
+        if (!onConnectorsPage) {
+          saveConnectReturn({ connectorId, path, draft });
+        }
+        window.location.assign(start.authorizationUrl);
+        return;
+      }
+      showConnectResult(start);
     } catch (error) {
       toast.error(errorMessage(error));
-      if (window.location.pathname !== "/connectors") clearConnectReturn();
-      setStarting(connectorId, false);
     }
+    setStarting(connectorId, false);
   }
 
   return { connecting, startConnect };

@@ -68,14 +68,15 @@ export default defineSchema({
   })
     .index("by_userId_and_storageId", ["userId", "storageId"])
     .index("by_storageId", ["storageId"]),
-  // One user's signed-in link to a connector (convex/connectors.ts). At most
-  // one row per user and connector. lib/encryption.ts encrypts the tokens,
-  // and no public function returns them.
+  // One user's link to a connector (convex/connectors.ts). At most one row
+  // per user and connector. lib/encryption.ts encrypts the tokens, and no
+  // public function returns them.
   connections: defineTable({
     userId: v.string(),
     connectorId: v.string(),
     status: vConnectionStatus,
-    encryptedAccessToken: v.string(),
+    // Unset for a connector with no sign-in, whose server needs no token.
+    encryptedAccessToken: v.optional(v.string()),
     encryptedRefreshToken: v.optional(v.string()),
     // When the access token expires, in ms since the epoch. Unset if the
     // vendor didn't say.
