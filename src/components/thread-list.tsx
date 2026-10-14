@@ -1,6 +1,6 @@
 "use client";
 
-import { useConvexAuth, useMutation, usePaginatedQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { useAuthPaginatedQuery } from "@/hooks/use-auth-query";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { errorMessage } from "@/lib/errors";
@@ -52,11 +53,9 @@ const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
 
 /** The signed-in user's threads, newest first. */
 export function ThreadList() {
-  const { isLoading } = useConvexAuth();
-  const { results, status, loadMore } = usePaginatedQuery(
+  const { results, status, loadMore } = useAuthPaginatedQuery(
     api.threads.list,
-    // Wait for auth, or the first page would come back empty (signed out).
-    isLoading ? "skip" : {},
+    {},
     { initialNumItems: PAGE_SIZE },
   );
   const { threadId: activeId } = useParams<{ threadId?: string }>();

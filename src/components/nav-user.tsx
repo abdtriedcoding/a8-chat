@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
   ChevronsUpDownIcon,
@@ -30,6 +29,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuthQuery } from "@/hooks/use-auth-query";
 import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/initials";
 import { api } from "../../convex/_generated/api";
@@ -43,8 +43,7 @@ type CurrentUser = NonNullable<
  * signing out.
  */
 export function NavUser() {
-  const { isLoading } = useConvexAuth();
-  const identity = useQuery(api.auth.getCurrentUser, isLoading ? "skip" : {});
+  const identity = useAuthQuery(api.auth.getCurrentUser);
   // The identity comes from the Convex token, which keeps the old name until
   // it refreshes. The session updates as soon as the name is saved.
   const { data: session } = authClient.useSession();

@@ -138,7 +138,7 @@ export function ConnectorList({
  * connects (ConnectReturn).
  */
 function useFinishSignIn(callbackParams: CallbackParams) {
-  const { isLoading: authLoading } = useConvexAuth();
+  const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
   // finishConnect deletes the sign-in, so a second call would report it
@@ -152,7 +152,7 @@ function useFinishSignIn(callbackParams: CallbackParams) {
   }, []);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (!isAuthenticated) return;
     if (callbackParams && handledError.current !== callbackParams) {
       handledError.current = callbackParams;
       router.replace("/connectors");
@@ -171,7 +171,7 @@ function useFinishSignIn(callbackParams: CallbackParams) {
           router.replace(started.path);
         }
       });
-  }, [callbackParams, authLoading, router, finishConnect]);
+  }, [callbackParams, isAuthenticated, router, finishConnect]);
 }
 
 function showResult(result: ConnectResult) {
