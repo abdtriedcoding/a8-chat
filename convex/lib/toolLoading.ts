@@ -17,6 +17,13 @@ import { findConnectorTool, type ConnectorView } from "./connectorView";
 export const TOOL_BUDGET_TOKENS = 35_000;
 
 /**
+ * About how many tokens of history a reply sends. Above this, capHistory
+ * drops the oldest turns. It leaves room in the chat model's 200k context
+ * for the tools, the instructions and the reply.
+ */
+export const HISTORY_BUDGET_TOKENS = 60_000;
+
+/**
  * The most mentioned connectors whose tools a reply that searches tools
  * loads. Other mentioned connectors are deferred like the rest.
  */
@@ -181,6 +188,44 @@ export function dropGoneToolReferences(
   });
 }
 
+/**
+ * The history without its oldest turns, once it passes `budgetTokens`. A
+ * turn starts at a user message, and the messages before the first user
+ * message count with the first turn. Whole turns go, so no tool result
+ * loses its tool call. The newest turn stays however large it is. Tokens
+ * are counted as in estimateToolTokens.
+ *
+ * The cut moves in steps of half the budget, not a turn at a time. Each
+ * reply then sends the same oldest turns as the last one until the history
+ * grows by half the budget, so the prompt cache keeps working. What's left
+ * is between about half the budget and the budget.
+ */
+export function capHistory(
+  messages: ModelMessage[],
+  budgetTokens: number = HISTORY_BUDGET_TOKENS,
+): ModelMessage[] {
+  const tokens = messages.map((message) =>
+    Math.ceil(JSON.stringify(message).length / 4),
+  );
+  const total = tokens.reduce((sum, count) => sum + count, 0);
+  if (total <= budgetTokens) return messages;
+
+  // The tokens to drop, rounded up to a step. It stays the same while the
+  // history grows by less than a step, and so does the cut.
+  const step = budgetTokens / 2;
+  const toDrop = Math.ceil((total - budgetTokens) / step) * step;
+  let dropped = 0;
+  let newestTurn = 0;
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "user" && i > 0) {
+      if (dropped >= toDrop) return messages.slice(i);
+      newestTurn = i;
+    }
+    dropped += tokens[i];
+  }
+  return newestTurn === 0 ? messages : messages.slice(newestTurn);
+}
+
 function isGoneReference(
   reference: unknown,
   offered: ReadonlySet<string>,
@@ -248,7 +293,8 @@ export class ReplyToolLog {
       }
     }
     // @ai-sdk/anthropic reports pause_turn as "stop", which ends the reply.
-    if (step.rawFinishReason === "pause_turn") this.pausedSteps.push(this.steps);
+    if (step.rawFinishReason === "pause_turn")
+      this.pausedSteps.push(this.steps);
   }
 
   /**

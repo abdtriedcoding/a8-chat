@@ -48,6 +48,10 @@ export const logUsage: UsageHandler = async (
     provider,
     model,
     inputTokens: usage.inputTokens,
+    // The part of inputTokens read from or written to Anthropic's prompt
+    // cache (streamReply's cache breakpoints).
+    cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
+    cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens,
     outputTokens: usage.outputTokens,
   });
 };

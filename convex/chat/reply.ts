@@ -15,7 +15,12 @@ import {
 import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { replyInstructions } from "../lib/instructions";
-import { createReplyTools, type ReplyTools } from "../lib/replyTools";
+import {
+  CACHE_BREAKPOINT,
+  createReplyTools,
+  withCacheBreakpoint,
+  type ReplyTools,
+} from "../lib/replyTools";
 import schema from "../schema";
 import { canSearchWeb } from "../tools/webSearch";
 import { getStoppedReply } from "./stop";
@@ -87,12 +92,18 @@ export const streamReply = internalAction({
         { threadId },
         {
           promptMessageId,
-          instructions: replyInstructions({
-            timeZone,
-            now: new Date(),
-            canSearchWeb,
-            connectorText: replyTools.connectorText,
-          }),
+          // A cache breakpoint on the instructions. The tools come before
+          // them in the request, so they cache too.
+          instructions: {
+            role: "system",
+            content: replyInstructions({
+              timeZone,
+              now: new Date(),
+              canSearchWeb,
+              connectorText: replyTools.connectorText,
+            }),
+            providerOptions: CACHE_BREAKPOINT,
+          },
           tools: replyTools.tools,
           toolApproval: replyTools.toolApproval,
           stopWhen: stepCountIs(maxSteps),
@@ -118,9 +129,22 @@ export const streamReply = internalAction({
           saveStreamDeltas: { chunking: "word", throttleMs: 100 },
           // Runs once per call, on the history saved before it, so a
           // continuation runs it again. Later steps add only tools this
-          // reply offers. It changes what's sent, not what's saved.
-          contextHandler: async (_ctx, { allMessages }) =>
-            fitHistory(allMessages),
+          // reply offers. It changes what's sent, not what's saved. The
+          // second cache breakpoint goes on the last message before the
+          // new prompt, so the steps of this reply and the next prompt
+          // read the history from the cache.
+          contextHandler: async (
+            _ctx,
+            { search, recent, inputMessages, inputPrompt, existingResponses },
+          ) => {
+            const history = [...search, ...recent, ...inputMessages];
+            return fitHistory(
+              withCacheBreakpoint(
+                [...history, ...inputPrompt, ...existingResponses],
+                history.length - 1,
+              ),
+            );
+          },
         },
       );
       // We need to make sure the stream finishes - by awaiting each chunk
