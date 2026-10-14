@@ -21,10 +21,10 @@ import { useThreadActions } from "@/hooks/use-thread-actions";
 import { useThreadState } from "@/hooks/use-thread-state";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
-import { DecideActionProvider } from "./action-card";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
+import { ThreadActionsProvider } from "./thread-actions-context";
 
 const PAGE_SIZE = 20;
 
@@ -112,18 +112,22 @@ export function ThreadView({ threadId }: { threadId: string }) {
       {thread === undefined || status === "LoadingFirstPage" ? (
         <ConversationSkeleton />
       ) : (
-        <DecideActionProvider decide={decide}>
+        <ThreadActionsProvider
+          actions={{
+            decide,
+            regenerate: canRedoLastTurn ? regenerate : undefined,
+            edit: canRedoLastTurn ? edit : undefined,
+            editingLastPrompt,
+            setEditingLastPrompt: changeEditingLastPrompt,
+          }}
+        >
           <MessageList
             messages={messages}
             status={status}
             onLoadEarlier={() => loadMore(PAGE_SIZE)}
             threadState={threadState}
-            onRegenerate={canRedoLastTurn ? regenerate : undefined}
-            onEdit={canRedoLastTurn ? edit : undefined}
-            editingLastPrompt={editingLastPrompt}
-            onEditingLastPromptChange={changeEditingLastPrompt}
           />
-        </DecideActionProvider>
+        </ThreadActionsProvider>
       )}
       <div className="shrink-0 px-4 pb-4">
         <Composer
