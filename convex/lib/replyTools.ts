@@ -19,10 +19,41 @@ import { findMentions } from "./connectorView";
 import { connectorInstructions } from "./instructions";
 import {
   arrangeReplyTools,
+  capHistory,
   dropGoneToolReferences,
   ReplyToolLog,
   TOOL_BUDGET_TOKENS,
 } from "./toolLoading";
+
+/**
+ * Anthropic's prompt cache breakpoint, for `providerOptions`. A request
+ * reads the cache up to the last breakpoint, so later steps and the next
+ * prompt don't pay full price for the history before it. Anthropic caches
+ * only prompts over a minimum length, 4096 tokens for Haiku 4.5, and sends
+ * shorter ones uncached.
+ */
+export const CACHE_BREAKPOINT = {
+  anthropic: { cacheControl: { type: "ephemeral" } },
+} as const;
+
+/**
+ * The messages with a cache breakpoint on the one at `index`. A negative
+ * `index`, for an empty history, leaves them as they are.
+ */
+export function withCacheBreakpoint(
+  messages: ModelMessage[],
+  index: number,
+): ModelMessage[] {
+  if (index < 0 || index >= messages.length) return messages;
+  return messages.map((message, i) =>
+    i === index
+      ? {
+          ...message,
+          providerOptions: { ...message.providerOptions, ...CACHE_BREAKPOINT },
+        }
+      : message,
+  );
+}
 
 export type ReplyTools = {
   /** The native tools and the connector tools, arranged by toolLoading.ts. */
@@ -46,7 +77,8 @@ export type ReplyTools = {
   maxSteps: number;
   /**
    * The history with each tool search result cut down to the tools this
-   * reply offers (dropGoneToolReferences). For the Agent's contextHandler.
+   * reply offers (dropGoneToolReferences), and the oldest turns dropped
+   * past HISTORY_BUDGET_TOKENS (capHistory). For the Agent's contextHandler.
    */
   fitHistory: (messages: ModelMessage[]) => ModelMessage[];
   /** The reply's log line. Feed it each step and each tool run. */
@@ -120,7 +152,8 @@ export async function createReplyTools(
         ? MAX_REPLY_STEPS
         : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
     ),
-    fitHistory: (messages) => dropGoneToolReferences(messages, offered),
+    fitHistory: (messages) =>
+      capHistory(dropGoneToolReferences(messages, offered)),
     log,
     close: async () => {
       log.print();
