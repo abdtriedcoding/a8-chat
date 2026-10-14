@@ -248,6 +248,7 @@ export const finishConnect = action({
           tokens.expires_in === undefined
             ? undefined
             : Date.now() + tokens.expires_in * 1000,
+        resource: provider.resource,
         accountLabel: provider.accountLabel,
       });
       return { connected: connector.id };

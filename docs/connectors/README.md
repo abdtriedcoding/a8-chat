@@ -11,7 +11,7 @@ a8 reaches each app through the vendor's own MCP server, with a8 as the OAuth an
 - `convex/toolLists.ts`: each connection's stored tool list, in `connectionToolLists`. It fetches, stores and refreshes the list.
 - `convex/lib/connectorView.ts`: the client-safe view of the catalog.
 - `convex/lib/connectors.ts`: the server catalog.
-- `convex/lib/connectorAuth.ts`: the OAuth provider `auth()` signs in with, the pinned fetch, revocation, the OAuth error classifier, and opening MCP clients.
+- `convex/lib/connectorAuth.ts`: the OAuth provider `auth()` signs in with, the pinned fetch, token refresh (ADR 0010), revocation, the OAuth error classifier, and opening MCP clients.
 - `convex/lib/connectionTokens.ts`: a connection's access token, refreshed under the lease (ADR 0003).
 - `convex/lib/encryption.ts`: encrypts and decrypts the stored tokens and client secrets under `CONNECTION_ENCRYPTION_KEY`.
 - `convex/lib/connectorToolList.ts`: what a8 keeps of a server's tool list, and the token estimate.

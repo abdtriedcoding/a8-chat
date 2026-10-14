@@ -1,7 +1,7 @@
 // The OAuth side of connectors (ADR 0003): the provider auth() signs in
-// with, the fetch that only reaches a connector's pinned origins,
-// revocation, and what an OAuth error from the vendor means. Metadata
-// discovery is in oauthDiscovery.ts.
+// with, the fetch that only reaches a connector's pinned origins, token
+// refresh (ADR 0010), revocation, and what an OAuth error from the vendor
+// means. Metadata discovery is in oauthDiscovery.ts.
 
 import {
   createMCPClient,
@@ -70,6 +70,11 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
   savedTokens?: OAuthTokens;
   /** Read from the token response, for a `tokenResponse` label source. */
   accountLabel?: string;
+  /**
+   * The `resource` auth() sent with the code exchange. A refresh sends the
+   * same one (ADR 0010).
+   */
+  resource?: string;
 
   constructor(
     private readonly ctx: ActionCtx,
@@ -199,19 +204,24 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
     }
   }
 
-  /** pinnedFetch that also reads the account label from the code exchange. */
+  /**
+   * pinnedFetch that also reads the resource and the account label from
+   * the code exchange.
+   */
   fetch = async (
     input: string | URL | Request,
     init?: RequestInit,
   ): Promise<Response> => {
     const response = await pinnedFetch(this.connector)(input, init);
-    const source = this.connector.accountLabel;
     if (
-      source?.from === "tokenResponse" &&
-      response.ok &&
-      init?.body instanceof URLSearchParams &&
-      init.body.get("grant_type") === "authorization_code"
+      !(init?.body instanceof URLSearchParams) ||
+      init.body.get("grant_type") !== "authorization_code"
     ) {
+      return response;
+    }
+    this.resource = init.body.get("resource") ?? undefined;
+    const source = this.connector.accountLabel;
+    if (source?.from === "tokenResponse" && response.ok) {
       const body: unknown = await response
         .clone()
         .json()
@@ -519,6 +529,128 @@ async function readClientInformation(
   };
 }
 
+/**
+ * POSTs `body` as a form to one of the authorization server's endpoints,
+ * authenticated as a8's OAuth client registration: HTTP Basic with a
+ * secret, or else `client_id` in the body. auth() picks the same when the
+ * vendor supports client_secret_basic (ADR 0010).
+ */
+async function postAsRegisteredClient(
+  connector: Connector,
+  registration: OAuthClientInformation,
+  endpoint: string,
+  body: URLSearchParams,
+  timeoutMs: number,
+): Promise<Response> {
+  const headers = new Headers({
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json",
+  });
+  if (registration.client_secret) {
+    headers.set(
+      "Authorization",
+      `Basic ${btoa(`${registration.client_id}:${registration.client_secret}`)}`,
+    );
+  } else {
+    body.set("client_id", registration.client_id);
+  }
+  return await pinnedFetch(connector)(endpoint, {
+    method: "POST",
+    headers,
+    body,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
+/** What the vendor answered a token refresh with. */
+export type RefreshedTokens = {
+  accessToken: string;
+  refreshToken: string;
+  /** Seconds until the access token expires, if the vendor said. */
+  expiresIn?: number;
+};
+
+/** How long the refresh request can take. */
+export const REFRESH_TIMEOUT_MS = 30_000;
+
+/**
+ * Trades a refresh token for new tokens with one request to the token
+ * endpoint stored with the OAuth client registration (ADR 0010). Sends
+ * `resource` when the sign-in sent one. Returns null if the vendor refused
+ * the refresh token or the registration, or a8 has no usable registration,
+ * so the user has to sign in again. Forgets a registration the vendor
+ * refused or that has no token endpoint, so the next sign-in registers
+ * again. Throws if the vendor couldn't be reached or answered anything
+ * else.
+ */
+export async function refreshTokens(
+  ctx: ActionCtx,
+  connector: Connector,
+  encryptionKey: EncryptionKey,
+  refreshToken: string,
+  resource: string | undefined,
+): Promise<RefreshedTokens | null> {
+  // The refresh token belongs to the registration that signed in, so a new
+  // registration couldn't use it.
+  const registration = await readClientInformation(
+    ctx,
+    connector,
+    encryptionKey,
+  );
+  if (!registration) return null;
+  // Only rows from before a8 stored the token endpoint lack one, and
+  // sign-in never adds it to them.
+  if (!registration.token_endpoint) {
+    await forgetOAuthClientRegistration(ctx, connector);
+    return null;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+  if (resource !== undefined) body.set("resource", resource);
+  const response = await postAsRegisteredClient(
+    connector,
+    registration,
+    registration.token_endpoint,
+    body,
+    REFRESH_TIMEOUT_MS,
+  );
+  const answer: unknown = await response.json().catch(() => undefined);
+  const fields =
+    typeof answer === "object" && answer !== null
+      ? (answer as Record<string, unknown>)
+      : {};
+
+  if (!response.ok) {
+    const rejection = classifyOAuthError(fields.error);
+    if (rejection === "rejectedClient") {
+      await forgetOAuthClientRegistration(ctx, connector);
+    }
+    if (rejection !== "other") return null;
+    throw new Error(
+      `Refreshing the ${connector.name} token failed: ${response.status}${typeof fields.error === "string" ? ` ${fields.error}` : ""}.`,
+    );
+  }
+  if (typeof fields.access_token !== "string" || !fields.access_token) {
+    throw new Error(
+      `${connector.name}'s token endpoint answered without an access token.`,
+    );
+  }
+  return {
+    accessToken: fields.access_token,
+    // A vendor that doesn't rotate refresh tokens leaves it out, so the old
+    // one stays valid (RFC 6749 section 6).
+    refreshToken:
+      typeof fields.refresh_token === "string" && fields.refresh_token
+        ? fields.refresh_token
+        : refreshToken,
+    expiresIn:
+      typeof fields.expires_in === "number" ? fields.expires_in : undefined,
+  };
+}
+
 /** How long each revocation request can take before a8 gives up on it. */
 const REVOKE_TIMEOUT_MS = 10_000;
 
@@ -559,24 +691,13 @@ export async function revokeConnection(
     token: await decryptSecret(encryptionKey, encryptedToken),
     token_type_hint: tokenTypeHint,
   });
-  const headers = new Headers({
-    "Content-Type": "application/x-www-form-urlencoded",
-  });
-  // The same client authentication auth() uses at the token endpoint.
-  if (registration.client_secret) {
-    headers.set(
-      "Authorization",
-      `Basic ${btoa(`${registration.client_id}:${registration.client_secret}`)}`,
-    );
-  } else {
-    body.set("client_id", registration.client_id);
-  }
-  const response = await fetchPinned(endpoint, {
-    method: "POST",
-    headers,
+  const response = await postAsRegisteredClient(
+    connector,
+    registration,
+    endpoint,
     body,
-    signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS),
-  });
+    REVOKE_TIMEOUT_MS,
+  );
   if (!response.ok) {
     throw new Error(
       `${connector.name} refused to revoke the token: ${response.status} ${await response.text()}`,
