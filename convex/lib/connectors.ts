@@ -88,6 +88,14 @@ type ConnectorAccess<Tool extends string> = {
    */
   authorizeParams?: Record<string, string>;
   /**
+   * How a8 authenticates at the vendor's revocation endpoint when its
+   * client registration has a secret. `client_secret_basic`, the default,
+   * sends HTTP Basic, as the token requests do. `client_secret_post` sends
+   * `client_id` and `client_secret` in the form instead, for a vendor whose
+   * revocation endpoint refuses Basic, like Atlassian's.
+   */
+  revocationAuthMethod?: "client_secret_basic" | "client_secret_post";
+  /**
    * Where the name of the signed-in account comes from. A label tool must
    * be a `read`, because a8 calls it without asking. The card shows it once
    * connected, and shows nothing when the source gives no label.
@@ -177,6 +185,22 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     },
     pinnedOrigins: ["https://mcp.excalidraw.com"],
     signIn: { kind: "none" },
+  },
+  trello: {
+    servers: {
+      trello: {
+        url: "https://mcp.trello.com/v1",
+      },
+    },
+    pinnedOrigins: ["https://mcp.trello.com", "https://auth.atlassian.com"],
+    revocationAuthMethod: "client_secret_post",
+    // A connection reaches one workspace, so the list has only that one.
+    accountLabel: {
+      from: "tool",
+      tool: "trelloReadWorkspace",
+      arguments: { action: "list" },
+      field: "workspaces.0.displayName",
+    },
   },
 };
 
