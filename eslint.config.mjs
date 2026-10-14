@@ -2,9 +2,40 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+// The convex/lib modules the browser may load at runtime. They import no
+// server code and name no MCP server URL, pinned origin or sign-in.
+// connectorView.ts is the client-safe view of the connector catalog (#194).
+const CLIENT_SAFE_CONVEX_LIB = [
+  "attachments",
+  "connectorView",
+  "errors",
+  "prompt",
+  "timeZone",
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // A runtime import of any other convex/ module puts server code in the
+    // browser bundle. Type imports are erased, so they may name any module.
+    files: ["src/**"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: `^(\\.\\./)+convex/(?!_generated/|lib/(${CLIENT_SAFE_CONVEX_LIB.join("|")})$)`,
+              allowTypeImports: true,
+              message:
+                "Server code. Use `import type`, or add a client-safe convex/lib module to CLIENT_SAFE_CONVEX_LIB in eslint.config.mjs.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
