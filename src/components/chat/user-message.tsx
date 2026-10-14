@@ -1,8 +1,7 @@
 "use client";
 
-import type { FileUIPart } from "ai";
 import { PencilIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { errorMessage } from "@/lib/errors";
+import type { ThreadMessage } from "@/lib/stopped-turns";
 import { getAttachmentKind } from "../../../convex/lib/attachments";
 import { checkPrompt } from "../../../convex/lib/prompt";
 import { SentImageThumbnail, SentPdfChip } from "./attachments";
@@ -31,13 +31,14 @@ import { useThreadActionsContext } from "./thread-actions-context";
  * changes only the text. The thread owns whether the editor is open, so a
  * shortcut can open it too.
  */
-export function UserMessage({
+export const UserMessage = memo(function UserMessage({
   text,
-  attachments,
+  parts,
   lastPrompt = false,
 }: {
   text: string;
-  attachments: FileUIPart[];
+  /** All the prompt's parts. Its file parts show as attachments. */
+  parts: ThreadMessage["parts"];
   lastPrompt?: boolean;
 }) {
   const {
@@ -46,6 +47,7 @@ export function UserMessage({
     setEditingLastPrompt,
   } = useThreadActionsContext();
   const edit = lastPrompt ? editLastPrompt : undefined;
+  const attachments = parts.filter((part) => part.type === "file");
   return (
     <Message align="end">
       <MessageContent>
@@ -108,7 +110,7 @@ export function UserMessage({
       </MessageContent>
     </Message>
   );
-}
+});
 
 /**
  * Edits a prompt's text. Enter saves, Shift+Enter adds a line, and Esc

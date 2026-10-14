@@ -62,20 +62,10 @@ export function useThreadState(messages: ThreadMessage[]): ThreadState {
   for (const message of messages) {
     if (message.role === "user") promptIds.set(message.order, message.id);
     if (message.role !== "assistant") continue;
-    const text = replyText(message);
-    const toolCalls = connectorToolCalls(message);
     const replyStopped = stopped.has(message.order);
-    // A stopped reply can't continue, so its waiting actions show as rows.
-    const waitingActions = replyStopped
-      ? []
-      : toolCalls.filter(isWaitingForApproval);
-    replies.set(message.id, {
-      text,
-      toolCalls,
-      waitingActions,
-      toolRows: toolCalls.filter((call) => !waitingActions.includes(call)),
-    });
-    lastReplyText = copyableText(message, text, replyStopped);
+    const reply = replyParts(message, replyStopped);
+    replies.set(message.id, reply);
+    lastReplyText = copyableText(message, reply.text, replyStopped);
   }
 
   return {
@@ -90,6 +80,32 @@ export function useThreadState(messages: ThreadMessage[]): ThreadState {
       ({ waitingActions }) => waitingActions,
     ),
   };
+}
+
+/**
+ * Each reply's parts, by its message object. While the message object and
+ * its stopped flag stay the same, the reply gets the same parts object, so
+ * its memoized AssistantMessage skips rendering.
+ */
+const replyPartsCache = new WeakMap<
+  ThreadMessage,
+  { stopped: boolean; parts: ReplyParts }
+>();
+
+function replyParts(reply: ThreadMessage, stopped: boolean): ReplyParts {
+  const cached = replyPartsCache.get(reply);
+  if (cached?.stopped === stopped) return cached.parts;
+  const toolCalls = connectorToolCalls(reply);
+  // A stopped reply can't continue, so its waiting actions show as rows.
+  const waitingActions = stopped ? [] : toolCalls.filter(isWaitingForApproval);
+  const parts = {
+    text: replyText(reply),
+    toolCalls,
+    waitingActions,
+    toolRows: toolCalls.filter((call) => !waitingActions.includes(call)),
+  };
+  replyPartsCache.set(reply, { stopped, parts });
+  return parts;
 }
 
 /**

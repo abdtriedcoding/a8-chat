@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthQuery, useSkipUntilSignedIn } from "@/hooks/use-auth-query";
+import { useStableMessages } from "@/hooks/use-stable-messages";
 import { useThreadActions } from "@/hooks/use-thread-actions";
 import { useThreadState } from "@/hooks/use-thread-state";
 import { errorMessage } from "@/lib/errors";
@@ -32,7 +33,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const thread = useAuthQuery(api.threads.get, { threadId });
 
   const {
-    results: messages,
+    results: rawMessages,
     status,
     loadMore,
   } = useUIMessages(
@@ -44,6 +45,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
 
   const { send, stop, regenerate, edit, decide } = useThreadActions(threadId);
 
+  const messages = useStableMessages(rawMessages);
   const threadState = useThreadState(messages);
   const { replyInProgress, canRedoLastTurn, lastReplyText } = threadState;
 

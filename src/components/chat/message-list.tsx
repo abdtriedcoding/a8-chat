@@ -63,6 +63,11 @@ export function MessageList({
             aria-busy={replyStatus === "streaming"}
             className="mx-auto w-full max-w-3xl px-4 py-6"
           >
+            {/* React Compiler can't cache the elements made in this map, so
+                UserMessage and AssistantMessage use memo. useStableMessages
+                keeps their props the same objects while a message is
+                unchanged, so on a stream chunk only the streaming reply's
+                message renders again. */}
             {messages.map((message, i) => {
               const lastTurn = i === messages.length - 1;
               if (message.role === "user") {
@@ -71,9 +76,7 @@ export function MessageList({
                     <MessageScrollerItem messageId={message.key} scrollAnchor>
                       <UserMessage
                         text={message.text}
-                        attachments={message.parts.filter(
-                          (part) => part.type === "file",
-                        )}
+                        parts={message.parts}
                         lastPrompt={i === lastPromptIndex}
                       />
                     </MessageScrollerItem>
