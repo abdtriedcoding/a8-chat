@@ -23,10 +23,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { ConnectionTokens } from "../connections";
 import { limitConnectorToolCall } from "../rateLimits";
-import {
-  connectionAccessToken,
-  type AccessTokenResult,
-} from "./connectionTokens";
+import { withAccessToken } from "./connectionTokens";
 import {
   labelAt,
   openMcpClient,
@@ -187,19 +184,6 @@ type CallToolRequest = Parameters<MCPClient["callTool"]>[0];
 type VersionedClient = { tokenVersion: number; mcp: MCPClient };
 
 /**
- * Thrown when the vendor refuses the access token at `tokenVersion`, with
- * a 401 or a 403.
- */
-class RefusedTokenError extends Error {
-  constructor(
-    readonly tokenVersion: number,
-    readonly status: 401 | 403,
-  ) {
-    super("The vendor refused the access token.");
-  }
-}
-
-/**
  * Thrown when the vendor refuses one tool call with a 403 but still lists
  * the server's tools with the same token. The token may lack that tool's
  * scope, or the user's plan may lack that tool's feature, so the
@@ -215,16 +199,16 @@ class RefusedToolError extends Error {
 
 /**
  * One connection's MCP clients in a reply, one per server. A server's
- * client opens on the first call to one of its tools, with the access
- * token refreshed first if it's about to expire. When the vendor refuses
- * the token with a 401, it refreshes it and tries the call once more. When
- * the vendor refuses a call with a 403, a8 lists the server's tools with
- * the same token. If the list works, only that call fails, with
- * RefusedToolError. The connection needs reconnecting, and every later call
- * throws ReconnectError, in these cases:
- * - The vendor refuses the refresh or the refreshed token.
- * - It refuses a call with a 403 and refuses the list too.
- * - It answers 403 to opening a client.
+ * client opens on the first call to one of its tools. withAccessToken
+ * gives each call its access token, refreshing it when it's about to
+ * expire, or after the vendor refuses it with a 401, and trying the call
+ * once more. A client that sends refused tokens is replaced by one with the
+ * refreshed ones. When the vendor refuses a call with a 403, a8 lists the
+ * server's tools with the same token. If the list works, only that call
+ * fails, with RefusedToolError. If the list is refused too, the connection
+ * needs reconnecting. It also needs reconnecting when the vendor refuses
+ * the refresh or the refreshed token, or answers 403 to opening a client.
+ * Every later call then throws ReconnectError.
  *
  * If the vendor couldn't be reached for the refresh, every later call in
  * the reply fails without trying it again.
@@ -250,127 +234,86 @@ class ReplyConnection {
     server: ConnectorServer,
     request: CallToolRequest,
   ): Promise<CallToolResult> {
+    if (this.needsReconnect) throw new ReconnectError(this.connector);
+    // Trying again on every call would claim the refresh lease and call
+    // the vendor each time, so later calls in the reply fail at once.
+    if (this.tokenError) throw this.tokenError;
+    let runError: unknown;
+    let result;
     try {
-      return await this.callOnce(server, request);
+      result = await withAccessToken(
+        this.ctx,
+        this.connector,
+        this.tokens,
+        async (accessToken, tokens) => {
+          this.tokens = tokens;
+          try {
+            const { mcp } = await this.open(
+              server,
+              accessToken,
+              tokens.tokenVersion,
+            );
+            return await this.callOnce(mcp, request);
+          } catch (error) {
+            runError = error;
+            throw error;
+          }
+        },
+      );
     } catch (error) {
-      if (!(error instanceof RefusedTokenError)) throw error;
-      // A refresh keeps the token's access, so it can't fix a 403.
-      if (error.status === 403) {
-        throw await this.markNeedsReconnect(error.tokenVersion);
+      if (error !== runError) {
+        this.tokenError =
+          error instanceof Error ? error : new Error(String(error));
       }
-      try {
-        return await this.callOnce(server, request, error.tokenVersion);
-      } catch (retryError) {
-        if (!(retryError instanceof RefusedTokenError)) throw retryError;
-        // The vendor refused a token a8 just refreshed.
-        throw await this.markNeedsReconnect(retryError.tokenVersion);
-      }
+      throw error;
     }
+    if ("needsReconnect" in result) {
+      this.needsReconnect = true;
+      throw new ReconnectError(this.connector);
+    }
+    return result.value;
   }
 
   private async callOnce(
-    server: ConnectorServer,
+    mcp: MCPClient,
     request: CallToolRequest,
-    refusedVersion?: number,
   ): Promise<CallToolResult> {
-    const { tokenVersion, mcp } = await this.open(server, refusedVersion);
     try {
       return await mcp.callTool(request);
     } catch (error) {
-      const refused = asRefusedToken(error, tokenVersion);
       if (
-        refused instanceof RefusedTokenError &&
-        refused.status === 403 &&
+        refusedStatus(error) === 403 &&
         !(await refusesToolList(mcp, request.options))
       ) {
         throw new RefusedToolError(this.connector);
       }
-      throw refused;
+      throw error;
     }
   }
 
   /**
-   * The server's open client, or a new one. `refusedVersion` names tokens
-   * the vendor refused, so a client sending them is replaced by one with
-   * refreshed tokens. Calls to one server running at once share a client.
+   * The server's open client at `tokenVersion`, or a new one with
+   * `accessToken`. Calls to one server running at once share a client. A
+   * client that fails to open throws on every call that shares it, and the
+   * next call opens another.
    */
   private async open(
     server: ConnectorServer,
-    refusedVersion?: number,
+    accessToken: string,
+    tokenVersion: number,
   ): Promise<VersionedClient> {
     const opening = this.clients.get(server.key);
     const current = await opening?.catch(() => undefined);
-    if (current && current.tokenVersion !== refusedVersion) return current;
+    if (current && current.tokenVersion === tokenVersion) return current;
     // Another call may have started a new client while this one waited.
     const latest = this.clients.get(server.key);
     if (latest && latest !== opening) return await latest;
-    const client = this.connect(server, refusedVersion);
+    const client = openMcpClient(this.connector, server, accessToken).then(
+      (mcp) => ({ tokenVersion, mcp }),
+    );
     this.clients.set(server.key, client);
     this.opened.push(client);
     return await client;
-  }
-
-  /**
-   * Opens a client to the server. A client that fails to open throws on
-   * every call that shares it, and the next call opens another. If getting
-   * the access token failed, every later call throws the same error without
-   * trying again.
-   */
-  private async connect(
-    server: ConnectorServer,
-    refusedVersion?: number,
-  ): Promise<VersionedClient> {
-    if (this.needsReconnect) throw new ReconnectError(this.connector);
-    if (this.tokenError) throw this.tokenError;
-    let token: AccessTokenResult;
-    try {
-      token = await connectionAccessToken(
-        this.ctx,
-        this.connector,
-        this.tokens,
-        { refused: this.tokens.tokenVersion === refusedVersion },
-      );
-    } catch (error) {
-      // Trying again on every step would claim the refresh lease and call
-      // the vendor each time, so later calls in the reply fail at once.
-      this.tokenError =
-        error instanceof Error ? error : new Error(String(error));
-      throw error;
-    }
-    if ("needsReconnect" in token) throw this.giveUp();
-    this.tokens = token.tokens;
-    const { tokenVersion } = token.tokens;
-    try {
-      const mcp = await openMcpClient(
-        this.connector,
-        server,
-        token.accessToken,
-      );
-      return { tokenVersion, mcp };
-    } catch (error) {
-      throw asRefusedToken(error, tokenVersion);
-    }
-  }
-
-  /**
-   * Marks the connection as needing reconnecting, unless its tokens changed
-   * since `tokenVersion`, and gives up on it for the rest of the reply.
-   */
-  private async markNeedsReconnect(
-    tokenVersion: number,
-  ): Promise<ReconnectError> {
-    await this.ctx.runMutation(internal.connections.settleTokens, {
-      connectionId: this.tokens._id,
-      tokenVersion,
-      outcome: { kind: "rejected" },
-    });
-    return this.giveUp();
-  }
-
-  /** Gives up on the connection for the rest of the reply. */
-  private giveUp(): ReconnectError {
-    this.needsReconnect = true;
-    return new ReconnectError(this.connector);
   }
 
   async close() {
@@ -378,15 +321,6 @@ class ReplyConnection {
       this.opened.map(async (client) => await (await client).mcp.close()),
     );
   }
-}
-
-/**
- * RefusedTokenError if the vendor refused the access token at
- * `tokenVersion` with a 401 or a 403, or else the error as it is.
- */
-function asRefusedToken(error: unknown, tokenVersion: number): unknown {
-  const status = refusedStatus(error);
-  return status ? new RefusedTokenError(tokenVersion, status) : error;
 }
 
 /**
