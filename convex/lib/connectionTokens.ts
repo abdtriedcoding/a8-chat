@@ -68,7 +68,7 @@ async function connectionAccessToken(
   if (!fresh) return { needsReconnect: true };
   const accessToken = await decryptOrUndefined(key, fresh.encryptedAccessToken);
   if (accessToken === undefined) {
-    await reject(ctx, fresh);
+    await rejectConnection(ctx, fresh);
     return { needsReconnect: true };
   }
   return { accessToken, tokens: fresh };
@@ -101,7 +101,7 @@ export async function withAccessToken<T>(
     if (!status) throw error;
     // A refresh keeps the token's access, so it can't fix a 403.
     if (status === 403) {
-      await reject(ctx, token.tokens);
+      await rejectConnection(ctx, token.tokens);
       return { needsReconnect: true };
     }
   }
@@ -115,13 +115,16 @@ export async function withAccessToken<T>(
   } catch (error) {
     if (!refusedStatus(error)) throw error;
     // The vendor refused a token a8 just refreshed.
-    await reject(ctx, token.tokens);
+    await rejectConnection(ctx, token.tokens);
     return { needsReconnect: true };
   }
 }
 
 /** Marks the connection as needing reconnecting, unless its tokens changed. */
-async function reject(ctx: ActionCtx, tokens: ConnectionTokens) {
+export async function rejectConnection(
+  ctx: ActionCtx,
+  tokens: ConnectionTokens,
+) {
   await ctx.runMutation(internal.connections.settleTokens, {
     connectionId: tokens._id,
     tokenVersion: tokens.tokenVersion,
