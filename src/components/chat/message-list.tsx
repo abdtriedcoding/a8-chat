@@ -41,26 +41,28 @@ export function MessageList({
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
         <MessageScrollerViewport>
+          {/* Outside the content on purpose. The scroller keeps its place
+              when earlier messages load only if the content's first child
+              moves down, and this button would always stay first. */}
+          {(status === "CanLoadMore" || status === "LoadingMore") && (
+            <div className="mx-auto flex w-full max-w-3xl justify-center px-4 pt-6 pb-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={status === "LoadingMore"}
+                onClick={onLoadEarlier}
+              >
+                {status === "LoadingMore" && (
+                  <Spinner data-icon="inline-start" />
+                )}
+                Load earlier messages
+              </Button>
+            </div>
+          )}
           <MessageScrollerContent
             aria-busy={replyStatus === "streaming"}
             className="mx-auto w-full max-w-3xl px-4 py-6"
           >
-            {(status === "CanLoadMore" || status === "LoadingMore") && (
-              <MessageScrollerItem className="flex justify-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={status === "LoadingMore"}
-                  onClick={onLoadEarlier}
-                >
-                  {status === "LoadingMore" && (
-                    <Spinner data-icon="inline-start" />
-                  )}
-                  Load earlier messages
-                </Button>
-              </MessageScrollerItem>
-            )}
-
             {messages.map((message, i) => {
               const lastTurn = i === messages.length - 1;
               if (message.role === "user") {
