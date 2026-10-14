@@ -115,7 +115,7 @@ export const refreshToolList = internalAction({
       connector,
       connection,
       async (accessToken) =>
-        await listToolsWithToken(connector, accessToken, needsLabel),
+        await readToolList(connector, accessToken, { needsLabel }),
     );
     if ("needsReconnect" in result) return null;
     await ctx.runMutation(internal.toolLists.saveToolList, {
@@ -224,12 +224,13 @@ async function listAllTools(client: MCPClient): Promise<McpTool[]> {
 
 /**
  * The connector's tool list (fetchToolList), read with `accessToken`, and
- * its account label (readAccountLabel) if `needsLabel`.
+ * its account label (readAccountLabel) if `needsLabel`. A connector with no
+ * sign-in has no token to pass.
  */
-async function listToolsWithToken(
+export async function readToolList(
   connector: Connector,
-  accessToken: string,
-  needsLabel: boolean,
+  accessToken: string | undefined,
+  { needsLabel }: { needsLabel: boolean },
 ): Promise<{ toolList: StoredToolList; accountLabel: string | undefined }> {
   return await withMcpClients(connector, accessToken, async (clients) => ({
     toolList: await fetchToolList(connector, clients),

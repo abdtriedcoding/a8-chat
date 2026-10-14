@@ -1,4 +1,6 @@
-// Connecting a connector (ADR 0003) takes three steps:
+// A connector with no sign-in turns on in one step. connect lists its tools
+// without a token and stores a connection with no tokens. Connecting any
+// other connector (ADR 0003) takes three steps:
 // 1. The Connectors page calls connect, which returns the vendor's authorize
 //    URL, and the browser goes there.
 // 2. The vendor sends the browser to callback (/connectors/callback), which
@@ -23,6 +25,7 @@ import {
   env,
   httpAction,
   query,
+  type ActionCtx,
 } from "./_generated/server";
 import { optionalUser } from "./lib/guards";
 import {
@@ -40,8 +43,10 @@ import {
 import {
   CONNECTORS,
   findConnector,
+  needsSignIn,
   signInServer,
   vConnectorId,
+  type Connector,
 } from "./lib/connectors";
 import { CONNECT_ERRORS, type ConnectError } from "./lib/connectorView";
 import {
@@ -51,6 +56,7 @@ import {
   isMisconfigured,
 } from "./lib/encryption";
 import { vConnectionStatus } from "./schema";
+import { readToolList } from "./toolLists";
 
 const vConnectorStatus = v.object({
   id: vConnectorId,
@@ -70,6 +76,17 @@ const vConnectResult = v.union(
 
 /** How a sign-in ended. */
 export type ConnectResult = Infer<typeof vConnectResult>;
+
+const vConnectStart = v.union(
+  v.object({ authorizationUrl: v.string() }),
+  ...vConnectResult.members,
+);
+
+/**
+ * What connect returns. That's the vendor's authorize URL, or how turning
+ * on a connector with no sign-in ended.
+ */
+export type ConnectStart = Infer<typeof vConnectStart>;
 
 const vDisconnectResult = v.object({ revoked: v.boolean() });
 
@@ -104,18 +121,25 @@ export const list = query({
 
 /**
  * Starts signing in to a connector. Returns the vendor's authorize URL for
- * the browser to go to.
+ * the browser to go to. A connector with no sign-in connects at once
+ * (connectWithoutSignIn), and this returns how that ended.
  */
 export const connect = action({
   args: { connectorId: vConnectorId },
-  returns: v.string(),
-  handler: async (ctx, { connectorId }): Promise<string> => {
+  returns: vConnectStart,
+  handler: async (ctx, { connectorId }): Promise<ConnectStart> => {
     // Checks the session and the rate limit before any outbound fetch, since
-    // discovery and client registration call the vendor.
-    await ctx.runMutation(internal.signIns.checkConnectStart, {});
+    // discovery, client registration and listing tools call the vendor.
+    const userId = await ctx.runMutation(
+      internal.signIns.checkConnectStart,
+      {},
+    );
     const connector = findConnector(connectorId);
     if (!connector) {
       throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
+    }
+    if (!needsSignIn(connector)) {
+      return await connectWithoutSignIn(ctx, connector, userId);
     }
     // Before anything else, so a deployment without the key stores nothing.
     const encryptionKey = await getEncryptionKey();
@@ -158,9 +182,38 @@ export const connect = action({
         tokenEndpoint: savedAuthorizationServer.tokenEndpoint,
       },
     });
-    return authorizationUrl.href;
+    return { authorizationUrl: authorizationUrl.href };
   },
 });
+
+/**
+ * Turns on a connector with no sign-in for the user. It lists the
+ * connector's tools without a token, then stores a connection with no
+ * tokens and that tool list. If listing fails, it stores nothing.
+ */
+async function connectWithoutSignIn(
+  ctx: ActionCtx,
+  connector: Connector,
+  userId: string,
+): Promise<ConnectResult> {
+  try {
+    const { toolList, accountLabel } = await readToolList(
+      connector,
+      undefined,
+      { needsLabel: true },
+    );
+    await ctx.runMutation(internal.connections.saveConnection, {
+      userId,
+      connectorId: connector.id,
+      accountLabel,
+      toolList,
+    });
+    return { connected: connector.id };
+  } catch (error) {
+    console.error(`Turning on ${connector.name} failed`, error);
+    return { error: finishConnectError(error) };
+  }
+}
 
 /**
  * Where the vendor sends the browser after sign-in. Redirects to the
@@ -299,10 +352,11 @@ export const disconnect = action({
 });
 
 /**
- * Why finishing a sign-in failed: this deployment or the catalog entry is
- * set up wrong, the vendor rejected a8's client registration, the vendor
- * refused the code because it expired or was already used, or the vendor
- * couldn't be reached. Anything else is `failed`.
+ * Why finishing a sign-in, or turning on a connector with no sign-in,
+ * failed. This deployment or the catalog entry is set up wrong, the vendor
+ * rejected a8's client registration, the vendor refused the code because
+ * it expired or was already used, or the vendor couldn't be reached.
+ * Anything else is `failed`.
  */
 function finishConnectError(error: unknown): ConnectError {
   if (isMisconfigured(error) || isUntrustedOrigin(error)) {

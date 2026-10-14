@@ -56,10 +56,19 @@ type AccountLabelSource<Tool extends string = string> =
     };
 
 /**
- * How a8 signs in to a connector and what it may contact. a8 gets an OAuth
- * client by dynamic registration, once per deployment.
+ * How a user's connection to a connector gets its access:
+ * - `dynamicRegistration`: the user signs in at the vendor's consent
+ *   screen, through an OAuth client a8 registers with the vendor once per
+ *   deployment.
+ * - `none`: the MCP server answers without a token. Turning the connector
+ *   on lists its tools without one and stores a connection with no tokens.
  */
+export type SignIn = { kind: "dynamicRegistration" } | { kind: "none" };
+
+/** How a8 signs in to a connector and what it may contact. */
 type ConnectorAccess<Tool extends string> = {
+  /** Dynamic registration when left out. */
+  signIn?: SignIn;
   /**
    * Every origin a8 talks to for this connector: each MCP server's, and
    * each one its sign-in uses, like a separate authorization server or
@@ -168,6 +177,15 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     pinnedOrigins: ["https://mcp.calendly.com", "https://calendly.com"],
     accountLabel: { from: "tool", tool: "users-get_current_user", field: "resource.email" },
   },
+  excalidraw: {
+    servers: {
+      excalidraw: {
+        url: "https://mcp.excalidraw.com/mcp",
+      },
+    },
+    pinnedOrigins: ["https://mcp.excalidraw.com"],
+    signIn: { kind: "none" },
+  },
   trello: {
     servers: {
       trello: {
@@ -229,6 +247,11 @@ export function findConnector<Id extends string>(
 ): CatalogConnector | undefined;
 export function findConnector(id: string): CatalogConnector | undefined {
   return CONNECTORS_BY_ID.get(id as ConnectorId);
+}
+
+/** Whether turning the connector on sends the user to the vendor's sign-in. */
+export function needsSignIn(connector: Connector): boolean {
+  return connector.signIn?.kind !== "none";
 }
 
 /**

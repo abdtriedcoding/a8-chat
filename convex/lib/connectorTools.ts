@@ -203,9 +203,9 @@ class RefusedToolError extends Error {
  * One connection's MCP clients in a reply, one per server. A server's
  * client opens on the first call to one of its tools, and stays for the
  * reply. Every request it sends goes through `fetchWithToken`, which sets
- * the current access token through withAccessToken. So a token that
- * expires soon is refreshed first, and a 401 refreshes it and sends the
- * request once more, without replacing the client. When the vendor refuses
+ * the current access token through withAccessToken, if the connection has
+ * one. So a token that expires soon is refreshed first, and a 401 refreshes
+ * it and sends the request once more, without replacing the client. When the vendor refuses
  * a call with a 403, a8 lists the server's tools with the same token. If
  * the list works, only that call fails, with RefusedToolError. The
  * connection needs reconnecting, and every later call throws
@@ -300,7 +300,9 @@ class ReplyConnection {
           this.tokens = tokens;
           try {
             const headers = new Headers(init?.headers);
-            headers.set("Authorization", `Bearer ${accessToken}`);
+            if (accessToken !== undefined) {
+              headers.set("Authorization", `Bearer ${accessToken}`);
+            }
             const response = await pinnedFetch(this.connector)(input, {
               ...init,
               headers,
