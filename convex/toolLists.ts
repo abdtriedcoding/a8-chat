@@ -14,17 +14,13 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import {
-  refusedStatus,
-  withMcpClients,
-  type ServerClient,
-} from "./lib/connectorAuth";
+import { withMcpClients, type ServerClient } from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
   type StoredToolList,
 } from "./lib/connectorToolList";
-import { connectionAccessToken } from "./lib/connectionTokens";
+import { withAccessToken } from "./lib/connectionTokens";
 import { readAccountLabel } from "./lib/connectorTools";
 import { findConnector, type Connector } from "./lib/connectors";
 import schema from "./schema";
@@ -112,41 +108,21 @@ export const refreshToolList = internalAction({
     );
     const connector = connection && findConnector(connection.connectorId);
     if (connection?.status !== "connected" || !connector) return null;
-    let token = await connectionAccessToken(ctx, connector, connection);
-    if ("needsReconnect" in token) return null;
     // Reads the account label while a client is open, if sign-in found none.
     const needsLabel = connection.accountLabel === undefined;
-    let toolList = await listToolsWithToken(
+    const result = await withAccessToken(
+      ctx,
       connector,
-      token.accessToken,
-      needsLabel,
+      connection,
+      async (accessToken) =>
+        await listToolsWithToken(connector, accessToken, needsLabel),
     );
-    if (toolList === 401) {
-      // settleTokens marks the connection if the vendor refuses the refresh.
-      token = await connectionAccessToken(ctx, connector, token.tokens, {
-        refused: true,
-      });
-      if ("needsReconnect" in token) return null;
-      toolList = await listToolsWithToken(
-        connector,
-        token.accessToken,
-        needsLabel,
-      );
-    }
-    if (typeof toolList === "number") {
-      // The vendor refused a token a8 just refreshed, or answered 403.
-      await ctx.runMutation(internal.connections.settleTokens, {
-        connectionId,
-        tokenVersion: token.tokens.tokenVersion,
-        outcome: { kind: "rejected" },
-      });
-      return null;
-    }
+    if ("needsReconnect" in result) return null;
     await ctx.runMutation(internal.toolLists.saveToolList, {
       connectionId,
       connectedAt: connection.connectedAt,
-      toolList: toolList.toolList,
-      accountLabel: toolList.accountLabel,
+      toolList: result.value.toolList,
+      accountLabel: result.value.accountLabel,
     });
     return null;
   },
@@ -248,26 +224,17 @@ async function listAllTools(client: MCPClient): Promise<McpTool[]> {
 
 /**
  * The connector's tool list (fetchToolList), read with `accessToken`, and
- * its account label (readAccountLabel) if `needsLabel`. Returns the status
- * if the vendor refuses the token with a 401 or 403.
+ * its account label (readAccountLabel) if `needsLabel`.
  */
 async function listToolsWithToken(
   connector: Connector,
   accessToken: string,
   needsLabel: boolean,
-): Promise<
-  { toolList: StoredToolList; accountLabel: string | undefined } | 401 | 403
-> {
-  try {
-    return await withMcpClients(connector, accessToken, async (clients) => ({
-      toolList: await fetchToolList(connector, clients),
-      accountLabel: needsLabel
-        ? await readAccountLabel(connector, clients)
-        : undefined,
-    }));
-  } catch (error) {
-    const status = refusedStatus(error);
-    if (status) return status;
-    throw error;
-  }
+): Promise<{ toolList: StoredToolList; accountLabel: string | undefined }> {
+  return await withMcpClients(connector, accessToken, async (clients) => ({
+    toolList: await fetchToolList(connector, clients),
+    accountLabel: needsLabel
+      ? await readAccountLabel(connector, clients)
+      : undefined,
+  }));
 }

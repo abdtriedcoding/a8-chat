@@ -13,6 +13,7 @@ import {
   ConnectorOAuthProvider,
   forgetOAuthClientRegistration,
   pinnedFetch,
+  refusedStatus,
 } from "./connectorAuth";
 import { signInServer, type Connector } from "./connectors";
 import {
@@ -39,7 +40,7 @@ export const REFRESH_LEASE_MS = 2 * REFRESH_TIMEOUT_MS;
 /** How long a reply waits before claiming a lease another reply holds again. */
 const LEASE_POLL_MS = 500;
 
-export type AccessTokenResult =
+type AccessTokenResult =
   | { accessToken: string; tokens: ConnectionTokens }
   | { needsReconnect: true };
 
@@ -53,7 +54,7 @@ export type AccessTokenResult =
  * under another key. The connection's status stays then, so putting the
  * key back makes it work again.
  */
-export async function connectionAccessToken(
+async function connectionAccessToken(
   ctx: ActionCtx,
   connector: Connector,
   tokens: ConnectionTokens,
@@ -67,14 +68,65 @@ export async function connectionAccessToken(
   if (!fresh) return { needsReconnect: true };
   const accessToken = await decryptOrUndefined(key, fresh.encryptedAccessToken);
   if (accessToken === undefined) {
-    await ctx.runMutation(internal.connections.settleTokens, {
-      connectionId: fresh._id,
-      tokenVersion: fresh.tokenVersion,
-      outcome: { kind: "rejected" },
-    });
+    await reject(ctx, fresh);
     return { needsReconnect: true };
   }
   return { accessToken, tokens: fresh };
+}
+
+/**
+ * Runs `run` with the connection's access token, refreshed first when it
+ * expires soon. If the vendor refuses the token with a 401 (`run` throws
+ * an error refusedStatus recognizes), refreshes it and runs once more. A
+ * 403, or a second refusal, marks the connection as needing reconnecting.
+ * This is the only place a vendor refusal marks it, so a rule change like
+ * the 403 one happens here.
+ *
+ * Returns `needsReconnect` when the connection needs reconnecting, whether
+ * that was found before, during or after `run`. Other errors from `run`
+ * pass through, and so do the errors connectionAccessToken throws.
+ */
+export async function withAccessToken<T>(
+  ctx: ActionCtx,
+  connector: Connector,
+  tokens: ConnectionTokens,
+  run: (accessToken: string, tokens: ConnectionTokens) => Promise<T>,
+): Promise<{ value: T } | { needsReconnect: true }> {
+  let token = await connectionAccessToken(ctx, connector, tokens);
+  if ("needsReconnect" in token) return token;
+  try {
+    return { value: await run(token.accessToken, token.tokens) };
+  } catch (error) {
+    const status = refusedStatus(error);
+    if (!status) throw error;
+    // A refresh keeps the token's access, so it can't fix a 403.
+    if (status === 403) {
+      await reject(ctx, token.tokens);
+      return { needsReconnect: true };
+    }
+  }
+  // The refresh marks the connection itself if the vendor refuses it.
+  token = await connectionAccessToken(ctx, connector, token.tokens, {
+    refused: true,
+  });
+  if ("needsReconnect" in token) return token;
+  try {
+    return { value: await run(token.accessToken, token.tokens) };
+  } catch (error) {
+    if (!refusedStatus(error)) throw error;
+    // The vendor refused a token a8 just refreshed.
+    await reject(ctx, token.tokens);
+    return { needsReconnect: true };
+  }
+}
+
+/** Marks the connection as needing reconnecting, unless its tokens changed. */
+async function reject(ctx: ActionCtx, tokens: ConnectionTokens) {
+  await ctx.runMutation(internal.connections.settleTokens, {
+    connectionId: tokens._id,
+    tokenVersion: tokens.tokenVersion,
+    outcome: { kind: "rejected" },
+  });
 }
 
 function isNearExpiry(tokens: ConnectionTokens): boolean {
