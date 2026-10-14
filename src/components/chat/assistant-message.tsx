@@ -2,6 +2,7 @@
 
 import { useSmoothText } from "@convex-dev/agent/react";
 import { CircleStopIcon } from "lucide-react";
+import { memo } from "react";
 import { LogoMark } from "@/components/icons/logo-mark";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
@@ -31,7 +32,7 @@ import {
   webSearchParts,
 } from "./web-search";
 
-export function AssistantMessage({
+export const AssistantMessage = memo(function AssistantMessage({
   message,
   reply: { text, toolCalls, waitingActions, toolRows },
   stopped,
@@ -157,7 +158,7 @@ export function AssistantMessage({
       </MessageContent>
     </Message>
   );
-}
+});
 
 export function ThinkingMessage() {
   return (

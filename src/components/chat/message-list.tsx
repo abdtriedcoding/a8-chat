@@ -83,6 +83,11 @@ export function MessageList({
               </MessageScrollerItem>
             )}
 
+            {/* React Compiler can't cache the elements made in this map, so
+                UserMessage and AssistantMessage use memo. useStableMessages
+                keeps their props the same objects while a message is
+                unchanged, so on a stream chunk only the streaming reply's
+                message renders again. */}
             {messages.map((message, i) => {
               const regenerate =
                 i === messages.length - 1 ? onRegenerate : undefined;
@@ -92,9 +97,7 @@ export function MessageList({
                     <MessageScrollerItem messageId={message.key} scrollAnchor>
                       <UserMessage
                         text={message.text}
-                        attachments={message.parts.filter(
-                          (part) => part.type === "file",
-                        )}
+                        parts={message.parts}
                         onEdit={i === lastPromptIndex ? onEdit : undefined}
                         editing={i === lastPromptIndex && editingLastPrompt}
                         onEditingChange={onEditingLastPromptChange}
