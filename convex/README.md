@@ -1,90 +1,82 @@
-# Welcome to your Convex functions directory!
+# convex/
 
-Write your Convex functions here.
-See https://docs.convex.dev/functions for more.
+This folder is a8's backend. Before writing Convex code, read `_generated/ai/guidelines.md`. For the connector modules in depth, see [`docs/connectors/README.md`](../docs/connectors/README.md).
 
-A query function that takes two arguments looks like:
+## Modules
 
-```ts
-// convex/myFunctions.ts
-import { query } from "./_generated/server";
-import { v } from "convex/values";
+### Setup
 
-export const myQueryFunction = query({
-  // Validators for arguments.
-  args: {
-    first: v.number(),
-    second: v.string(),
-  },
+- `convex.config.ts`: the app's components (Better Auth, Agent, rate limiter, Resend) and every env var the backend reads. The root [`README.md`](../README.md) explains each one.
+- `schema.ts`: a8's own tables. Threads, messages and users live in the Agent and Better Auth components.
+- `auth.config.ts`: tells Convex to trust Better Auth's tokens.
+- `http.ts`: the HTTP routes, Better Auth's and the connector OAuth callback.
+- `crons.ts`: the cleanup jobs. Attachments that were never sent, expired upload grants and orphaned storage go daily, and expired connector sign-ins go hourly.
 
-  // Function implementation.
-  handler: async (ctx, args) => {
-    // Read the database as many times as you need here.
-    // See https://docs.convex.dev/database/reading-data.
-    const documents = await ctx.db.query("tablename").collect();
+### Accounts
 
-    // Arguments passed from the client are properties of the args object.
-    console.log(args.first, args.second);
+- `auth.ts`: Better Auth's options, `getCurrentUser`, and `purgeAccount`, which deletes a user's data when they delete their account.
+- `emails.ts`: queues verification and password reset emails through Resend.
+- `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins and connector tool calls. Sends and web searches also have a daily cap across all users.
 
-    // Write arbitrary JavaScript here: filter, aggregate, build derived data,
-    // remove non-public properties, or create new objects.
-    return documents;
-  },
-});
-```
+### Chat
 
-Using this query function in a React component looks like:
+- `agents/chat.ts`: the chat model, the Agent and the native tools.
+- `chat/send.ts`: the four Sends, which are `startThread`, `sendMessage`, `editPrompt` and `regenerateReply`.
+- `chat/reply.ts`: `streamReply`, which writes a reply, and the reply's start and failure.
+- `chat/stop.ts`: stopping a reply, and the text a stopped reply keeps.
+- `chat/approval.ts`: the user's decision on an action card, and when a reply continues.
+- `chat/turns.ts`: reads a thread's turns, such as its last turn and the turn a continuing reply picks up.
+- `chat/messages.ts`: `listThreadMessages`, the thread's messages for the UI.
+- `threads.ts`: listing, getting, searching, renaming and deleting threads.
+- `titles.ts`: a new thread's title, written by the model from its first prompt.
+- `tools/webSearch.ts`: the web search tool, and the only code that calls Tavily (ADR 0001).
 
-```ts
-const data = useQuery(api.myFunctions.myQueryFunction, {
-  first: 10,
-  second: "hello",
-});
-```
+### Attachments
 
-A mutation function looks like:
+- `attachments/upload.ts`: upload URLs, and registering an uploaded file so a prompt can attach it.
+- `attachments/load.ts`: loads a prompt's attachments for the model.
+- `attachments/cleanup.ts`: deletes attachments that were never sent, expired upload grants, orphaned storage and a deleted user's attachments.
 
-```ts
-// convex/myFunctions.ts
-import { mutation } from "./_generated/server";
-import { v } from "convex/values";
+### Connectors
 
-export const myMutationFunction = mutation({
-  // Validators for arguments.
-  args: {
-    first: v.string(),
-    second: v.string(),
-  },
+- `connectors.ts`: the public connector functions `list`, `connect`, `finishConnect` and `disconnect`, and the OAuth callback.
+- `connections.ts`: connection rows, the token refresh lease, disconnect and re-encrypting stored secrets.
+- `signIns.ts`: connector sign-ins in progress and OAuth client registrations.
+- `toolLists.ts`: each connection's stored tool list, and refreshing it.
 
-  // Function implementation.
-  handler: async (ctx, args) => {
-    // Insert or modify documents in the database here.
-    // Mutations can also read from the database like queries.
-    // See https://docs.convex.dev/database/writing-data.
-    const message = { body: args.first, author: args.second };
-    const id = await ctx.db.insert("messages", message);
+### `lib/`
 
-    // Optionally, return a value from your mutation.
-    return await ctx.db.get("messages", id);
-  },
-});
-```
+These modules hold helpers and register no Convex functions.
 
-Using this mutation function in a React component looks like:
+- `lib/guards.ts`: session and ownership checks. See the rules below.
+- `lib/errors.ts`: the error codes and `appError`. See the rules below.
+- `lib/prompt.ts`: prompt and title checks, and the prompt message the model gets.
+- `lib/attachments.ts`: attachment limits, accepted file types and rejection reasons.
+- `lib/instructions.ts`: the system prompt, and its connector part.
+- `lib/replyFailure.ts`: the reason a failed reply shows.
+- `lib/timeZone.ts`: the browser's time zone, which a reply uses for the user's date.
+- `lib/threadSearchSnippet.ts`: the snippet thread search shows around a match.
+- `lib/authEmails.ts`: the text and HTML of the auth emails.
+- `lib/connectorView.ts`: the client-safe view of the catalog. It's the only connector module the browser imports.
+- `lib/connectors.ts`: the server catalog, with each connector's MCP server URLs, pinned origins and sign-in settings.
+- `lib/connectorAuth.ts`: the OAuth provider, the pinned fetch, revocation, OAuth error handling and opening MCP clients.
+- `lib/oauthDiscovery.ts`: OAuth metadata discovery, used by revocation and the probe.
+- `lib/connectionTokens.ts`: a connection's access token, refreshed under the lease (ADR 0003).
+- `lib/encryption.ts`: encrypts and decrypts stored secrets under `CONNECTION_ENCRYPTION_KEY`.
+- `lib/connectorToolList.ts`: what a8 keeps of a vendor's tool list, and its token estimate.
+- `lib/connectorTools.ts`: a reply's connector tools, the account label tool and reading MCP tool results.
+- `lib/toolLoading.ts`: which connector tools load and which are deferred (ADR 0006, ADR 0009).
+- `lib/replyTools.ts`: `createReplyTools`, the one call a reply makes for its tools.
 
-```ts
-const mutation = useMutation(api.myFunctions.myMutationFunction);
-function handleButtonPress() {
-  // fire and forget, the most common way to use mutations
-  mutation({ first: "Hello!", second: "me" });
-  // OR
-  // use the result once the mutation has completed
-  mutation({ first: "Hello!", second: "me" }).then((result) =>
-    console.log(result),
-  );
-}
-```
+## Auth rules (`lib/guards.ts`)
 
-Use the Convex CLI to push your functions to a deployment. See everything
-the Convex CLI can do by running `npx convex -h` in your project root
-directory. To learn more, launch the docs with `npx convex docs`.
+- A query returns empty when signed out, because a session can end under a live query. Use `optionalUser` or `getOwnThread`.
+- A mutation or action throws `unauthenticated()` when signed out. Use `requireUser` in a mutation and `requireIdentity` in an action. An action can't read the user table, so `requireIdentity` returns the user ID from the identity's `subject`.
+- A mutation on a thread calls `authorizeThreadAccess`. It throws `NOT_FOUND` when the thread isn't the user's, so a wrong ID and someone else's thread look the same.
+- Only `lib/guards.ts` and `getCurrentUser` in `auth.ts` read the session.
+
+## Error rules (`lib/errors.ts`)
+
+- `ERROR_CODES` is the one list of codes the backend sends and the UI checks. Add a code there before using it.
+- A function the composer calls for a Send or an upload returns a refusal as `{ code, message }`, so the Convex client doesn't log it as an error.
+- Every other function throws `appError(code, message)`, a `ConvexError` whose data is `{ code, message }`.
