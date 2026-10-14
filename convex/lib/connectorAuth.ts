@@ -533,7 +533,8 @@ async function readClientInformation(
  * POSTs `body` as a form to one of the authorization server's endpoints,
  * authenticated as a8's OAuth client registration: HTTP Basic with a
  * secret, or else `client_id` in the body. auth() picks the same when the
- * vendor supports client_secret_basic (ADR 0010).
+ * vendor supports client_secret_basic (ADR 0010). With
+ * `client_secret_post`, the secret goes in the body next to `client_id`.
  */
 async function postAsRegisteredClient(
   connector: Connector,
@@ -541,18 +542,22 @@ async function postAsRegisteredClient(
   endpoint: string,
   body: URLSearchParams,
   timeoutMs: number,
+  authMethod: Connector["revocationAuthMethod"] = "client_secret_basic",
 ): Promise<Response> {
   const headers = new Headers({
     "Content-Type": "application/x-www-form-urlencoded",
     Accept: "application/json",
   });
-  if (registration.client_secret) {
+  if (registration.client_secret && authMethod === "client_secret_basic") {
     headers.set(
       "Authorization",
       `Basic ${btoa(`${registration.client_id}:${registration.client_secret}`)}`,
     );
   } else {
     body.set("client_id", registration.client_id);
+    if (registration.client_secret) {
+      body.set("client_secret", registration.client_secret);
+    }
   }
   return await pinnedFetch(connector)(endpoint, {
     method: "POST",
@@ -697,6 +702,7 @@ export async function revokeConnection(
     endpoint,
     body,
     REVOKE_TIMEOUT_MS,
+    connector.revocationAuthMethod,
   );
   if (!response.ok) {
     throw new Error(

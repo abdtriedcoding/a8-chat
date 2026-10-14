@@ -261,6 +261,50 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "trello",
+    name: "Trello",
+    description: "Read your Trello boards, and add or change cards, lists and checklists.",
+    examplePrompt: "@trello what's on my boards this week?",
+    cardNote: { text: "One workspace per connection." },
+    servers: {
+      trello: {
+        tools: {
+          trelloSearch: { kind: "read", label: "Searching Trello" },
+          trelloReadMember: { kind: "read", label: "Reading Trello members" },
+          trelloReadWorkspace: { kind: "read", label: "Reading the Trello workspace" },
+          trelloReadBoard: { kind: "read", label: "Reading Trello boards" },
+          trelloReadList: { kind: "read", label: "Reading Trello lists" },
+          trelloReadCard: { kind: "read", label: "Reading Trello cards" },
+          trelloReadChecklist: { kind: "read", label: "Reading Trello checklists" },
+          trelloReadInbox: { kind: "read", label: "Reading the Trello Inbox" },
+          // Most write tools run several operations, like create, move and
+          // archive, picked by their `action` argument. That argument says
+          // what happens, not where, so it isn't a target.
+          trelloWriteCard: {
+            kind: "action",
+            label: "Changing a Trello card",
+            target: ["cardId", "listId", "boardId", "commentId"],
+          },
+          trelloWriteList: {
+            kind: "action",
+            label: "Changing a Trello list",
+            target: ["listId", "boardId"],
+          },
+          trelloWriteChecklist: {
+            kind: "action",
+            label: "Changing a Trello checklist",
+            target: ["cardId", "checklistId", "itemId", "toChecklistId"],
+          },
+          trelloWriteBoard: {
+            kind: "action",
+            label: "Creating a Trello board",
+            target: ["workspaceId"],
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */

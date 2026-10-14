@@ -67,7 +67,7 @@ notion: {
 
 The handle defaults to the id, and the logo is always `public/connectors/<id>.svg`. a8 registers itself with the vendor once per deployment, by dynamic registration.
 
-A connector with several servers lists each one under its own key in both files, like `drive` and `docs`. Sign-in reads the OAuth metadata of the first server in `connectors.ts`, and the token it gets goes to every server. `scopes` sets the scopes sign-in asks for, and `authorizeParams` adds query parameters to the vendor's authorize URL, like `{ access_type: "offline", prompt: "consent" }`. Without `scopes`, sign-in asks for the scopes the first server's protected resource metadata lists.
+A connector with several servers lists each one under its own key in both files, like `drive` and `docs`. Sign-in reads the OAuth metadata of the first server in `connectors.ts`, and the token it gets goes to every server. `scopes` sets the scopes sign-in asks for, and `authorizeParams` adds query parameters to the vendor's authorize URL, like `{ access_type: "offline", prompt: "consent" }`. Without `scopes`, sign-in asks for the scopes the first server's protected resource metadata lists. `revocationAuthMethod: "client_secret_post"` puts the client secret in the revocation request's form instead of an HTTP Basic header, for a vendor whose revocation endpoint refuses Basic, like Atlassian's.
 
 A server key names the server in stored tool lists, so never change it. A connector with one server keys it by the connector id.
 
