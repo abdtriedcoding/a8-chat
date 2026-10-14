@@ -27,20 +27,20 @@ const CLEANUP_BATCH_SIZE = 500;
 
 /**
  * Checks the session, then counts one sign-in start against the user's rate
- * limit. Throws if either fails.
+ * limit. Throws if either fails. Returns the user's ID.
  */
 export const checkConnectStart = internalMutation({
   args: {},
-  returns: v.null(),
+  returns: v.string(),
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     if (!(await limitConnectStart(ctx, user._id))) {
       throw appError(
         ERROR_CODES.RATE_LIMITED,
-        "Too many sign-in attempts. Try again in a minute.",
+        "Too many connection attempts. Try again in a minute.",
       );
     }
-    return null;
+    return user._id;
   },
 });
 

@@ -35,11 +35,12 @@ export const REFRESH_LEASE_MS = 2 * REFRESH_TIMEOUT_MS;
 const LEASE_POLL_MS = 500;
 
 type AccessTokenResult =
-  | { accessToken: string; tokens: ConnectionTokens }
+  | { accessToken: string | undefined; tokens: ConnectionTokens }
   | { needsReconnect: true };
 
 /**
- * The connection's access token, and the tokens it came from. It's
+ * The connection's access token, and the tokens it came from. A connection
+ * to a connector with no sign-in has none, so the token is undefined. It's
  * refreshed first when it expires within 5 minutes, or when `refused` is
  * set because the vendor just refused it. Returns `needsReconnect` when the
  * vendor refuses the refresh or the connection needs reconnecting. Damaged
@@ -54,13 +55,19 @@ async function connectionAccessToken(
   tokens: ConnectionTokens,
   { refused = false }: { refused?: boolean } = {},
 ): Promise<AccessTokenResult> {
+  if (tokens.encryptedAccessToken === undefined) {
+    return { accessToken: undefined, tokens };
+  }
   const key = await getEncryptionKey();
   const fresh =
     refused || isNearExpiry(tokens)
       ? await refresh(ctx, connector, key, tokens)
       : tokens;
   if (!fresh) return { needsReconnect: true };
-  const accessToken = await decryptOrUndefined(key, fresh.encryptedAccessToken);
+  const accessToken =
+    fresh.encryptedAccessToken === undefined
+      ? undefined
+      : await decryptOrUndefined(key, fresh.encryptedAccessToken);
   if (accessToken === undefined) {
     await rejectConnection(ctx, fresh);
     return { needsReconnect: true };
@@ -74,7 +81,8 @@ async function connectionAccessToken(
  * an error refusedStatus recognizes), refreshes it and runs once more. A
  * 403, or a second refusal, marks the connection as needing reconnecting.
  * This is the only place a vendor refusal marks it, so a rule change like
- * the 403 one happens here.
+ * the 403 one happens here. A connection with no token has nothing to
+ * refresh, so a 401 marks it at once.
  *
  * Returns `needsReconnect` when the connection needs reconnecting, whether
  * that was found before, during or after `run`. Other errors from `run`
@@ -84,7 +92,7 @@ export async function withAccessToken<T>(
   ctx: ActionCtx,
   connector: Connector,
   tokens: ConnectionTokens,
-  run: (accessToken: string, tokens: ConnectionTokens) => Promise<T>,
+  run: (accessToken: string | undefined, tokens: ConnectionTokens) => Promise<T>,
 ): Promise<{ value: T } | { needsReconnect: true }> {
   let token = await connectionAccessToken(ctx, connector, tokens);
   if ("needsReconnect" in token) return token;
@@ -93,8 +101,9 @@ export async function withAccessToken<T>(
   } catch (error) {
     const status = refusedStatus(error);
     if (!status) throw error;
-    // A refresh keeps the token's access, so it can't fix a 403.
-    if (status === 403) {
+    // A refresh keeps the token's access, so it can't fix a 403. A
+    // connection with no token has nothing to refresh.
+    if (status === 403 || token.accessToken === undefined) {
       await rejectConnection(ctx, token.tokens);
       return { needsReconnect: true };
     }

@@ -57,7 +57,7 @@ A connector a user adds themselves from an MCP server's URL, seen only by that u
 _Avoid_: custom MCP, custom server, my connector
 
 **Connection**:
-One user's signed-in link to a connector. A user has at most one connection per connector.
+One user's link to a connector. The user signed in to the app, or turned the connector on if its app needs no sign-in, like Excalidraw. A user has at most one connection per connector.
 _Avoid_: account, link, install
 
 **OAuth client registration**:

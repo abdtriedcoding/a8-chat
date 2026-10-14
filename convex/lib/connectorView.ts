@@ -261,6 +261,27 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "excalidraw",
+    name: "Excalidraw",
+    description: "Draw diagrams and get a link to open them in Excalidraw.",
+    examplePrompt:
+      "@excalidraw draw a flowchart of a user signing up and verifying their email",
+    servers: {
+      excalidraw: {
+        tools: {
+          // The server's other tools draw inside an MCP Apps host's chat,
+          // and a8 isn't one. read_me teaches their format, and
+          // excalidraw.com drops parts of it, like shape labels. Uploading
+          // puts the diagram at a link anyone with it can open, so it asks.
+          export_to_excalidraw: {
+            kind: "action",
+            label: "Uploading a diagram to Excalidraw",
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */
