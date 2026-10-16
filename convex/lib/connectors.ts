@@ -140,6 +140,8 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       },
     },
     pinnedOrigins: ["https://mcp.notion.com"],
+    // Notion's MCP client guide asks for the consent screen on every sign-in.
+    authorizeParams: { prompt: "consent" },
     accountLabel: { from: "tokenResponse", field: "workspace_name" },
   },
   linear: {
