@@ -20,9 +20,8 @@ import {
 type MentionQuery = { start: number; end: number; query: string };
 
 /** A catalog connector with the user's status for it. */
-export type MentionOption = ConnectorView & {
-  status: ConnectorStatus["status"];
-};
+export type MentionOption = ConnectorView &
+  Pick<ConnectorStatus, "status" | "setUp">;
 
 /** The id of the menu option for a connector, in the menu with this id. */
 export function mentionOptionId(menuId: string, connectorId: string): string {
@@ -201,11 +200,14 @@ function mentionQueryAt(text: string, caret: number): MentionQuery | undefined {
 
 /** Every catalog connector, in catalog order, with the user's status. */
 function withStatus(statuses: ConnectorStatus[]): MentionOption[] {
-  return CONNECTOR_VIEWS.map((connector) => ({
-    ...connector,
-    status:
-      statuses.find(({ id }) => id === connector.id)?.status ?? "disconnected",
-  }));
+  return CONNECTOR_VIEWS.map((connector) => {
+    const status = statuses.find(({ id }) => id === connector.id);
+    return {
+      ...connector,
+      status: status?.status ?? "disconnected",
+      setUp: status?.setUp ?? true,
+    };
+  });
 }
 
 /**

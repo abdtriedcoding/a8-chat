@@ -163,18 +163,22 @@ export function Composer({
                 <span>
                   {connector.status === "needs_reconnect"
                     ? `${connector.name} needs reconnecting before this can be sent.`
-                    : `${connector.name} isn't connected, so this can't be sent yet.`}
+                    : connector.setUp
+                      ? `${connector.name} isn't connected, so this can't be sent yet.`
+                      : `${connector.name} isn't set up on this deployment, so this can't be sent.`}
                 </span>
-                <ReconnectButton
-                  connector={connector}
-                  draft={text}
-                  render={<InputGroupButton variant="outline" size="xs" />}
-                >
-                  {connector.status === "needs_reconnect"
-                    ? "Reconnect"
-                    : "Connect"}{" "}
-                  {connector.name}
-                </ReconnectButton>
+                {(connector.setUp || connector.status !== "disconnected") && (
+                  <ReconnectButton
+                    connector={connector}
+                    draft={text}
+                    render={<InputGroupButton variant="outline" size="xs" />}
+                  >
+                    {connector.status === "needs_reconnect"
+                      ? "Reconnect"
+                      : "Connect"}{" "}
+                    {connector.name}
+                  </ReconnectButton>
+                )}
               </div>
             ))}
           </InputGroupAddon>

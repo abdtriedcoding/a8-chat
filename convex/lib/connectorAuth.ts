@@ -17,6 +17,7 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { env, type ActionCtx } from "../_generated/server";
 import {
+  preRegisteredCredentials,
   signInServer,
   type Connector,
   type ConnectorServer,
@@ -166,10 +167,11 @@ export class ConnectorOAuthProvider implements OAuthClientProvider {
     }
   }
 
-  // Every connector registers dynamically. Without this, auth() throws
-  // instead of registering again when the vendor rejects the client.
+  // Without this, auth() throws instead of registering again when the
+  // vendor rejects a dynamically registered client. A pre-registered one
+  // can't register again, so auth() throws.
   isClientInformationDynamicallyRegistered(): boolean {
-    return true;
+    return this.connector.signIn?.kind !== "preRegistered";
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {
@@ -496,13 +498,24 @@ function causes(error: unknown): unknown[] {
  * The connector's stored client registration with its secret decrypted, or
  * undefined if there's none. The vendor rejects a client whose secret
  * expired, so a8 forgets it now. A sign-in then registers again, and a
- * refresh needs a reconnect.
+ * refresh needs a reconnect. A pre-registered client comes from the env
+ * vars instead, with the catalog's token endpoint.
  */
 async function readClientInformation(
   ctx: ActionCtx,
   connector: Connector,
   encryptionKey: EncryptionKey,
 ): Promise<OAuthClientInformation | undefined> {
+  if (connector.signIn?.kind === "preRegistered") {
+    const credentials = preRegisteredCredentials(connector);
+    return (
+      credentials && {
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret,
+        token_endpoint: connector.signIn.tokenEndpoint,
+      }
+    );
+  }
   const registration = await ctx.runQuery(
     internal.signIns.getOAuthClientRegistration,
     { connectorId: connector.id },
