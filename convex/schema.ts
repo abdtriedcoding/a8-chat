@@ -92,9 +92,6 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
-    // No longer written or read. clearUnusedScopes unsets it on old rows,
-    // and a later change removes the field.
-    grantedScopes: v.optional(v.array(v.string())),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
   // The tools a8 stores for one connection (convex/toolLists.ts), apart from
@@ -122,9 +119,6 @@ export default defineSchema({
     codeVerifier: v.string(),
     userId: v.string(),
     connectorId: v.string(),
-    // No longer written or read. clearUnusedScopes unsets it on old rows,
-    // and a later change removes the field.
-    scope: v.optional(v.string()),
     // finishConnect checks that the code exchange goes to this server.
     authorizationServer: vAuthorizationServer,
     expiresAt: v.number(),
@@ -138,13 +132,6 @@ export default defineSchema({
   // client registers again, so a8 only registers again after the vendor
   // rejects this client or its secret expires.
   oauthClientRegistrations: defineTable(vOAuthClientRegistration).index(
-    "by_connectorId",
-    ["connectorId"],
-  ),
-  // The old name of oauthClientRegistrations. Nothing reads or writes it.
-  // copyConnectorClients copies its rows across. Drop it from the schema
-  // once it's empty everywhere.
-  connectorClients: defineTable(vOAuthClientRegistration).index(
     "by_connectorId",
     ["connectorId"],
   ),
