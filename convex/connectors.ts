@@ -43,6 +43,8 @@ import {
 import {
   CONNECTORS,
   findConnector,
+  isSetUp,
+  missesScopes,
   needsSignIn,
   signInServer,
   vConnectorId,
@@ -63,6 +65,10 @@ const vConnectorStatus = v.object({
   status: v.union(vConnectionStatus, v.literal("disconnected")),
   accountLabel: v.optional(v.string()),
   connectedAt: v.optional(v.number()),
+  // False when the deployment lacks the connector's OAuth client env vars.
+  setUp: v.boolean(),
+  // True when the user unticked a scope at sign-in, so some tools don't load.
+  missingScopes: v.boolean(),
 });
 
 export type ConnectorStatus = Infer<typeof vConnectorStatus>;
@@ -114,6 +120,8 @@ export const list = query({
         status: connection?.status ?? "disconnected",
         accountLabel: connection?.accountLabel,
         connectedAt: connection?.connectedAt,
+        setUp: isSetUp(connector),
+        missingScopes: missesScopes(connector, connection?.grantedScopes),
       };
     });
   },
@@ -137,6 +145,12 @@ export const connect = action({
     const connector = findConnector(connectorId);
     if (!connector) {
       throw appError(ERROR_CODES.NOT_FOUND, "Unknown connector.");
+    }
+    if (!isSetUp(connector)) {
+      throw appError(
+        ERROR_CODES.MISCONFIGURED,
+        `${connector.name} isn't set up on this deployment yet.`,
+      );
     }
     if (!needsSignIn(connector)) {
       return await connectWithoutSignIn(ctx, connector, userId);
@@ -302,15 +316,20 @@ export const finishConnect = action({
             ? undefined
             : Date.now() + tokens.expires_in * 1000,
         resource: provider.resource,
+        grantedScopes: tokens.scope?.split(" ").filter(Boolean),
         accountLabel: provider.accountLabel,
       });
       return { connected: connector.id };
     } catch (error) {
       console.error(`Finishing ${connector.name} sign-in failed`, error);
       const connectError = finishConnectError(error);
-      if (connectError === "rejected_client") {
-        await forgetOAuthClientRegistration(ctx, connector);
+      if (connectError !== "rejected_client") return { error: connectError };
+      // Signing in again can't fix a pre-registered client the vendor
+      // rejected, like one with a wrong secret. The deployer has to.
+      if (connector.signIn?.kind === "preRegistered") {
+        return { error: "misconfigured" };
       }
+      await forgetOAuthClientRegistration(ctx, connector);
       return { error: connectError };
     }
   },

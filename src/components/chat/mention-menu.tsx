@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
+import { isConnected } from "@/hooks/use-connections";
 import {
   mentionOptionId,
   type MentionOption,
@@ -56,7 +57,10 @@ export function MentionMenu({
           <ul id={id} role="listbox" aria-label="Connectors">
             {options.map((connector) => {
               const selected = connector.id === selectedId;
-              const status = STATUS_LABELS[connector.status];
+              const status =
+                connector.setUp || isConnected(connector)
+                  ? STATUS_LABELS[connector.status]
+                  : "Not set up";
               return (
                 <li
                   key={connector.id}

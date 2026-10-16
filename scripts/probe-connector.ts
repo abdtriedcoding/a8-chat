@@ -564,7 +564,9 @@ function checkCatalogEntry(connector: Connector, findings: Findings): number {
   };
 
   const signsIn = needsSignIn(connector);
-  if (signsIn) {
+  if (connector.signIn?.kind === "preRegistered") {
+    report(true, "pre-registered client: needs no registration endpoint");
+  } else if (signsIn) {
     report(
       findings.registrationEndpoint !== undefined,
       `dynamic registration: the server has ${findings.registrationEndpoint ? "a" : "no"} registration endpoint`,

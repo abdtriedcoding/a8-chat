@@ -4,6 +4,7 @@
 // connectorView.ts, and the maps here are keyed by its ids and server keys.
 
 import { v } from "convex/values";
+import { env } from "../_generated/server";
 import {
   CONNECTOR_VIEWS,
   RECONNECT_ERROR_CODE,
@@ -15,7 +16,13 @@ import {
 } from "./connectorView";
 
 /** One tool a8 offers the model from an MCP server. */
-export type ConnectorTool = ConnectorToolView;
+export type ConnectorTool = ConnectorToolView & {
+  /**
+   * The scope the tool needs. A connection whose granted scopes lack it
+   * doesn't offer the tool. Undefined means any connection offers it.
+   */
+  scope?: string;
+};
 
 /** One of a connector's MCP servers. */
 export type ConnectorServer = {
@@ -62,8 +69,21 @@ type AccountLabelSource<Tool extends string = string> =
  *   deployment.
  * - `none`: the MCP server answers without a token. Turning the connector
  *   on lists its tools without one and stores a connection with no tokens.
+ * - `preRegistered`: the user signs in at the vendor's consent screen,
+ *   through an OAuth client the deployer registered with the vendor, for a
+ *   vendor with no dynamic registration, like Google. `credentials` reads
+ *   its ID and secret from the deployment's env vars, and the connector
+ *   shows as not set up while either is missing. `tokenEndpoint` is where token
+ *   refresh goes, since a8 stores no registration for this client.
  */
-export type SignIn = { kind: "dynamicRegistration" } | { kind: "none" };
+export type SignIn =
+  | { kind: "dynamicRegistration" }
+  | { kind: "none" }
+  | {
+      kind: "preRegistered";
+      credentials: () => { clientId?: string; clientSecret?: string };
+      tokenEndpoint: string;
+    };
 
 /** How a8 signs in to a connector and what it may contact. */
 type ConnectorAccess<Tool extends string> = {
@@ -101,6 +121,11 @@ type ConnectorAccess<Tool extends string> = {
    * connected, and shows nothing when the source gives no label.
    */
   accountLabel?: AccountLabelSource<Tool>;
+  /**
+   * The scope each tool needs, for a vendor whose consent screen lets the
+   * user untick scopes, like Google's. A tool left out needs none.
+   */
+  toolScopes?: { [Name in Tool]?: string };
 };
 
 /** The server fields of one catalog connector, as written below. */
@@ -131,6 +156,10 @@ export type Connector = Omit<ConnectorView, "id" | "servers"> &
 
 /** A connector from a8's catalog. */
 type CatalogConnector = Connector & { id: ConnectorId };
+
+const GOOGLE_CALENDAR_EVENTS = "https://www.googleapis.com/auth/calendar.events";
+const GOOGLE_CALENDAR_LIST =
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
@@ -204,6 +233,47 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       field: "workspaces.0.displayName",
     },
   },
+  googlecalendar: {
+    servers: {
+      googlecalendar: {
+        url: "https://calendarmcp.googleapis.com/mcp/v1",
+      },
+    },
+    pinnedOrigins: [
+      "https://calendarmcp.googleapis.com",
+      "https://accounts.google.com",
+      "https://oauth2.googleapis.com",
+    ],
+    signIn: {
+      kind: "preRegistered",
+      credentials: () => ({
+        clientId: env.GOOGLE_MCP_CLIENT_ID,
+        clientSecret: env.GOOGLE_MCP_CLIENT_SECRET,
+      }),
+      tokenEndpoint: "https://oauth2.googleapis.com/token",
+    },
+    scopes: [GOOGLE_CALENDAR_EVENTS, GOOGLE_CALENDAR_LIST],
+    // Google gives a refresh token only with both (ADR 0007).
+    authorizeParams: { access_type: "offline", prompt: "consent" },
+    toolScopes: {
+      list_calendars: GOOGLE_CALENDAR_LIST,
+      list_events: GOOGLE_CALENDAR_EVENTS,
+      search_events: GOOGLE_CALENDAR_EVENTS,
+      get_event: GOOGLE_CALENDAR_EVENTS,
+      suggest_time: GOOGLE_CALENDAR_EVENTS,
+      create_event: GOOGLE_CALENDAR_EVENTS,
+      update_event: GOOGLE_CALENDAR_EVENTS,
+      delete_event: GOOGLE_CALENDAR_EVENTS,
+      respond_to_event: GOOGLE_CALENDAR_EVENTS,
+    },
+    // The primary calendar's title is the account's email address.
+    accountLabel: {
+      from: "tool",
+      tool: "list_events",
+      arguments: { calendarId: "primary", pageSize: 1 },
+      field: "summary",
+    },
+  },
 };
 
 /**
@@ -214,6 +284,8 @@ export const CONNECTORS: CatalogConnector[] = CONNECTOR_VIEWS.map(
   ({ servers: serverViews, ...view }) => {
     const { servers, ...access } = ENTRIES[view.id];
     const urls: Record<string, { url: string }> = servers;
+    const toolScopes: Record<string, string | undefined> =
+      access.toolScopes ?? {};
     return {
       ...view,
       ...access,
@@ -222,7 +294,12 @@ export const CONNECTORS: CatalogConnector[] = CONNECTOR_VIEWS.map(
           key,
           url: urls[key].url,
           toolPrefix,
-          tools: new Map(Object.entries(tools)),
+          tools: new Map(
+            Object.entries(tools).map(([name, tool]) => [
+              name,
+              { ...tool, scope: toolScopes[name] },
+            ]),
+          ),
         }),
       ),
     };
@@ -254,6 +331,44 @@ export function findConnector(id: string): CatalogConnector | undefined {
 /** Whether turning the connector on sends the user to the vendor's sign-in. */
 export function needsSignIn(connector: Connector): boolean {
   return connector.signIn?.kind !== "none";
+}
+
+/**
+ * Whether the deployment has what the connector's sign-in needs. Only a
+ * pre-registered client can be missing, when its env vars aren't set.
+ */
+export function isSetUp(connector: Connector): boolean {
+  return (
+    connector.signIn?.kind !== "preRegistered" ||
+    preRegisteredCredentials(connector) !== undefined
+  );
+}
+
+/**
+ * A pre-registered client's ID and secret from the env vars. Undefined for
+ * any other sign-in, or while either env var is missing.
+ */
+export function preRegisteredCredentials(
+  connector: Connector,
+): { clientId: string; clientSecret: string } | undefined {
+  if (connector.signIn?.kind !== "preRegistered") return undefined;
+  const { clientId, clientSecret } = connector.signIn.credentials();
+  return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+}
+
+/**
+ * Whether the connection lacks a scope sign-in asked for, because the user
+ * unticked it on the vendor's consent screen. Some of the connector's
+ * tools then don't load (offeredTools in connectorTools.ts).
+ */
+export function missesScopes(
+  connector: Connector,
+  grantedScopes: string[] | undefined,
+): boolean {
+  if (!grantedScopes) return false;
+  return (connector.scopes ?? []).some(
+    (scope) => !grantedScopes.includes(scope),
+  );
 }
 
 /**

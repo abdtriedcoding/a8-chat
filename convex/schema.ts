@@ -85,6 +85,10 @@ export default defineSchema({
     // refresh sends it again (ADR 0010). Unset on rows from before a8
     // stored it, and then a refresh sends none.
     resource: v.optional(v.string()),
+    // The scopes the vendor granted, from the token response's `scope`.
+    // Unset when the vendor didn't say, which means it granted what sign-in
+    // asked for (RFC 6749 section 5.1).
+    grantedScopes: v.optional(v.array(v.string())),
     // Bumped on every token change, for the refresh lease (ADR 0003).
     tokenVersion: v.number(),
     // Set while a reply holds the refresh lease (claimRefresh), and until

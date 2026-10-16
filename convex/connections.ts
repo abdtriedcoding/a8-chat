@@ -95,6 +95,7 @@ export const saveConnection = internalMutation({
     encryptedRefreshToken: v.optional(v.string()),
     tokenExpiresAt: v.optional(v.number()),
     resource: v.optional(v.string()),
+    grantedScopes: connectionFields.grantedScopes,
     accountLabel: v.optional(v.string()),
     toolList: v.optional(vStoredToolList),
   },

@@ -75,6 +75,12 @@ type ConnectorViewEntry = {
   examplePrompt: string;
   cardNote?: CardNote;
   /**
+   * The guide a deployer follows to set the connector up, for one whose
+   * sign-in needs the deployment's own OAuth client. The card links to it
+   * while the connector isn't set up.
+   */
+  setupGuide?: string;
+  /**
    * The connector's MCP servers, by a key of lowercase letters and digits.
    * A connector with one server keys it by the connector id. Stored tool
    * lists name each tool's server by this key, so never change one. The
@@ -321,6 +327,46 @@ const ENTRIES = [
             kind: "action",
             label: "Creating a Trello board",
             target: ["workspaceId"],
+          },
+        },
+      },
+    },
+  },
+  {
+    id: "googlecalendar",
+    name: "Google Calendar",
+    handle: "calendar",
+    description: "See your Google Calendar events, find free times, and add, change or delete events.",
+    examplePrompt: "@calendar what's on my calendar this week?",
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/google.md",
+    servers: {
+      googlecalendar: {
+        tools: {
+          list_events: { kind: "read", label: "Reading Google Calendar events" },
+          search_events: { kind: "read", label: "Searching Google Calendar" },
+          get_event: { kind: "read", label: "Reading a Google Calendar event" },
+          list_calendars: { kind: "read", label: "Finding Google calendars" },
+          suggest_time: { kind: "read", label: "Finding free times" },
+          create_event: {
+            kind: "action",
+            label: "Adding a Google Calendar event",
+            target: ["calendarId"],
+          },
+          update_event: {
+            kind: "action",
+            label: "Changing a Google Calendar event",
+            target: ["calendarId", "eventId"],
+          },
+          delete_event: {
+            kind: "action",
+            label: "Deleting a Google Calendar event",
+            target: ["calendarId", "eventId"],
+          },
+          respond_to_event: {
+            kind: "action",
+            label: "Replying to a Google Calendar invite",
+            target: ["calendarId", "eventId"],
           },
         },
       },

@@ -64,6 +64,10 @@ _Avoid_: account, link, install
 The OAuth client a8 registered with a connector's authorization server. A deployment has one per connector, and every user's connection signs in through it. Not to be confused with an MCP client.
 _Avoid_: connector client, OAuth app, client (on its own)
 
+**Pre-registered client**:
+An OAuth client the deployer registered with a vendor by hand, for a vendor with no dynamic registration, like Google. Its ID and secret come from the deployment's env vars, and a8 stores no OAuth client registration for it. Without them, the connector is not set up.
+_Avoid_: static client, manual client
+
 **MCP client**:
 a8's open session with one of a connector's MCP servers, used to list or call its tools. A reply opens one for each server it calls and closes them when it ends. Not to be confused with an OAuth client registration.
 _Avoid_: server client, connection (for the session), client (on its own)

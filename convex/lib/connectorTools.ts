@@ -121,7 +121,11 @@ export async function createConnectorTools(
     replyConnections.push(replyConnection);
 
     const tools: ToolSet = {};
-    const offered = offeredTools(connector, toolList.tools);
+    const offered = offeredTools(
+      connector,
+      toolList.tools,
+      connection.grantedScopes,
+    );
     for (const { server, entry, mcpTool } of offered) {
       const name = modelToolName(connector, server, mcpTool.name);
       if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
@@ -387,17 +391,24 @@ async function refusesToolList(
 
 /**
  * The stored tools a reply offers, each with its server and allowlist
- * entry: the allowlisted ones, and every one from a server without an
- * allowlist, which has no entry.
+ * entry: the allowlisted ones whose scope the connection was granted, and
+ * every one from a server without an allowlist, which has no entry.
+ * `grantedScopes` undefined means the vendor granted every scope sign-in
+ * asked for.
  */
 function offeredTools(
   connector: Connector,
   toolList: string,
+  grantedScopes: string[] | undefined,
 ): { server: ConnectorServer; entry?: ConnectorTool; mcpTool: McpTool }[] {
   return readStoredTools(connector, toolList).flatMap(({ server, tool }) => {
     if (!server.tools) return [{ server, mcpTool: tool }];
     const entry = server.tools.get(tool.name);
-    return entry ? [{ server, entry, mcpTool: tool }] : [];
+    if (!entry) return [];
+    if (entry.scope && grantedScopes && !grantedScopes.includes(entry.scope)) {
+      return [];
+    }
+    return [{ server, entry, mcpTool: tool }];
   });
 }
 

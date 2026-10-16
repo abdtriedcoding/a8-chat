@@ -27,6 +27,11 @@ const app = defineApp({
     // Set to "true" to stay in test mode. Unset or any other value sends to
     // real addresses.
     RESEND_TEST_MODE: v.optional(v.string()),
+    // Optional. The Google Cloud project's OAuth client for Google's MCP
+    // servers (ADR 0007, docs/connectors/google.md). Without both, the
+    // Google connectors show as not set up.
+    GOOGLE_MCP_CLIENT_ID: v.optional(v.string()),
+    GOOGLE_MCP_CLIENT_SECRET: v.optional(v.string()),
   },
 });
 
