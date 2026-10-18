@@ -501,6 +501,62 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "googlesheets",
+    name: "Google Sheets",
+    handle: "sheets",
+    description: "Find, read and edit your Google Sheets, and create new ones.",
+    examplePrompt: "@sheets find my latest sheet and sum its last column",
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/google.md",
+    // Sheets' server only reads and edits a sheet by its ID, so Drive's
+    // server finds and creates sheets.
+    servers: {
+      drive: {
+        tools: {
+          search_files: { kind: "read", label: "Searching Google Sheets" },
+          list_recent_files: { kind: "read", label: "Finding recent Google Sheets" },
+          // Makes a blank Sheet when `contentMimeType` is a Google Sheet's.
+          create_file: {
+            kind: "action",
+            label: "Creating a Google Sheet",
+            target: ["parentId"],
+          },
+          copy_file: {
+            kind: "action",
+            label: "Copying a Google Sheet",
+            target: ["fileId", "parentId"],
+          },
+        },
+      },
+      sheets: {
+        tools: {
+          get_spreadsheet: { kind: "read", label: "Reading a Google Sheet" },
+          get_values: { kind: "read", label: "Reading Google Sheet cells" },
+          update_values: {
+            kind: "action",
+            label: "Updating Google Sheet cells",
+            target: ["spreadsheetId", "range"],
+          },
+          update_formulas: {
+            kind: "action",
+            label: "Updating Google Sheet formulas",
+            target: ["spreadsheetId", "range"],
+          },
+          insert_dimension: {
+            kind: "action",
+            label: "Inserting Google Sheet rows or columns",
+            target: ["spreadsheetId", "sheetId"],
+          },
+          update_spreadsheet: {
+            kind: "action",
+            label: "Changing a Google Sheet",
+            target: ["spreadsheetId"],
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */

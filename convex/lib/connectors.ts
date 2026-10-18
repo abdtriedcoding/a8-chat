@@ -398,6 +398,33 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     },
     accountLabel: DRIVE_FILE_OWNER,
   },
+  googlesheets: {
+    servers: {
+      drive: { url: "https://drivemcp.googleapis.com/mcp/v1" },
+      sheets: { url: "https://sheetsmcp.googleapis.com/mcp/v1" },
+    },
+    ...GOOGLE_ACCESS,
+    pinnedOrigins: [
+      "https://drivemcp.googleapis.com",
+      "https://sheetsmcp.googleapis.com",
+      ...GOOGLE_AUTH_ORIGINS,
+    ],
+    scopes: [GOOGLE_DRIVE_READONLY, GOOGLE_DRIVE_FILE, GOOGLE_SHEETS],
+    // As in Google Drive, every read needs only drive.readonly.
+    toolScopes: {
+      search_files: GOOGLE_DRIVE_READONLY,
+      list_recent_files: GOOGLE_DRIVE_READONLY,
+      create_file: GOOGLE_DRIVE_FILE,
+      copy_file: GOOGLE_DRIVE_FILE,
+      get_spreadsheet: GOOGLE_DRIVE_READONLY,
+      get_values: GOOGLE_DRIVE_READONLY,
+      update_values: GOOGLE_SHEETS,
+      update_formulas: GOOGLE_SHEETS,
+      insert_dimension: GOOGLE_SHEETS,
+      update_spreadsheet: GOOGLE_SHEETS,
+    },
+    accountLabel: DRIVE_FILE_OWNER,
+  },
 };
 
 /**
