@@ -25,6 +25,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDecideAction } from "@/hooks/use-decide-action";
 import { useEditPrompt } from "@/hooks/use-edit-prompt";
+import { useQueueActions } from "@/hooks/use-queue-actions";
 import { useRegenerateReply } from "@/hooks/use-regenerate-reply";
 import { useSendPrompt } from "@/hooks/use-send-prompt";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
@@ -35,9 +36,11 @@ import { errorMessage } from "@/lib/errors";
 import { lastReplyText } from "@/lib/reply-text";
 import { stoppedTurns } from "@/lib/stopped-turns";
 import { api } from "../../../convex/_generated/api";
+import { MAX_QUEUED_PROMPTS } from "../../../convex/lib/queue";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
+import { QueueStack } from "./queue-stack";
 import { ThreadActionsProvider } from "./thread-actions-context";
 
 const PAGE_SIZE = 20;
@@ -59,11 +62,10 @@ export function ThreadView({ threadId }: { threadId: string }) {
     { initialNumItems: PAGE_SIZE, stream: true },
   );
 
-  const send = useSendPrompt(threadId);
-  const stop = useStopReply(threadId);
-  const regenerate = useRegenerateReply(threadId);
-  const edit = useEditPrompt(threadId);
-  const decide = useDecideAction(threadId);
+  const queue = useQuery(
+    api.chat.queue.getQueue,
+    isAuthenticated && thread !== null ? { threadId } : "skip",
+  );
 
   const messages = useStableMessages(rawMessages);
   const stopped = stoppedTurns(messages);
@@ -72,6 +74,24 @@ export function ThreadView({ threadId }: { threadId: string }) {
     replyStatus === "waiting" ||
     replyStatus === "continuing" ||
     replyStatus === "streaming";
+
+  const queuedPrompts = queue?.prompts ?? [];
+  // A reply that timed out never started the queue, so Resume has to.
+  const queuePaused =
+    queuedPrompts.length > 0 &&
+    (queue?.paused === true || replyStatus === "timedOut");
+  // The server decides for itself, and queues behind a queue that timed out
+  // with the rest. This guess picks where the prompt shows until it answers.
+  const sendQueues =
+    replyInProgress || (queuedPrompts.length > 0 && queue?.paused !== true);
+  const queueFull = sendQueues && queuedPrompts.length >= MAX_QUEUED_PROMPTS;
+
+  const send = useSendPrompt(threadId, sendQueues);
+  const stop = useStopReply(threadId);
+  const regenerate = useRegenerateReply(threadId);
+  const edit = useEditPrompt(threadId);
+  const decide = useDecideAction(threadId);
+  const queueActions = useQueueActions(threadId);
   // A stopped turn counts as done, and so does a reply that timed out.
   const canRedoLastTurn = messages.length > 0 && !replyInProgress;
   const copyableText = lastReplyText(messages, stopped);
@@ -161,10 +181,21 @@ export function ThreadView({ threadId }: { threadId: string }) {
       )}
       <div className="shrink-0 px-4 pb-4">
         {thread?.archived && <ArchivedNotice threadId={threadId} />}
+        {queuedPrompts.length > 0 && (
+          <QueueStack
+            prompts={queuedPrompts}
+            paused={queuePaused}
+            full={queueFull}
+            onEdit={queueActions.edit}
+            onDelete={queueActions.remove}
+            onResume={replyInProgress ? undefined : queueActions.resume}
+            className="mx-auto max-w-3xl"
+          />
+        )}
         <Composer
           onSend={send}
           onStop={replyInProgress ? stop : undefined}
-          disabled={replyInProgress}
+          sendDisabled={queueFull}
           autoFocus
           textareaRef={composerRef}
           className="mx-auto max-w-3xl"

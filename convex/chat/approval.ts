@@ -163,7 +163,7 @@ function hasActionCards(turn: MessageDoc[]): boolean {
 }
 
 /** The approval IDs of the turn's actions that are still waiting on a card. */
-function waitingApprovalIds(turn: MessageDoc[]): string[] {
+export function waitingApprovalIds(turn: MessageDoc[]): string[] {
   const requested: string[] = [];
   const decided = new Set<string>();
   for (const { message } of turn) {

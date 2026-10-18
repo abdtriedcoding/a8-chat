@@ -1,8 +1,17 @@
-import { createThread, listStreams, type Message } from "@convex-dev/agent";
+import {
+  createThread,
+  listStreams,
+  type Message,
+  type MessageDoc,
+} from "@convex-dev/agent";
 import type { ModelMessage } from "ai";
 import { v, type Infer } from "convex/values";
 import { components, internal } from "../_generated/api";
-import { mutation, type MutationCtx } from "../_generated/server";
+import {
+  internalMutation,
+  mutation,
+  type MutationCtx,
+} from "../_generated/server";
 import { chatAgent } from "../agents/chat";
 import {
   loadPromptAttachments,
@@ -16,11 +25,20 @@ import {
   replacePromptText,
   titleFromPrompt,
 } from "../lib/prompt";
+import { MAX_QUEUED_PROMPTS, REPLY_START_TIMEOUT_MS } from "../lib/queue";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { limitSend, vRateLimited } from "../rateLimits";
 import { setThreadStatus } from "../threads";
-import { closeUnrunActions } from "./approval";
-import { getStoppedReply } from "./stop";
+import { closeUnrunActions, waitingApprovalIds } from "./approval";
+import {
+  addQueuedPrompt,
+  getPausedQueue,
+  listQueuedPrompts,
+  deleteQueuedPromptRows,
+  pauseThreadQueue,
+  unpauseThreadQueue,
+} from "./queue";
+import { getStoppedReply, isReplyInProgress } from "./stop";
 import { getLastTurn, hasPendingReply } from "./turns";
 
 // File IDs from registerUpload (convex/attachments/upload.ts). Each Send
@@ -31,31 +49,37 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 // Each checks the rate limits (limitSend) before it saves anything. A Send
 // over a limit, or with an attachment that's gone, returns the refusal
 // instead of throwing it, because the Convex client logs every thrown error
-// to the browser console. sendMessage also returns a refusal while a reply
-// is running.
+// to the browser console. sendMessage also returns a refusal when the queue
+// is full.
 //
 // startThread and sendMessage load their attachments before the rate limits
-// (prepareSend), and sendMessage checks for a running reply first. limitSend
-// counts the Send, so a refusal after it would still be counted.
+// (prepareSend), and sendMessage checks the queue first. limitSend counts
+// the Send, so a refusal after it would still be counted.
+//
+// sendMessage queues its prompt while the thread is busy (convex/chat/
+// queue.ts). limitSend counts the prompt when sendMessage queues it, and
+// startNextPrompt doesn't count it again.
 //
 // sendMessage, regenerateReply and editPrompt move an archived thread back
 // to the user's chats.
 
 /**
- * Why a Send was refused: the thread's reply is still running. sendMessage
- * returns it instead of throwing.
+ * Why a Send was refused: the thread's queue already holds
+ * MAX_QUEUED_PROMPTS. sendMessage returns it instead of throwing.
  */
-const vReplyInProgress = v.object({
-  code: v.literal(ERROR_CODES.REPLY_IN_PROGRESS),
+const vQueueFull = v.object({
+  code: v.literal(ERROR_CODES.QUEUE_FULL),
   message: v.string(),
 });
 
-export type ReplyInProgress = Infer<typeof vReplyInProgress>;
+export type QueueFull = Infer<typeof vQueueFull>;
 
-const REPLY_IN_PROGRESS: ReplyInProgress = {
-  code: ERROR_CODES.REPLY_IN_PROGRESS,
-  message: "Wait for the reply to finish first.",
+const QUEUE_FULL: QueueFull = {
+  code: ERROR_CODES.QUEUE_FULL,
+  message: `You can queue up to ${MAX_QUEUED_PROMPTS} prompts. Wait for one to start.`,
 };
+
+const REPLY_IN_PROGRESS_MESSAGE = "Wait for the reply to finish first.";
 
 export const startThread = mutation({
   args: {
@@ -110,21 +134,31 @@ export const sendMessage = mutation({
     timeZone: vTimeZone,
   },
   returns: v.union(
-    v.null(),
+    v.object({ status: v.union(v.literal("sent"), v.literal("queued")) }),
     vRateLimited,
     vAttachmentNotFound,
-    vReplyInProgress,
+    vQueueFull,
   ),
   handler: async (
     ctx,
     { prompt, attachmentFileIds = [], threadId, timeZone },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    const lastTurn = await getLastTurn(ctx, threadId);
-    // A second tab, or a direct call, can send while a reply is running. The
-    // new prompt would close the reply's running actions (closeUnrunActions),
-    // and a second runner would stream into the thread next to the first.
-    if (hasPendingReply(lastTurn)) return REPLY_IN_PROGRESS;
+    const [lastTurn, queue, paused] = await Promise.all([
+      getLastTurn(ctx, threadId),
+      listQueuedPrompts(ctx, threadId),
+      getPausedQueue(ctx, threadId),
+    ]);
+    // Queues while a reply is running, so the prompt doesn't close the
+    // reply's actions (closeUnrunActions) or start a second runner next to
+    // the first. Also queues behind an unpaused queue with prompts in it,
+    // whether an action card is holding it or startNextPrompt is about to
+    // start its next prompt. With a paused queue, the prompt is sent right
+    // away, before the queued ones.
+    const shouldQueue =
+      (await isThreadBusy(ctx, threadId, lastTurn)) ||
+      (queue.length > 0 && paused === null);
+    if (shouldQueue && queue.length >= MAX_QUEUED_PROMPTS) return QUEUE_FULL;
     const prepared = await prepareSend(
       ctx,
       user._id,
@@ -132,16 +166,76 @@ export const sendMessage = mutation({
       attachmentFileIds,
     );
     if ("code" in prepared) return prepared;
-    const { message, attachments } = prepared;
-    // Nothing above writes to the thread, so lastTurn is still current.
-    await closeUnrunActions(ctx, threadId, lastTurn);
+    const { text, message, attachments } = prepared;
     await setThreadStatus(ctx, threadId, "active");
+    if (shouldQueue) {
+      // Leaves the last turn's actions as they are. startNextPrompt starts
+      // nothing while a card waits.
+      await addQueuedPrompt(ctx, {
+        threadId,
+        userId: user._id,
+        prompt: text,
+        attachmentFileIds: attachments.fileIds,
+        timeZone,
+      });
+      return { status: "queued" as const };
+    }
+    // Nothing above writes to the thread's messages, so lastTurn is still
+    // current.
+    await closeUnrunActions(ctx, threadId, lastTurn);
     await sendPrompt(ctx, {
       threadId,
       message,
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
+    return { status: "sent" as const };
+  },
+});
+
+/**
+ * Starts the oldest queued prompt as its own turn, if the thread is free.
+ * streamReply calls this when a reply ends normally. That includes a reply
+ * that paused on action cards, and then this starts nothing. If starting
+ * the prompt throws, streamReply pauses the queue.
+ */
+export const startNextPrompt = internalMutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await startNextQueuedPrompt(ctx, threadId, { resuming: false });
+    return null;
+  },
+});
+
+/**
+ * Unpauses the thread's queue and starts its oldest prompt. Resume on the
+ * queue stack calls this.
+ *
+ * It works after a failed or stopped reply, and after a reply that never
+ * started (isThreadBusy). Throws while a reply is still running or could
+ * still start, and when one of the next prompt's attachments is gone. The
+ * queue stays paused then.
+ */
+export const resumeQueue = mutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    const turn = await getLastTurn(ctx, threadId);
+    if (await isThreadBusy(ctx, threadId, turn)) {
+      throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS_MESSAGE);
+    }
+    await unpauseThreadQueue(ctx, threadId);
+    const started = await startNextQueuedPrompt(ctx, threadId, {
+      resuming: true,
+    });
+    if (started === "attachmentGone") {
+      throw appError(
+        ERROR_CODES.NOT_FOUND,
+        "An attachment in the next prompt is gone. Delete the prompt and queue it again.",
+      );
+    }
     return null;
   },
 });
@@ -242,7 +336,7 @@ async function redoLastTurn(
     throw appError(ERROR_CODES.NO_PROMPT, "There's no prompt in this chat.");
   }
   if (hasPendingReply(turn)) {
-    throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS.message);
+    throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS_MESSAGE);
   }
   await setThreadStatus(ctx, threadId, "active");
 
@@ -289,10 +383,87 @@ async function redoLastTurn(
 }
 
 /**
+ * Starts the thread's oldest queued prompt. It takes the prompt off the
+ * queue, loads its attachments and sends it as sendMessage would. It isn't
+ * counted again, since queueing it counted it.
+ *
+ * Starts nothing while the queue is paused, an action card waits or a
+ * reply is running or could still start (isThreadBusy). Unless `resuming`,
+ * it also pauses the queue after a failed reply, since the runner doesn't
+ * always see the failure. It pauses the queue too if one of the prompt's
+ * attachments is gone, and returns "attachmentGone" then.
+ */
+async function startNextQueuedPrompt(
+  ctx: MutationCtx,
+  threadId: string,
+  { resuming }: { resuming: boolean },
+) {
+  const [next] = await listQueuedPrompts(ctx, threadId);
+  if (!next || (await getPausedQueue(ctx, threadId))) return null;
+  const turn = await getLastTurn(ctx, threadId);
+  if (
+    waitingApprovalIds(turn).length > 0 ||
+    (await isThreadBusy(ctx, threadId, turn))
+  ) {
+    return null;
+  }
+  if (!resuming && turn[0]?.status === "failed") {
+    await pauseThreadQueue(ctx, threadId);
+    return null;
+  }
+  const attachments = await loadPromptAttachments(
+    ctx,
+    next.userId,
+    next.attachmentFileIds,
+  );
+  if ("code" in attachments) {
+    await pauseThreadQueue(ctx, threadId);
+    return "attachmentGone";
+  }
+  await deleteQueuedPromptRows(ctx, next);
+  // No card is waiting, so this cancels nothing the user hasn't seen. It
+  // ends approved actions that never ran, like one in a stopped reply,
+  // which Anthropic needs a result for.
+  await closeUnrunActions(ctx, threadId, turn);
+  await sendPrompt(ctx, {
+    threadId,
+    message: buildPromptMessage(next.prompt, attachments.parts),
+    attachmentFileIds: attachments.fileIds,
+    timeZone: next.timeZone,
+  });
+  return "started";
+}
+
+/**
+ * Whether the thread's last turn still has a reply on its way. That's when
+ * one is running (hasPendingReply), or one could still start
+ * (isReplyInProgress), the user didn't stop it, and REPLY_START_TIMEOUT_MS
+ * hasn't passed. The client shows a stopped turn as over, and a runner that
+ * saw the stop before it started never replies. After the timeout the
+ * client gives up on the reply too (the "timedOut" reply status), so a Send
+ * goes right away and Resume works.
+ *
+ * @param turn The thread's last turn (getLastTurn), newest message first.
+ */
+async function isThreadBusy(
+  ctx: MutationCtx,
+  threadId: string,
+  turn: MessageDoc[],
+) {
+  if (hasPendingReply(turn)) return true;
+  const latest = turn[0];
+  if (!latest || !isReplyInProgress(turn)) return false;
+  if (Date.now() - latest._creationTime >= REPLY_START_TIMEOUT_MS) {
+    return false;
+  }
+  return !(await getStoppedReply(ctx, threadId, latest.order));
+}
+
+/**
  * Saves a prompt and schedules the reply to it (streamReply). startThread,
- * sendMessage and redoLastTurn all send through here. It leaves the last
- * turn's actions as they are. sendMessage closes them first
- * (closeUnrunActions).
+ * sendMessage, startNextQueuedPrompt and redoLastTurn all send through
+ * here. It leaves the last turn's actions as they are. sendMessage and
+ * startNextQueuedPrompt close them first (closeUnrunActions).
  *
  * `attachmentFileIds` are the files the prompt attaches. Saving them with
  * the prompt keeps the Agent from counting them as unused.

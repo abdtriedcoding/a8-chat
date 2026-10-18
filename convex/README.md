@@ -21,9 +21,10 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 ### Chat
 
 - `agents/chat.ts`: the chat model, the Agent and the native tools.
-- `chat/send.ts`: the four Sends, which are `startThread`, `sendMessage`, `editPrompt` and `regenerateReply`.
+- `chat/send.ts`: the four Sends, which are `startThread`, `sendMessage`, `editPrompt` and `regenerateReply`, plus starting and resuming the queue. `sendMessage` queues its prompt while the thread is busy.
 - `chat/reply.ts`: `streamReply`, which writes a reply, and the reply's start and failure.
 - `chat/stop.ts`: stopping a reply, and the text a stopped reply keeps.
+- `chat/queue.ts`: a thread's queued prompts and its paused flag, and editing and deleting them.
 - `chat/approval.ts`: the user's decision on an action card, and when a reply continues.
 - `chat/turns.ts`: reads a thread's turns, such as its last turn and the turn a continuing reply picks up.
 - `chat/messages.ts`: `listThreadMessages`, the thread's messages for the UI.
@@ -51,6 +52,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/guards.ts`: session and ownership checks. See the rules below.
 - `lib/errors.ts`: the error codes and `appError`. See the rules below.
 - `lib/prompt.ts`: prompt and title checks, and the prompt message the model gets.
+- `lib/queue.ts`: the queue's size cap and how long a reply has to start, shared with the client.
 - `lib/attachments.ts`: attachment limits, accepted file types and rejection reasons.
 - `lib/instructions.ts`: the system prompt, and its connector part.
 - `lib/replyFailure.ts`: the reason a failed reply shows.

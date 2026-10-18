@@ -6,6 +6,7 @@ import {
 } from "convex/server";
 import { v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
+import { deleteThreadQueue } from "./chat/queue";
 import {
   internalMutation,
   mutation,
@@ -218,8 +219,8 @@ export async function setThreadStatus(
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
  * the background. This deletes its stoppedReplies and deferredToolThreads
- * rows right away. Its attachments are left unreferenced, and
- * cleanUpUnsentUploads deletes them.
+ * rows and its queue right away. Its attachments, queued ones included, are
+ * left unreferenced, and cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
   args: { threadId: v.string() },
@@ -248,6 +249,7 @@ async function deleteThread(ctx: MutationCtx, threadId: string) {
     .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
     .unique();
   if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
+  await deleteThreadQueue(ctx, threadId);
 }
 
 /** How many of a user's threads one account cleanup transaction deletes. */

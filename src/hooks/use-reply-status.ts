@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 import type { ThreadMessage } from "@/lib/stopped-turns";
-
-// How long to wait for a reply to start before giving up on it.
-const REPLY_TIMEOUT_MS = 60_000;
+import { REPLY_START_TIMEOUT_MS } from "../../convex/lib/queue";
 
 /**
  * Where the reply to the user's latest prompt is:
  * - "waiting": the prompt is saved, but the reply hasn't started.
  * - "continuing": the user decided on the reply's action cards, but the
  *   reply hasn't picked up again.
- * - "timedOut": still no reply after REPLY_TIMEOUT_MS, so it's probably not
- *   coming. Without this, a reply that never starts would block Send for good.
+ * - "timedOut": still no reply after REPLY_START_TIMEOUT_MS, so it's
+ *   probably not coming. Without this, a reply that never starts would keep
+ *   Regenerate and Edit away and hold the queue for good.
  * - "streaming": the reply is being written.
  * - "idle": no reply in progress, or the user stopped it.
  */
@@ -39,7 +38,7 @@ export function useReplyStatus(
     last?.role === "assistant" && last.metadata?.continuing ? last.id : null;
   const timedOut = useTimedOut(
     waitingPromptId ?? continuingReplyId,
-    REPLY_TIMEOUT_MS,
+    REPLY_START_TIMEOUT_MS,
   );
 
   // A stopped turn is over as soon as the user presses Stop, even if the

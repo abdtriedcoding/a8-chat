@@ -1,6 +1,7 @@
 import type { OptimisticLocalStore } from "convex/browser";
 import { insertAtTop } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
 
 /**
@@ -54,4 +55,50 @@ export function optimisticallySendPrompt(
     },
     localQueryStore: localStore,
   });
+}
+
+const OPTIMISTIC_ID_PREFIX = "optimistic-";
+
+/**
+ * Whether the queued prompt is one optimisticallyQueuePrompt shows, which
+ * the server hasn't saved yet, so it can't be edited or deleted.
+ */
+export function isOptimisticQueuedPrompt(id: Id<"queuedPrompts">): boolean {
+  return id.startsWith(OPTIMISTIC_ID_PREFIX);
+}
+
+/**
+ * Shows a prompt at the end of the thread's queue stack before the server
+ * queues it.
+ */
+export function optimisticallyQueuePrompt(
+  localStore: OptimisticLocalStore,
+  {
+    threadId,
+    prompt,
+    attachments,
+  }: { threadId: string; prompt: string; attachments: UploadedAttachment[] },
+) {
+  const queueQuery = api.chat.queue.getQueue;
+  const queue = localStore.getQuery(queueQuery, { threadId });
+  if (!queue) return;
+  localStore.setQuery(
+    queueQuery,
+    { threadId },
+    {
+      ...queue,
+      prompts: [
+        ...queue.prompts,
+        {
+          // Never sent to the server. The stack swaps in the saved prompt
+          // once the Send returns.
+          _id: `${OPTIMISTIC_ID_PREFIX}${crypto.randomUUID()}` as Id<"queuedPrompts">,
+          _creationTime: Date.now(),
+          // The server saves the text trimmed.
+          prompt: prompt.trim(),
+          attachmentCount: attachments.length,
+        },
+      ],
+    },
+  );
 }
