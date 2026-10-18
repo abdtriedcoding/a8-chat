@@ -399,6 +399,68 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "googledrive",
+    name: "Google Drive",
+    handle: "drive",
+    description: "Search Google Drive, and read and edit your Docs, Sheets and Slides.",
+    examplePrompt: "@drive find my most recent doc and summarize it",
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/google.md",
+    // The four servers' tool names don't clash, so none has a toolPrefix.
+    servers: {
+      drive: {
+        tools: {
+          search_files: { kind: "read", label: "Searching Google Drive" },
+          list_recent_files: { kind: "read", label: "Finding recent Drive files" },
+          read_file_content: { kind: "read", label: "Reading a Drive file" },
+          // Creates a Doc, Sheet, Slides deck or folder, picked by its
+          // `contentMimeType`, or uploads content.
+          create_file: {
+            kind: "action",
+            label: "Creating a Drive file",
+            target: ["parentId"],
+          },
+        },
+      },
+      docs: {
+        tools: {
+          read_doc: { kind: "read", label: "Reading a Google Doc" },
+          update_doc: {
+            kind: "action",
+            label: "Editing a Google Doc",
+            target: ["documentId"],
+          },
+        },
+      },
+      sheets: {
+        tools: {
+          get_spreadsheet: { kind: "read", label: "Reading a Google Sheet" },
+          get_values: { kind: "read", label: "Reading Google Sheet cells" },
+          update_values: {
+            kind: "action",
+            label: "Updating Google Sheet cells",
+            target: ["spreadsheetId", "range"],
+          },
+          update_spreadsheet: {
+            kind: "action",
+            label: "Changing a Google Sheet",
+            target: ["spreadsheetId"],
+          },
+        },
+      },
+      slides: {
+        tools: {
+          read_presentation: { kind: "read", label: "Reading Google Slides" },
+          update_presentation: {
+            kind: "action",
+            label: "Editing Google Slides",
+            target: ["presentationId"],
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */

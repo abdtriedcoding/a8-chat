@@ -493,13 +493,15 @@ export async function readAccountLabel(
   if (source?.from !== "tool") return undefined;
   // a8 calls it without asking, so only an allowlisted read qualifies.
   const found = findAllowlistedTool(connector, source.tool);
-  const client = clients.find(({ server }) => server === found?.server);
-  if (found?.tool.kind !== "read" || !client) {
+  if (found?.tool.kind !== "read") {
     console.error(
       `${connector.name}'s account label tool ${source.tool} isn't an allowlisted read.`,
     );
     return undefined;
   }
+  // Its server may have failed to open (withMcpClients).
+  const client = clients.find(({ server }) => server === found.server);
+  if (!client) return undefined;
   try {
     const result = await client.mcp.callTool({
       name: source.tool,

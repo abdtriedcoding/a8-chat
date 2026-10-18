@@ -14,7 +14,11 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { withMcpClients, type ServerClient } from "./lib/connectorAuth";
+import {
+  withMcpClients,
+  withoutFailedServers,
+  type ServerClient,
+} from "./lib/connectorAuth";
 import {
   storedToolList,
   type McpTool,
@@ -35,6 +39,7 @@ const TOOL_LIST_REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 export const vStoredToolList = v.object({
   tools: v.string(),
   estimatedTokens: v.number(),
+  stale: v.optional(v.boolean()),
 });
 
 /**
@@ -158,16 +163,17 @@ export const saveToolList = internalMutation({
 });
 
 /**
- * Stores the connection's tool list, fetched now. Keeps the time a refresh
- * was last requested, so the cooldown still applies.
+ * Stores the connection's tool list, fetched now. A `stale` list is stored
+ * as never fetched, so the next reply asks for a refresh. Keeps the time a
+ * refresh was last requested, so the cooldown still applies.
  */
 export async function writeToolList(
   ctx: MutationCtx,
   connectionId: Id<"connections">,
-  toolList: StoredToolList,
+  { stale, ...toolList }: StoredToolList,
 ) {
   const existing = await findToolList(ctx, connectionId);
-  const row = { ...toolList, fetchedAt: Date.now() };
+  const row = { ...toolList, fetchedAt: stale ? 0 : Date.now() };
   if (existing) {
     await ctx.db.patch("connectionToolLists", existing._id, row);
   } else {
@@ -193,20 +199,26 @@ async function findToolList(ctx: QueryCtx, connectionId: Id<"connections">) {
 
 /**
  * Every tool the connector's MCP servers list, across all pages, as a8
- * stores them (storedToolList). Takes a client for each server
- * (withMcpClients).
+ * stores them (storedToolList). Takes the clients withMcpClients opened. A
+ * server that failed to open or to list is left out (withoutFailedServers),
+ * and the list is `stale`.
  */
-export async function fetchToolList(
+async function fetchToolList(
   connector: Connector,
   clients: ServerClient[],
 ): Promise<StoredToolList> {
-  const listed = await Promise.all(
-    clients.map(async ({ server, mcp }) => ({
-      server,
-      tools: await listAllTools(mcp),
-    })),
+  const listed = withoutFailedServers(
+    await Promise.allSettled(
+      clients.map(async ({ server, mcp }) => ({
+        server,
+        tools: await listAllTools(mcp),
+      })),
+    ),
   );
-  return storedToolList(connector, listed);
+  const toolList = storedToolList(connector, listed);
+  return listed.length < connector.servers.length
+    ? { ...toolList, stale: true }
+    : toolList;
 }
 
 async function listAllTools(client: MCPClient): Promise<McpTool[]> {
