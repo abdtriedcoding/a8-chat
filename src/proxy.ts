@@ -2,9 +2,6 @@ import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/auth-server";
 
-// The auth pages are checked here only, not again in their page.tsx.
-// /reset-password stays open to signed-in users, since a reset link works
-// from any browser.
 const AUTH_PAGES = ["/sign-in", "/sign-up", "/forgot-password"];
 
 export async function proxy(request: NextRequest) {

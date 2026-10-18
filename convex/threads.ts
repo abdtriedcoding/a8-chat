@@ -11,7 +11,6 @@ import {
   mutation,
   query,
   type MutationCtx,
-  type QueryCtx,
 } from "./_generated/server";
 import {
   authorizeThreadAccess,
@@ -73,8 +72,8 @@ const MAX_SEARCH_TERMS = 16;
 const vSearchResult = v.object({
   threadId: v.string(),
   title: v.optional(v.string()),
-  // From the thread's best-matching message, or from its first prompt when
-  // only the title matched. Missing when that prompt has no text.
+  // From the thread's best-matching message. Missing when only the title
+  // matched.
   snippet: v.optional(v.string()),
 });
 
@@ -89,17 +88,13 @@ export const search = query({
   returns: v.array(vSearchResult),
   handler: async (ctx, args) => {
     const user = await optionalUser(ctx);
-    // Convex splits a query into terms at spaces and punctuation, so count
-    // them the same way.
-    const terms = args.query
+    const words = args.query
       .split(/[^\p{L}\p{N}]+/u)
       .filter(Boolean)
-      .slice(0, MAX_SEARCH_TERMS)
-      .join(" ");
+      .slice(0, MAX_SEARCH_TERMS);
+    const terms = words.join(" ");
     if (!user || !terms) return [];
 
-    // Always pass a real userId. Without one, the title search covers every
-    // user's threads.
     const [titleMatches, messageMatches] = await Promise.all([
       ctx.runQuery(components.agent.threads.searchThreadTitles, {
         userId: user._id,
@@ -113,23 +108,18 @@ export const search = query({
       }),
     ]);
 
-    // The first match in each thread is its most relevant one.
     const snippets = new Map<string, string>();
     for (const message of messageMatches) {
       if (message.text && !snippets.has(message.threadId)) {
-        snippets.set(message.threadId, snippetAround(message.text, terms));
+        snippets.set(message.threadId, snippetAround(message.text, words));
       }
     }
 
-    const titled = await Promise.all(
-      titleMatches.map(async (thread) => ({
-        threadId: thread._id,
-        title: thread.title,
-        snippet:
-          snippets.get(thread._id) ??
-          (await firstPromptSnippet(ctx, thread._id, terms)),
-      })),
-    );
+    const titled = titleMatches.map((thread) => ({
+      threadId: thread._id,
+      title: thread.title,
+      snippet: snippets.get(thread._id),
+    }));
     const titleIds = new Set(titleMatches.map((thread) => thread._id));
     const messageOnly = await Promise.all(
       [...snippets]
@@ -144,27 +134,6 @@ export const search = query({
   },
 });
 
-/** A snippet of the thread's first prompt, or undefined if it has no text. */
-async function firstPromptSnippet(
-  ctx: QueryCtx,
-  threadId: string,
-  terms: string,
-) {
-  const {
-    page: [first],
-  } = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
-    threadId,
-    order: "asc",
-    excludeToolMessages: true,
-    paginationOpts: { numItems: 1, cursor: null },
-  });
-  return first?.text ? snippetAround(first.text, terms) : undefined;
-}
-
-/**
- * Renames a thread (checkTitle). A generated title that lands later doesn't
- * replace it, since saveTitle only replaces the placeholder.
- */
 export const rename = mutation({
   args: { threadId: v.string(), title: v.string() },
   returns: v.null(),

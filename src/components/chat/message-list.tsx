@@ -12,38 +12,52 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
-import type { ThreadState } from "@/hooks/use-thread-state";
+import type { ReplyStatus } from "@/hooks/use-reply-status";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCardAnnouncer } from "./action-card";
 import { AssistantMessage, ThinkingMessage } from "./assistant-message";
+import { connectorToolCalls, replyWaitingActions } from "./connector-tool-call";
 import { TurnMarker } from "./turn-marker";
 import { UserMessage } from "./user-message";
 
-/**
- * A thread's messages, oldest first. It follows a streaming reply until the
- * user scrolls up, and keeps its place when earlier messages load.
- */
 export function MessageList({
   messages,
   status,
   onLoadEarlier,
-  threadState: { stopped, replyStatus, replies, promptIds, waitingActions },
+  stopped,
+  replyStatus,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
   onLoadEarlier: () => void;
-  threadState: ThreadState;
+  /**
+   * The orders of the turns the user stopped. A streaming reply carries no
+   * metadata, so this keeps "Stopped" showing while the stream aborts.
+   */
+  stopped: Set<number>;
+  replyStatus: ReplyStatus;
 }) {
   const lastPromptIndex = messages.findLastIndex(
     (message) => message.role === "user",
+  );
+  // Each turn's prompt id, by order. Regenerate saves the prompt again with
+  // a new id, so this tells a regenerated reply from the one it replaces.
+  const promptIds = new Map<number, string>();
+  for (const message of messages) {
+    if (message.role === "user") promptIds.set(message.order, message.id);
+  }
+  const waitingActions = messages.flatMap((message) =>
+    message.role === "assistant"
+      ? replyWaitingActions(
+          connectorToolCalls(message),
+          stopped.has(message.order),
+        )
+      : [],
   );
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="flex-1">
         <MessageScrollerViewport>
-          {/* Outside the content on purpose. The scroller keeps its place
-              when earlier messages load only if the content's first child
-              moves down, and this button would always stay first. */}
           {(status === "CanLoadMore" || status === "LoadingMore") && (
             <div className="mx-auto flex w-full max-w-3xl justify-center px-4 pt-6 pb-2">
               <Button
@@ -63,11 +77,6 @@ export function MessageList({
             aria-busy={replyStatus === "streaming"}
             className="mx-auto w-full max-w-3xl px-4 py-6"
           >
-            {/* React Compiler can't cache the elements made in this map, so
-                UserMessage and AssistantMessage use memo. useStableMessages
-                keeps their props the same objects while a message is
-                unchanged, so on a stream chunk only the streaming reply's
-                message renders again. */}
             {messages.map((message, i) => {
               const lastTurn = i === messages.length - 1;
               if (message.role === "user") {
@@ -92,8 +101,7 @@ export function MessageList({
                   </Fragment>
                 );
               }
-              const reply = replies.get(message.id);
-              if (reply) {
+              if (message.role === "assistant") {
                 // A regenerated reply has the same key as the reply it
                 // replaces, and useSmoothText would go on showing the old
                 // text. Keying the reply on its prompt's id mounts a fresh
@@ -106,7 +114,6 @@ export function MessageList({
                     <AssistantMessage
                       key={replyKey}
                       message={message}
-                      reply={reply}
                       stopped={stopped.has(message.order)}
                       continuing={lastTurn && replyStatus === "continuing"}
                       lastTurn={lastTurn}

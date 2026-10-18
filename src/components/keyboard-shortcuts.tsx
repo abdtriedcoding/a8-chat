@@ -31,10 +31,6 @@ type Shortcut =
   | "copyLastReply"
   | "help";
 
-/**
- * What the open thread lets the shortcuts do. ThreadView sets each one only
- * while it can run.
- */
 export type ThreadShortcuts = {
   stopReply?: () => void;
   editLastPrompt?: () => void;

@@ -9,8 +9,6 @@ export default async function MarketingLayout({
 }: {
   children: ReactNode;
 }) {
-  // Cookie presence only. It sets the header buttons, not access, so a stale
-  // cookie costs nothing and the page skips the Convex token call.
   const signedIn = getSessionCookie(await headers()) !== null;
   return (
     <>

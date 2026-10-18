@@ -10,3 +10,17 @@ export function replyText(message: ThreadMessage): string {
     .flatMap((part) => (part.type === "text" && part.text ? [part.text] : []))
     .join("\n\n");
 }
+
+/**
+ * The text Copy under the last reply copies: none while the reply is still
+ * being written. A stopped reply keeps the text it had.
+ */
+export function lastReplyText(
+  messages: ThreadMessage[],
+  stopped: Set<number>,
+): string {
+  const reply = messages.findLast(({ role }) => role === "assistant");
+  if (!reply) return "";
+  const writing = reply.status === "pending" || reply.status === "streaming";
+  return writing && !stopped.has(reply.order) ? "" : replyText(reply);
+}

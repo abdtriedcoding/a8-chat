@@ -33,8 +33,6 @@ const formSchema = z.object({
 });
 
 export function SignUpForm() {
-  // Set once the form is accepted. It shows the same screen for a new and a
-  // registered email, so the form doesn't reveal which emails have accounts.
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -53,8 +51,6 @@ export function SignUpForm() {
       ...data,
       callbackURL: `${window.location.origin}/chat`,
     });
-    // Better Auth answers a registered email with success when verification
-    // is required. This also covers the older error, in case that changes.
     if (error && error.code !== "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
       form.setError("root", {
         message: error.message ?? "Couldn't create your account. Please try again.",
@@ -114,12 +110,16 @@ export function SignUpForm() {
             name="name"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <FieldLabel htmlFor="sign-up-name">Name</FieldLabel>
                 <Input
                   {...field}
                   id="sign-up-name"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   placeholder="Ada Lovelace"
                   autoComplete="name"
                 />
@@ -133,13 +133,17 @@ export function SignUpForm() {
             name="email"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <FieldLabel htmlFor="sign-up-email">Email</FieldLabel>
                 <Input
                   {...field}
                   id="sign-up-email"
                   type="email"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   placeholder="you@example.com"
                   autoComplete="email"
                 />
@@ -153,12 +157,16 @@ export function SignUpForm() {
             name="password"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <FieldLabel htmlFor="sign-up-password">Password</FieldLabel>
                 <PasswordInput
                   {...field}
                   id="sign-up-password"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   autoComplete="new-password"
                 />
                 <FieldDescription>At least 8 characters.</FieldDescription>

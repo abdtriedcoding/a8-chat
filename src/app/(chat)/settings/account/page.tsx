@@ -4,10 +4,12 @@ import { DeleteAccountCard } from "@/components/settings/delete-account-card";
 import { PasswordCard } from "@/components/settings/password-card";
 import { ProfileCard } from "@/components/settings/profile-card";
 import { SessionsCard } from "@/components/settings/sessions-card";
+import { requireSignedIn } from "@/lib/auth-server";
 
 export const metadata: Metadata = { title: "Account" };
 
-export default function AccountSettingsPage() {
+export default async function AccountSettingsPage() {
+  await requireSignedIn();
   return (
     <>
       <ChatHeader>

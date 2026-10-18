@@ -84,6 +84,17 @@ export function isWaitingForApproval(call: ConnectorToolCall): boolean {
   return call.state === "approval-requested";
 }
 
+/**
+ * The reply's actions whose cards show. A stopped reply can't continue, so
+ * its waiting actions show as rows.
+ */
+export function replyWaitingActions(
+  toolCalls: ConnectorToolCall[],
+  stopped: boolean,
+): ConnectorToolCall[] {
+  return stopped ? [] : toolCalls.filter(isWaitingForApproval);
+}
+
 /** Whether a call failed because its connection needs reconnecting. */
 export function failedNeedingReconnect(call: ConnectorToolCall): boolean {
   return call.state === "output-error" && isReconnectError(call.errorText);

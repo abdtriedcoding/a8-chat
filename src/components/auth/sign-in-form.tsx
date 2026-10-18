@@ -98,13 +98,17 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
             name="email"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <FieldLabel htmlFor="sign-in-email">Email</FieldLabel>
                 <Input
                   {...field}
                   id="sign-in-email"
                   type="email"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   placeholder="you@example.com"
                   autoComplete="email"
                 />
@@ -118,7 +122,10 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
             name="password"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <div className="flex items-center justify-between">
                   <FieldLabel htmlFor="sign-in-password">Password</FieldLabel>
                   <Link
@@ -132,6 +139,7 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
                   {...field}
                   id="sign-in-password"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   autoComplete="current-password"
                 />
                 {fieldState.invalid && (

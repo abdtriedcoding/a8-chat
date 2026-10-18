@@ -1,14 +1,4 @@
-import { useAuthQuery } from "@/hooks/use-auth-query";
-import { api } from "../../convex/_generated/api";
 import type { ConnectorStatus } from "../../convex/connectors";
-
-/**
- * The user's connection status for each catalog connector, in catalog
- * order, or undefined while it loads.
- */
-export function useConnections(): ConnectorStatus[] | undefined {
-  return useAuthQuery(api.connectors.list);
-}
 
 /**
  * Whether the user has a connection to the connector, counting one that

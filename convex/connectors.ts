@@ -234,7 +234,7 @@ async function connectWithoutSignIn(
  * Connectors page with `#finish=<state>&code=<code>` (and `&iss=<iss>` if
  * the vendor sent one) and saves nothing. If the user cancelled or the
  * vendor refused, it deletes the sign-in and redirects with
- * `?error=<ConnectError>`.
+ * `#error=<ConnectError>`.
  */
 export const callback = httpAction(async (ctx, request) => {
   const params = new URL(request.url).searchParams;
@@ -394,14 +394,15 @@ function redirectToConnectors(
     | { error: ConnectError },
 ) {
   const url = new URL("/connectors", env.SITE_URL);
+  let fragment: URLSearchParams;
   if ("finish" in result) {
     const { state, code, iss } = result.finish;
-    const fragment = new URLSearchParams({ finish: state, code });
+    fragment = new URLSearchParams({ finish: state, code });
     if (iss !== undefined) fragment.set("iss", iss);
-    url.hash = fragment.toString();
   } else {
-    url.searchParams.set("error", result.error);
+    fragment = new URLSearchParams({ error: result.error });
   }
+  url.hash = fragment.toString();
   return new Response(null, {
     status: 302,
     headers: { Location: url.href },

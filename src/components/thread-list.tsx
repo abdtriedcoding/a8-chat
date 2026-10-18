@@ -1,23 +1,12 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useConvexAuth, usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { ThreadTitleInput } from "@/components/thread-title-input";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,36 +26,48 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { useAuthPaginatedQuery } from "@/hooks/use-auth-query";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
+import { useConfirm } from "@/hooks/use-confirm";
+import { useRemoveThread } from "@/hooks/use-remove-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
-import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
 
 type Thread = FunctionReturnType<typeof api.threads.list>["page"][number];
 
 const PAGE_SIZE = 30;
-// Fixed widths: SidebarMenuSkeleton picks random ones, which differ between
-// the server render and hydration.
 const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
 
-/** The signed-in user's threads, newest first. */
 export function ThreadList() {
-  const { results, status, loadMore } = useAuthPaginatedQuery(
+  const { isAuthenticated } = useConvexAuth();
+  const { results, status, loadMore } = usePaginatedQuery(
     api.threads.list,
-    {},
+    isAuthenticated ? {} : "skip",
     { initialNumItems: PAGE_SIZE },
   );
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  // Set when Enter or Esc closes a rename, so that row's link takes focus.
-  const refocusId = useRef<string | null>(null);
-  // Kept after the dialog closes, so its text doesn't blank mid-animation.
-  const [target, setTarget] = useState<Thread | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [confirmDialog, confirm] = useConfirm();
+  const router = useRouter();
+  const removeThread = useRemoveThread();
+
+  async function deleteThread(thread: Thread) {
+    const confirmed = await confirm({
+      title: "Delete this chat?",
+      description: (
+        <>
+          &ldquo;{threadTitle(thread)}&rdquo; and all its messages will be
+          deleted. You can&apos;t undo this.
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+      onConfirm: () => removeThread({ threadId: thread._id }),
+    });
+    if (confirmed && thread._id === activeId) router.replace("/chat");
+  }
 
   return (
     <SidebarGroup>
@@ -101,10 +102,7 @@ export function ThreadList() {
                       onSave={(title) =>
                         renameThread({ threadId: thread._id, title })
                       }
-                      onClose={(byKey) => {
-                        refocusId.current = byKey ? thread._id : null;
-                        setRenamingId(null);
-                      }}
+                      onClose={() => setRenamingId(null)}
                       className="bg-background shadow-none"
                     />
                   </SidebarMenuItem>
@@ -114,12 +112,6 @@ export function ThreadList() {
                 <SidebarMenuItem key={thread._id}>
                   <SidebarMenuButton asChild isActive={active}>
                     <Link
-                      ref={(link) => {
-                        if (link && refocusId.current === thread._id) {
-                          refocusId.current = null;
-                          link.focus();
-                        }
-                      }}
                       href={`/c/${thread._id}`}
                       aria-current={active ? "page" : undefined}
                       onClick={closeOnMobile}
@@ -146,10 +138,7 @@ export function ThreadList() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
-                          onSelect={() => {
-                            setTarget(thread);
-                            setConfirming(true);
-                          }}
+                          onSelect={() => void deleteThread(thread)}
                         >
                           <Trash2Icon />
                           Delete
@@ -175,88 +164,7 @@ export function ThreadList() {
           </SidebarMenu>
         )}
       </SidebarGroupContent>
-      <DeleteThreadDialog
-        thread={target}
-        open={confirming}
-        onOpenChange={setConfirming}
-        active={target !== null && target._id === activeId}
-      />
+      {confirmDialog}
     </SidebarGroup>
-  );
-}
-
-function DeleteThreadDialog({
-  thread,
-  open,
-  onOpenChange,
-  active,
-}: {
-  thread: Thread | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  active: boolean;
-}) {
-  const router = useRouter();
-  const [deleting, setDeleting] = useState(false);
-  // Drop the thread from the loaded pages right away. The server deletes
-  // long threads in batches, and the row goes last.
-  const removeThread = useMutation(api.threads.remove).withOptimisticUpdate(
-    (store, { threadId }) => {
-      for (const { args, value } of store.getAllQueries(api.threads.list)) {
-        if (!value) continue;
-        store.setQuery(api.threads.list, args, {
-          ...value,
-          page: value.page.filter((t) => t._id !== threadId),
-        });
-      }
-    },
-  );
-
-  async function confirmDelete() {
-    if (!thread) return;
-    setDeleting(true);
-    try {
-      await removeThread({ threadId: thread._id });
-      onOpenChange(false);
-      if (active) router.replace("/chat");
-    } catch (error) {
-      toast.error(errorMessage(error));
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!deleting) onOpenChange(next);
-      }}
-    >
-      <AlertDialogContent size="sm">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
-          <AlertDialogDescription>
-            &ldquo;{thread ? threadTitle(thread) : ""}&rdquo; and all its
-            messages will be deleted. You can&apos;t undo this.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={deleting}
-            onClick={(event) => {
-              // Stay open until the delete lands, so a failure can show.
-              event.preventDefault();
-              void confirmDelete();
-            }}
-          >
-            {deleting && <Spinner data-icon="inline-start" />}
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

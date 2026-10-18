@@ -179,10 +179,12 @@ export const purgeAccountLimits = internalMutation({
   },
 });
 
+// Reads the user doc, not the token, so a rename shows up right away.
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    return identity;
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) return null;
+    return { name: user.name, email: user.email, image: user.image ?? null };
   },
 });

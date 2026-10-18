@@ -3,12 +3,12 @@ const SNIPPET_LENGTH = 120;
 const LEAD_LENGTH = 30;
 
 /**
- * A short piece of `text` around its first word that starts with a word of
- * `query`, with "…" at each end it cuts. It starts at the beginning when no
+ * A short piece of `text` around its first word that starts with one of
+ * `words`, with "…" at each end it cuts. It starts at the beginning when no
  * word matches. Replies are markdown, so it drops headings, bold, code marks
  * and link URLs, and collapses whitespace.
  */
-export function snippetAround(text: string, query: string): string {
+export function snippetAround(text: string, words: string[]): string {
   const flat = text
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/\[([^\]]*)\]\([^)\s]*\)/g, "$1")
@@ -18,9 +18,7 @@ export function snippetAround(text: string, query: string): string {
     .trim();
   // Convex search matches whole words, or the start of a word for the last
   // term, so look for each query word at the start of a word.
-  const hits = query
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean)
+  const hits = words
     .map((word) => flat.search(new RegExp(`(?<![\\p{L}\\p{N}])${word}`, "iu")))
     .filter((index) => index >= 0);
   const hit = hits.length > 0 ? Math.min(...hits) : 0;

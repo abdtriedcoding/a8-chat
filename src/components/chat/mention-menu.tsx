@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
-import { isConnected } from "@/hooks/use-connections";
+import { isConnected } from "@/lib/connection-status";
 import {
   mentionOptionId,
   type MentionOption,

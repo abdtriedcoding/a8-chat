@@ -1,5 +1,6 @@
 "use client";
 
+import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -14,7 +15,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useAuthQuery } from "@/hooks/use-auth-query";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { threadTitle } from "@/lib/thread-title";
@@ -34,12 +34,6 @@ type ThreadSearchControls = {
 
 const ThreadSearchContext = createContext<ThreadSearchControls | null>(null);
 
-/**
- * The thread search dialog, opened by Cmd/Ctrl+K (see
- * KeyboardShortcutsProvider) or by ThreadSearchButton. It lives outside the
- * sidebar, because on phones the sidebar is a sheet that unmounts when
- * closed. Must be inside SidebarProvider.
- */
 export function ThreadSearchProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -100,12 +94,11 @@ function ThreadSearch({ onSelect }: { onSelect: (threadId: string) => void }) {
   const [input, setInput] = useState("");
   const query = input.trim();
   const debounced = useDebouncedValue(query, DEBOUNCE_MS);
-  // What the server searches for. Clearing the box clears the results at
-  // once, without the debounce.
   const serverQuery = query ? debounced : "";
-  const results = useAuthQuery(
+  const { isAuthenticated } = useConvexAuth();
+  const results = useQuery(
     api.threads.search,
-    serverQuery ? { query: serverQuery } : "skip",
+    isAuthenticated && serverQuery ? { query: serverQuery } : "skip",
   );
   // Keep showing the last results while the next ones load, so the list
   // doesn't blank out on every keystroke.
@@ -117,7 +110,6 @@ function ThreadSearch({ onSelect }: { onSelect: (threadId: string) => void }) {
   const settled = results !== undefined && debounced === query;
 
   return (
-    // The server already matched the results, so cmdk mustn't filter them.
     <Command shouldFilter={false}>
       <CommandInput
         value={input}

@@ -1,57 +1,59 @@
 "use client";
 
-import { useAction, useConvexAuth } from "convex/react";
+import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { isConnected, useConnections } from "@/hooks/use-connections";
+import { isConnected } from "@/lib/connection-status";
 import { CONNECT_TOAST_ID, showConnectResult } from "@/lib/connect-result";
 import { readConnectReturn } from "@/lib/connect-return";
 import { searchConnectors } from "@/lib/connector-search";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectResult } from "../../../convex/connectors";
 import {
+  CONNECT_ERRORS,
   CONNECTOR_VIEWS,
   type ConnectError,
 } from "../../../convex/lib/connectorView";
 import { ConnectorCard } from "./connector-card";
 
-/** Why the sign-in callback's redirect says the sign-in ended early, if it did. */
-export type CallbackParams = { error: ConnectError } | undefined;
-
 /** What the callback's redirect put in the URL fragment. */
-type Finish = { state: string; code: string; iss?: string };
+type Callback =
+  | { finish: { state: string; code: string; iss?: string } }
+  | { error: ConnectError };
 
 /** Reads the fragment, then removes it so the code leaves the URL and history. */
-function takeFinishFromHash(): Finish | null {
+function takeCallbackFromHash(): Callback | null {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const error = CONNECT_ERRORS.find((code) => code === fragment.get("error"));
   const state = fragment.get("finish");
   const code = fragment.get("code");
-  if (state === null || code === null) return null;
-  window.history.replaceState(null, "", window.location.pathname);
-  return { state, code, iss: fragment.get("iss") ?? undefined };
+  let callback: Callback | null = null;
+  if (error) callback = { error };
+  else if (state !== null && code !== null) {
+    callback = {
+      finish: { state, code, iss: fragment.get("iss") ?? undefined },
+    };
+  }
+  if (callback) {
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+  return callback;
 }
 
-/**
- * The catalog with the user's connection status, under a search box that
- * filters by name or handle. Cards with a connection, including ones that
- * need reconnecting, go under Connected and the rest under Available.
- * Until the query loads, every card renders from the catalog in one list
- * with no heading.
- */
-export function ConnectorList({
-  callbackParams,
-}: {
-  callbackParams: CallbackParams;
-}) {
-  const connections = useConnections();
-  useFinishSignIn(callbackParams);
+export function ConnectorList() {
+  const { isAuthenticated } = useConvexAuth();
+  const connections = useQuery(
+    api.connectors.list,
+    isAuthenticated ? {} : "skip",
+  );
+  useFinishSignIn();
   const [search, setSearch] = useState("");
 
   const cards = searchConnectors(CONNECTOR_VIEWS, search).map((connector) => ({
@@ -119,43 +121,37 @@ export function ConnectorList({
 
 /**
  * Finishes the sign-in the callback sent the user back with, or shows why
- * it ended early. The code comes from the URL fragment, which is cleared
- * on load. A sign-in started on another page goes back there once it
- * connects (ConnectReturn).
+ * it ended early. Waits for Convex auth, since finishConnect only finishes
+ * a sign-in for the signed-in user who started it. A sign-in started on
+ * another page goes back there once it connects (ConnectReturn).
  */
-function useFinishSignIn(callbackParams: CallbackParams) {
+function useFinishSignIn() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
-  // finishConnect deletes the sign-in, so a second call would report it
-  // expired. React can run an effect twice in development, and the first run
-  // clears the fragment, so the second must keep what the first read.
-  const finish = useRef<Finish | null>(null);
-  const handledError = useRef<CallbackParams>(undefined);
-
-  useEffect(() => {
-    finish.current ??= takeFinishFromHash();
-  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    if (callbackParams && handledError.current !== callbackParams) {
-      handledError.current = callbackParams;
-      router.replace("/connectors");
-      showConnectResult(callbackParams);
+    // Taking the fragment clears it, so a second run, like React's in
+    // development, finds nothing and can't call finishConnect twice.
+    const callback = takeCallbackFromHash();
+    if (!callback) return;
+    if ("error" in callback) {
+      showConnectResult(callback);
+      return;
     }
-    const pending = finish.current;
-    if (!pending) return;
-    finish.current = null;
     toast.loading("Connecting…", { id: CONNECT_TOAST_ID });
-    void finishConnect(pending)
+    void finishConnect(callback.finish)
       .catch((): ConnectResult => ({ error: "failed" }))
       .then((result) => {
         showConnectResult(result);
         const started = readConnectReturn();
-        if ("connected" in result && started?.connectorId === result.connected) {
+        if (
+          "connected" in result &&
+          started?.connectorId === result.connected
+        ) {
           router.replace(started.path);
         }
       });
-  }, [callbackParams, isAuthenticated, router, finishConnect]);
+  }, [isAuthenticated, router, finishConnect]);
 }

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useConnectConnector } from "@/hooks/use-connect-connector";
-import { isConnected } from "@/hooks/use-connections";
+import { isConnected } from "@/lib/connection-status";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";

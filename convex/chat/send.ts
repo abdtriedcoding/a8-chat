@@ -87,7 +87,6 @@ export const startThread = mutation({
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
-    // Runs next to the first reply. Later prompts don't get a title.
     await ctx.scheduler.runAfter(0, internal.titles.generateTitle, {
       threadId,
       userId: user._id,

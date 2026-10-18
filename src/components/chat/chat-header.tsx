@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ThreadTitleInput } from "@/components/thread-title-input";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -40,8 +40,6 @@ export function ThreadHeading({
 }) {
   const [editing, setEditing] = useState(false);
   const renameThread = useRenameThread();
-  // Set when Enter or Esc closes the editor, so the title takes focus back.
-  const refocus = useRef(false);
 
   return (
     <h1 className="min-w-0 flex-1 text-sm font-medium">
@@ -49,22 +47,13 @@ export function ThreadHeading({
         <ThreadTitleInput
           title={title}
           onSave={(next) => renameThread({ threadId, title: next })}
-          onClose={(byKey) => {
-            refocus.current = byKey;
-            setEditing(false);
-          }}
+          onClose={() => setEditing(false)}
           className="max-w-md"
         />
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              ref={(button) => {
-                if (button && refocus.current) {
-                  refocus.current = false;
-                  button.focus();
-                }
-              }}
               type="button"
               onClick={() => setEditing(true)}
               className="block h-8 max-w-full truncate rounded-md border border-transparent px-2 text-left outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"

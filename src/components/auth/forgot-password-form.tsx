@@ -37,8 +37,6 @@ export function ForgotPasswordForm() {
       email: data.email,
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    // Better Auth answers the same for known and unknown emails. Only a
-    // failed request, such as a rate limit, shows an error.
     if (error) {
       form.setError("root", {
         message: error.message ?? "Couldn't send the link. Please try again.",
@@ -91,13 +89,17 @@ export function ForgotPasswordForm() {
             name="email"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <FieldLabel htmlFor="forgot-password-email">Email</FieldLabel>
                 <Input
                   {...field}
                   id="forgot-password-email"
                   type="email"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   placeholder="you@example.com"
                   autoComplete="email"
                 />

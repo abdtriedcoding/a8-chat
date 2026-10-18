@@ -1,3 +1,4 @@
+import { useConvexAuth, useQuery } from "convex/react";
 import {
   useId,
   useRef,
@@ -6,8 +7,9 @@ import {
   type SyntheticEvent,
 } from "react";
 import { flushSync } from "react-dom";
-import { isConnected, useConnections } from "@/hooks/use-connections";
+import { isConnected } from "@/lib/connection-status";
 import { searchConnectors } from "@/lib/connector-search";
+import { api } from "../../convex/_generated/api";
 import type { ConnectorStatus } from "../../convex/connectors";
 import {
   CONNECTOR_VIEWS,
@@ -47,7 +49,8 @@ export function useComposerMentions({
   text: string;
   setText: (text: string) => void;
 }) {
-  const statuses = useConnections();
+  const { isAuthenticated } = useConvexAuth();
+  const statuses = useQuery(api.connectors.list, isAuthenticated ? {} : "skip");
   const connectors = statuses && withStatus(statuses);
   const [mention, setMention] = useState<MentionQuery>();
   // The start of a mention Esc closed, so its menu stays closed while the

@@ -10,13 +10,15 @@ import {
   MessageContent,
   MessageFooter,
 } from "@/components/ui/message";
-import type { ReplyParts } from "@/hooks/use-thread-state";
+import { replyText } from "@/lib/reply-text";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ActionCard } from "./action-card";
 import {
   ConnectorToolRow,
+  connectorToolCalls,
   failedNeedingReconnect,
   isRunning,
+  replyWaitingActions,
 } from "./connector-tool-call";
 import { CopyReplyButton } from "./copy-reply-button";
 import { Markdown } from "./markdown";
@@ -34,13 +36,11 @@ import {
 
 export const AssistantMessage = memo(function AssistantMessage({
   message,
-  reply: { text, toolCalls, waitingActions, toolRows },
-  stopped,
+  stopped = false,
   continuing = false,
   lastTurn = false,
 }: {
   message: ThreadMessage;
-  reply: ReplyParts;
   /** Whether the user stopped this reply. */
   stopped?: boolean;
   /**
@@ -52,6 +52,11 @@ export const AssistantMessage = memo(function AssistantMessage({
   lastTurn?: boolean;
 }) {
   const { regenerate } = useThreadActionsContext();
+  const text = replyText(message);
+  const toolCalls = connectorToolCalls(message);
+  const waitingActions = replyWaitingActions(toolCalls, stopped);
+  // Every call without a card shows as a row.
+  const toolRows = toolCalls.filter((call) => !waitingActions.includes(call));
   const [visibleText, { isStreaming }] = useSmoothText(text, {
     startStreaming: message.status === "streaming",
   });

@@ -1,10 +1,6 @@
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
-/**
- * The threads.rename mutation. The new title shows in the sidebar and the
- * header right away, and goes back if the server refuses it.
- */
 export function useRenameThread() {
   return useMutation(api.threads.rename).withOptimisticUpdate(
     (store, { threadId, title }) => {

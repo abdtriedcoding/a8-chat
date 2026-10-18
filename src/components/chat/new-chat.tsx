@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { LogoMark } from "@/components/icons/logo-mark";
@@ -11,7 +12,9 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
-import { useStartThread } from "@/hooks/use-start-thread";
+import { throwIfRefused } from "@/lib/errors";
+import { api } from "../../../convex/_generated/api";
+import { browserTimeZone } from "../../../convex/lib/timeZone";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 
@@ -23,22 +26,22 @@ function caretToEnd(textarea: HTMLTextAreaElement | null) {
   textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
 }
 
-/**
- * The new-chat page: sending the first message creates the thread. `prompt`
- * starts in the composer, unsent.
- */
 export function NewChat({ prompt }: { prompt?: string }) {
   const router = useRouter();
-  const startThread = useStartThread();
-  // Creating the thread, then navigating to it: the composer stays off
-  // through both, until the thread page takes over.
+  const startThread = useMutation(api.chat.send.startThread);
   const [starting, setStarting] = useState(false);
   const [navigating, startNavigation] = useTransition();
 
   async function send(prompt: string, attachments: UploadedAttachment[]) {
     setStarting(true);
     try {
-      const threadId = await startThread(prompt, attachments);
+      const { threadId } = throwIfRefused(
+        await startThread({
+          prompt,
+          attachmentFileIds: attachments.map(({ fileId }) => fileId),
+          timeZone: browserTimeZone(),
+        }),
+      );
       startNavigation(() => router.push(`/c/${threadId}`));
     } finally {
       setStarting(false);
@@ -61,7 +64,6 @@ export function NewChat({ prompt }: { prompt?: string }) {
           </EmptyHeader>
         </Empty>
         <Composer
-          // Keyed, so leaving /chat?prompt=… for /chat empties the box.
           key={prompt}
           initialText={prompt}
           textareaRef={caretToEnd}

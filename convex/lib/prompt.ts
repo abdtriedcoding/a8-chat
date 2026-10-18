@@ -5,7 +5,7 @@ import { appError, ERROR_CODES } from "./errors";
 const MAX_PROMPT_LENGTH = 16_000;
 const MAX_TITLE_LENGTH = 60;
 // Longer than a generated title, so a rename has room.
-const MAX_RENAME_LENGTH = 80;
+export const MAX_RENAME_LENGTH = 80;
 
 /**
  * A prompt's text, trimmed. Throws if it's too long, or blank when the
@@ -75,7 +75,6 @@ export function checkTitle(title: string): string {
   if (!text) {
     throw appError(ERROR_CODES.INVALID_TITLE, "Type a title first.");
   }
-  // Count code points, like titleFromPrompt.
   if (Array.from(text).length > MAX_RENAME_LENGTH) {
     throw appError(
       ERROR_CODES.INVALID_TITLE,
@@ -91,15 +90,11 @@ export function checkTitle(title: string): string {
  */
 export function titleFromPrompt(prompt: string): string {
   const text = prompt.replace(/\s+/g, " ").trim();
-  // Count code points, not UTF-16 units, so the cut never splits an emoji
-  // into a lone surrogate (Convex rejects strings that aren't valid Unicode).
   const chars = Array.from(text);
   if (chars.length <= MAX_TITLE_LENGTH) return text;
 
   const head = chars.slice(0, MAX_TITLE_LENGTH + 1).join("");
   const lastSpace = head.lastIndexOf(" ");
-  // Only cut at a word boundary when it keeps most of the text; one long
-  // word (a URL, say) is cut mid-word instead.
   const cut =
     lastSpace >= MAX_TITLE_LENGTH / 2
       ? head.slice(0, lastSpace)

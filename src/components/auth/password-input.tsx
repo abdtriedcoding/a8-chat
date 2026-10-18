@@ -21,6 +21,7 @@ export function PasswordInput(props: Omit<ComponentProps<"input">, "type">) {
           size="icon-xs"
           aria-label="Show password"
           aria-pressed={visible}
+          disabled={props.disabled}
           onClick={() => setVisible((v) => !v)}
         >
           {visible ? <EyeOffIcon /> : <EyeIcon />}

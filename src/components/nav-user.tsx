@@ -1,5 +1,6 @@
 "use client";
 
+import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
   ChevronsUpDownIcon,
@@ -29,7 +30,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuthQuery } from "@/hooks/use-auth-query";
 import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/initials";
 import { api } from "../../convex/_generated/api";
@@ -38,19 +38,9 @@ type CurrentUser = NonNullable<
   FunctionReturnType<typeof api.auth.getCurrentUser>
 >;
 
-/**
- * The signed-in user, with a menu for the theme, the shortcuts help, and
- * signing out.
- */
 export function NavUser() {
-  const identity = useAuthQuery(api.auth.getCurrentUser);
-  // The identity comes from the Convex token, which keeps the old name until
-  // it refreshes. The session updates as soon as the name is saved.
-  const { data: session } = authClient.useSession();
-  const user =
-    identity && session
-      ? { ...identity, name: session.user.name }
-      : identity;
+  const { isAuthenticated } = useConvexAuth();
+  const user = useQuery(api.auth.getCurrentUser, isAuthenticated ? {} : "skip");
   const { isMobile } = useSidebar();
   const openShortcutsHelp = useOpenShortcutsHelp();
 
@@ -83,7 +73,6 @@ export function NavUser() {
     );
   }
 
-  // The session ended while the page was open.
   if (user === null) {
     return (
       <SidebarMenu>
@@ -154,7 +143,7 @@ function UserProfile({ user }: { user: CurrentUser }) {
   return (
     <>
       <Avatar>
-        {user.pictureUrl && <AvatarImage src={user.pictureUrl} alt="" />}
+        {user.image && <AvatarImage src={user.image} alt="" />}
         <AvatarFallback>{initials(user)}</AvatarFallback>
       </Avatar>
       <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">

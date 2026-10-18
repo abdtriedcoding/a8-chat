@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
 import { ChatHeader } from "@/components/chat/chat-header";
-import {
-  ConnectorList,
-  type CallbackParams,
-} from "@/components/connectors/connector-list";
-import {
-  CONNECT_ERRORS,
-  type ConnectError,
-} from "../../../../convex/lib/connectorView";
+import { ConnectorList } from "@/components/connectors/connector-list";
+import { requireSignedIn } from "@/lib/auth-server";
 
 export const metadata: Metadata = { title: "Connectors" };
 
-export default async function ConnectorsPage(props: PageProps<"/connectors">) {
+export default async function ConnectorsPage() {
+  await requireSignedIn();
   return (
     <>
       <ChatHeader>
@@ -23,24 +18,10 @@ export default async function ConnectorsPage(props: PageProps<"/connectors">) {
             Connect the apps you work in, and a8 can search, read and write in
             them.
           </p>
-          <ConnectorList
-            callbackParams={parseCallbackParams(await props.searchParams)}
-          />
+          <ConnectorList />
         </div>
       </div>
     </>
   );
 }
 
-/** The sign-in callback's redirect adds `?error=<code>` if the sign-in ended early. */
-function parseCallbackParams(
-  params: Record<string, string | string[] | undefined>,
-): CallbackParams {
-  const { error } = params;
-  if (isConnectError(error)) return { error };
-  return undefined;
-}
-
-function isConnectError(value: unknown): value is ConnectError {
-  return CONNECT_ERRORS.some((error) => error === value);
-}

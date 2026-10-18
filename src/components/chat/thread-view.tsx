@@ -1,6 +1,7 @@
 "use client";
 
 import { useUIMessages } from "@convex-dev/agent/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -16,11 +17,16 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuthQuery, useSkipUntilSignedIn } from "@/hooks/use-auth-query";
+import { useDecideAction } from "@/hooks/use-decide-action";
+import { useEditPrompt } from "@/hooks/use-edit-prompt";
+import { useRegenerateReply } from "@/hooks/use-regenerate-reply";
+import { useSendPrompt } from "@/hooks/use-send-prompt";
+import { useReplyStatus } from "@/hooks/use-reply-status";
 import { useStableMessages } from "@/hooks/use-stable-messages";
-import { useThreadActions } from "@/hooks/use-thread-actions";
-import { useThreadState } from "@/hooks/use-thread-state";
+import { useStopReply } from "@/hooks/use-stop-reply";
 import { errorMessage } from "@/lib/errors";
+import { lastReplyText } from "@/lib/reply-text";
+import { stoppedTurns } from "@/lib/stopped-turns";
 import { api } from "../../../convex/_generated/api";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
@@ -30,7 +36,11 @@ import { ThreadActionsProvider } from "./thread-actions-context";
 const PAGE_SIZE = 20;
 
 export function ThreadView({ threadId }: { threadId: string }) {
-  const thread = useAuthQuery(api.threads.get, { threadId });
+  const { isAuthenticated } = useConvexAuth();
+  const thread = useQuery(
+    api.threads.get,
+    isAuthenticated ? { threadId } : "skip",
+  );
 
   const {
     results: rawMessages,
@@ -38,16 +48,26 @@ export function ThreadView({ threadId }: { threadId: string }) {
     loadMore,
   } = useUIMessages(
     api.chat.messages.listThreadMessages,
-    // A missing thread has no messages to fetch.
-    useSkipUntilSignedIn(thread === null ? "skip" : { threadId }),
+    isAuthenticated && thread !== null ? { threadId } : "skip",
     { initialNumItems: PAGE_SIZE, stream: true },
   );
 
-  const { send, stop, regenerate, edit, decide } = useThreadActions(threadId);
+  const send = useSendPrompt(threadId);
+  const stop = useStopReply(threadId);
+  const regenerate = useRegenerateReply(threadId);
+  const edit = useEditPrompt(threadId);
+  const decide = useDecideAction(threadId);
 
   const messages = useStableMessages(rawMessages);
-  const threadState = useThreadState(messages);
-  const { replyInProgress, canRedoLastTurn, lastReplyText } = threadState;
+  const stopped = stoppedTurns(messages);
+  const replyStatus = useReplyStatus(messages, stopped);
+  const replyInProgress =
+    replyStatus === "waiting" ||
+    replyStatus === "continuing" ||
+    replyStatus === "streaming";
+  // A stopped turn counts as done, and so does a reply that timed out.
+  const canRedoLastTurn = messages.length > 0 && !replyInProgress;
+  const copyableText = lastReplyText(messages, stopped);
 
   // Whether the last prompt's editor is open. It closes when the prompt
   // can't be edited anymore, for example when another tab sends a new prompt.
@@ -77,8 +97,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
     editLastPrompt: canRedoLastTurn
       ? () => changeEditingLastPrompt(true, true)
       : undefined,
-    copyLastReply: lastReplyText
-      ? () => void copyReply(lastReplyText)
+    copyLastReply: copyableText
+      ? () => void copyReply(copyableText)
       : undefined,
   });
 
@@ -127,7 +147,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
             messages={messages}
             status={status}
             onLoadEarlier={() => loadMore(PAGE_SIZE)}
-            threadState={threadState}
+            stopped={stopped}
+            replyStatus={replyStatus}
           />
         </ThreadActionsProvider>
       )}

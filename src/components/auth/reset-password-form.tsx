@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -38,14 +38,13 @@ export function ResetPasswordForm({
   linkError?: string;
 }) {
   const router = useRouter();
-  // Keeps the button busy while the redirect to sign-in settles.
-  const [done, setDone] = useState(false);
+  const [navigating, startNavigation] = useTransition();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: { password: "" },
   });
-  const pending = form.formState.isSubmitting || done;
+  const pending = form.formState.isSubmitting || navigating;
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     if (!token) return;
@@ -62,8 +61,9 @@ export function ResetPasswordForm({
       });
       return;
     }
-    setDone(true);
-    router.replace("/sign-in");
+    startNavigation(() => {
+      router.replace("/sign-in");
+    });
   }
 
   if (!token || linkError) {
@@ -110,12 +110,16 @@ export function ResetPasswordForm({
             name="password"
             control={form.control}
             render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
+              <Field
+                data-invalid={fieldState.invalid}
+                data-disabled={pending}
+              >
                 <FieldLabel htmlFor="reset-password">New password</FieldLabel>
                 <PasswordInput
                   {...field}
                   id="reset-password"
                   aria-invalid={fieldState.invalid}
+                  disabled={pending}
                   autoComplete="new-password"
                 />
                 <FieldDescription>At least 8 characters.</FieldDescription>

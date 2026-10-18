@@ -35,7 +35,6 @@ export function GoogleButton({
       callbackURL: "/chat",
       errorCallbackURL: "/sign-in",
     });
-    // On success the browser is already on its way to Google.
     if (error) {
       onError(error.message ?? "Couldn't start Google sign-in. Please try again.");
       setPending(false);

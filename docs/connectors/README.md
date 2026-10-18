@@ -85,7 +85,7 @@ A server key names the server in stored tool lists, so never change it. A connec
 
 - `findMentions`, which finds the connectors a prompt mentions. The composer and the reply both use it.
 - `modelToolName`, the model's name for an MCP tool, and `findConnectorTool`, the connector, label and target behind a model's tool name. A reply's tool rows and action cards use `findConnectorTool`.
-- `CONNECT_ERRORS`, the reasons a sign-in can end without connecting. The callback puts one in `?error=`, and `finishConnect` returns one.
+- `CONNECT_ERRORS`, the reasons a sign-in can end without connecting. The callback puts one in the URL fragment as `#error=`, and `finishConnect` returns one.
 - `RECONNECT_ERROR_CODE`, `NEEDS_RECONNECT`. When a connector tool fails because its connection needs reconnecting, its error text starts with this code, and the reply shows a Reconnect chip for that call. Saved replies hold the code, so never change it.
 
 ## The probe
