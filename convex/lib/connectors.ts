@@ -160,6 +160,29 @@ type CatalogConnector = Connector & { id: ConnectorId };
 const GOOGLE_CALENDAR_EVENTS = "https://www.googleapis.com/auth/calendar.events";
 const GOOGLE_CALENDAR_LIST =
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
+const GMAIL_COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
+
+/**
+ * What every Google connector shares, since one OAuth client from the
+ * deployment's own Google Cloud project serves them all (ADR 0007).
+ */
+const GOOGLE_ACCESS = {
+  signIn: {
+    kind: "preRegistered",
+    credentials: () => ({
+      clientId: env.GOOGLE_MCP_CLIENT_ID,
+      clientSecret: env.GOOGLE_MCP_CLIENT_SECRET,
+    }),
+    tokenEndpoint: "https://oauth2.googleapis.com/token",
+  },
+  // Google gives a refresh token only with both (ADR 0007).
+  authorizeParams: { access_type: "offline", prompt: "consent" },
+} satisfies Pick<ConnectorAccess<string>, "signIn" | "authorizeParams">;
+const GOOGLE_AUTH_ORIGINS = [
+  "https://accounts.google.com",
+  "https://oauth2.googleapis.com",
+];
 
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
@@ -239,22 +262,9 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
         url: "https://calendarmcp.googleapis.com/mcp/v1",
       },
     },
-    pinnedOrigins: [
-      "https://calendarmcp.googleapis.com",
-      "https://accounts.google.com",
-      "https://oauth2.googleapis.com",
-    ],
-    signIn: {
-      kind: "preRegistered",
-      credentials: () => ({
-        clientId: env.GOOGLE_MCP_CLIENT_ID,
-        clientSecret: env.GOOGLE_MCP_CLIENT_SECRET,
-      }),
-      tokenEndpoint: "https://oauth2.googleapis.com/token",
-    },
+    ...GOOGLE_ACCESS,
+    pinnedOrigins: ["https://calendarmcp.googleapis.com", ...GOOGLE_AUTH_ORIGINS],
     scopes: [GOOGLE_CALENDAR_EVENTS, GOOGLE_CALENDAR_LIST],
-    // Google gives a refresh token only with both (ADR 0007).
-    authorizeParams: { access_type: "offline", prompt: "consent" },
     toolScopes: {
       list_calendars: GOOGLE_CALENDAR_LIST,
       list_events: GOOGLE_CALENDAR_EVENTS,
@@ -272,6 +282,35 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       tool: "list_events",
       arguments: { calendarId: "primary", pageSize: 1 },
       field: "summary",
+    },
+  },
+  gmail: {
+    servers: {
+      gmail: {
+        url: "https://gmailmcp.googleapis.com/mcp/v1",
+      },
+    },
+    ...GOOGLE_ACCESS,
+    pinnedOrigins: ["https://gmailmcp.googleapis.com", ...GOOGLE_AUTH_ORIGINS],
+    scopes: [GMAIL_READONLY, GMAIL_COMPOSE],
+    toolScopes: {
+      search_threads: GMAIL_READONLY,
+      get_thread: GMAIL_READONLY,
+      get_message: GMAIL_READONLY,
+      list_drafts: GMAIL_READONLY,
+      get_draft: GMAIL_READONLY,
+      list_labels: GMAIL_READONLY,
+      create_draft: GMAIL_COMPOSE,
+    },
+    // No Gmail tool returns the account's address, but every draft's sender
+    // is the account. A sent thread's first message can be someone else's.
+    // Until the account has a draft there's no label, and each tool list
+    // refresh tries again.
+    accountLabel: {
+      from: "tool",
+      tool: "list_drafts",
+      arguments: { pageSize: 1, view: "DRAFT_VIEW_METADATA_ONLY" },
+      field: "drafts.0.sender",
     },
   },
 };
