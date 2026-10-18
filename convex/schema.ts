@@ -46,6 +46,34 @@ export default defineSchema({
   deferredToolThreads: defineTable({
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
+  // A thread's queued prompts (convex/chat/queue.ts), oldest first by
+  // creation time. sendMessage adds one while a reply is running or the
+  // queue isn't paused, and startNextPrompt (convex/chat/send.ts) removes
+  // it when it starts. sendMessage checks the text and counts the Send
+  // before it adds the row.
+  queuedPrompts: defineTable({
+    threadId: v.string(),
+    userId: v.string(),
+    prompt: v.string(),
+    attachmentFileIds: v.array(v.string()),
+    // The browser's time zone when the prompt was queued, unchecked.
+    timeZone: v.optional(v.string()),
+  }).index("by_threadId", ["threadId"]),
+  // One row per file a queued prompt attaches, so cleanUpUnsentUploads can
+  // look a file up and keep it while the prompt waits. An array field can't
+  // be indexed.
+  queuedPromptFiles: defineTable({
+    queuedPromptId: v.id("queuedPrompts"),
+    fileId: v.string(),
+  })
+    .index("by_queuedPromptId", ["queuedPromptId"])
+    .index("by_fileId", ["fileId"]),
+  // One row per paused queue. Stop and a failed reply add it, Resume
+  // deletes it, and so does deleting the last queued prompt, since an empty
+  // queue is never paused.
+  pausedQueues: defineTable({
+    threadId: v.string(),
+  }).index("by_threadId", ["threadId"]),
   // Who uploaded each file in the Agent's files table
   // (convex/attachments/upload.ts). A Send only takes files the user has a row
   // for here. Users who upload the same file share its Agent row, so a file

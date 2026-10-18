@@ -1,4 +1,4 @@
-import { abortStream } from "@convex-dev/agent";
+import { abortStream, type MessageDoc } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../_generated/server";
 import { authorizeThreadAccess } from "../lib/guards";
 import { isAwaitingContinuation } from "./approval";
+import { pauseThreadQueue } from "./queue";
 import { getLastTurn, listTurnUpTo } from "./turns";
 
 /** The reason we give abortStream when the user presses Stop. */
@@ -36,13 +37,16 @@ const LAST_RETRY_MS = 8000;
  * every 100 ms, so changing the message here would clash with it. The runner
  * cleans up the reply itself after the abort (settleStop).
  *
- * Does nothing if the reply has already finished.
+ * It also pauses the thread's queue, so its prompts don't start right after
+ * a reply the user stopped. Beyond that, it does nothing if the reply has
+ * already finished.
  */
 export const stopReply = mutation({
   args: { threadId: v.string() },
   returns: v.null(),
   handler: async (ctx, { threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
+    await pauseThreadQueue(ctx, threadId);
 
     const order = await getOrderInProgress(ctx, threadId);
     if (order === null) return null;
@@ -111,6 +115,12 @@ export const settleStop = internalMutation({
   returns: v.null(),
   handler: async (ctx, { threadId, promptMessageId, order }) => {
     if (!(await getStoppedReply(ctx, threadId, order))) return null;
+    // A prompt sent after the Stop, while the reply was still running, was
+    // queued. This starts it now that the reply is over. Prompts queued
+    // before the Stop wait, since stopReply paused their queue.
+    await ctx.scheduler.runAfter(0, internal.chat.send.startNextPrompt, {
+      threadId,
+    });
     // After a regenerate or an edit deletes this prompt, the same order
     // belongs to a new turn, and that turn can have its own stop.
     // listTurnUpTo returns null then, so the new reply stays as it is.
@@ -146,18 +156,29 @@ export async function getStoppedReply(
 
 /**
  * The order of the turn whose reply is still coming, or null if no reply
- * is. It's still coming if the newest message is a pending reply, or the
- * runner hasn't saved anything since the user's prompt or their decisions
- * on action cards.
+ * is (isReplyInProgress).
  */
 async function getOrderInProgress(ctx: QueryCtx, threadId: string) {
   const turn = await getLastTurn(ctx, threadId);
   const latest = turn[0];
-  const inProgress =
+  return latest && isReplyInProgress(turn) ? latest.order : null;
+}
+
+/**
+ * Whether the turn's reply is still coming. It is if the newest message is
+ * a pending reply, or the runner hasn't saved anything since the user's
+ * prompt or their decisions on action cards. Stop and the queue both go by
+ * this.
+ *
+ * @param turn The thread's last turn (getLastTurn), newest message first.
+ */
+export function isReplyInProgress(turn: MessageDoc[]): boolean {
+  const latest = turn[0];
+  return (
     latest?.status === "pending" ||
     latest?.message?.role === "user" ||
-    isAwaitingContinuation(turn);
-  return latest && inProgress ? latest.order : null;
+    isAwaitingContinuation(turn)
+  );
 }
 
 /** Aborts the turn's reply stream. False if it has none streaming. */

@@ -30,8 +30,10 @@ import { MentionMenu } from "./mention-menu";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
- * is set, a Stop button shows in place of Send. `initialText` is read on
- * mount only, so give the box a new key to start it with other text.
+ * is set, a Stop button shows next to Send. `disabled` turns Send off with
+ * a spinner, for a Send in flight, and `sendDisabled` turns it off without
+ * one. `initialText` is read on mount only, so give the box a new key to
+ * start it with other text.
  *
  * When the current model accepts files, they can be attached with the
  * attach button, by pasting them into the box, or by dropping them on the
@@ -51,6 +53,7 @@ export function Composer({
   onSend,
   onStop,
   disabled = false,
+  sendDisabled = false,
   autoFocus = false,
   textareaRef,
   className,
@@ -59,6 +62,7 @@ export function Composer({
   onSend: (prompt: string, attachments: UploadedAttachment[]) => Promise<void>;
   onStop?: () => Promise<void>;
   disabled?: boolean;
+  sendDisabled?: boolean;
   autoFocus?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   className?: string;
@@ -87,6 +91,7 @@ export function Composer({
   const allUploadsDone = uploadedAttachments.length === attachments.length;
   const canSend =
     !disabled &&
+    !sendDisabled &&
     allUploadsDone &&
     mentions.canSend &&
     (text.trim() !== "" || attachments.length > 0);
@@ -256,11 +261,10 @@ export function Composer({
               <TooltipContent>Attach files</TooltipContent>
             </Tooltip>
           )}
-          {/* Stop and Send share this spot, so keyboard focus stays put when one replaces the other. */}
-          {onStop ? (
+          {onStop && (
             <InputGroupButton
               type="button"
-              variant="default"
+              variant="outline"
               size="icon-sm"
               className="ml-auto"
               onClick={() => void stop()}
@@ -268,18 +272,17 @@ export function Composer({
               <SquareIcon className="fill-current" />
               <span className="sr-only">Stop</span>
             </InputGroupButton>
-          ) : (
-            <InputGroupButton
-              type="submit"
-              variant="default"
-              size="icon-sm"
-              className="ml-auto"
-              disabled={!canSend}
-            >
-              {disabled ? <Spinner /> : <ArrowUpIcon />}
-              <span className="sr-only">Send</span>
-            </InputGroupButton>
           )}
+          <InputGroupButton
+            type="submit"
+            variant="default"
+            size="icon-sm"
+            className={onStop ? undefined : "ml-auto"}
+            disabled={!canSend}
+          >
+            {disabled ? <Spinner /> : <ArrowUpIcon />}
+            <span className="sr-only">Send</span>
+          </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
     </form>

@@ -38,7 +38,9 @@ const REPLY_TIME_LIMIT_MS = 8 * 60 * 1000;
 /**
  * Gets the model's reply to a prompt and streams its text into the thread
  * as it arrives. sendPrompt schedules it, and decideAction schedules it
- * again to continue a reply that paused on action cards.
+ * again to continue a reply that paused on action cards. Once the reply
+ * ends, it starts the thread's next queued prompt, and once it fails, it
+ * pauses the queue.
  */
 export const streamReply = internalAction({
   args: {
@@ -72,6 +74,10 @@ export const streamReply = internalAction({
     // word, while the Agent saves the final text, fails the reply without
     // this. That reply keeps its text on screen, but the model doesn't see it.
     let aborted = false;
+    // Set when the reply ended normally, which includes pausing on action
+    // cards. The runner then calls startNextPrompt. A runner that returned
+    // early, failed or was stopped doesn't.
+    let endedNormally = false;
     try {
       // Null if the user pressed Stop first, a regenerate or an edit
       // replaced this turn, or a new prompt came after the action cards
@@ -150,6 +156,7 @@ export const streamReply = internalAction({
       // We need to make sure the stream finishes - by awaiting each chunk
       // or using this call to consume it all.
       await result.consumeStream();
+      endedNormally = !aborted;
     } catch (error) {
       // The Agent fails the reply it saved when the model call fails. If
       // the error came before it saved one, the client would wait 60
@@ -163,6 +170,13 @@ export const streamReply = internalAction({
         .catch((saveError: unknown) =>
           console.error("Couldn't save the failed reply", saveError),
         );
+      // The queue's next prompt would follow a broken answer, and with the
+      // API down it would fail too.
+      await ctx
+        .runMutation(internal.chat.queue.pauseQueue, { threadId })
+        .catch((pauseError: unknown) =>
+          console.error("Couldn't pause the queue", pauseError),
+        );
       throw error;
     } finally {
       await replyTools?.close();
@@ -172,6 +186,17 @@ export const streamReply = internalAction({
           promptMessageId,
           order,
         });
+      } else if (endedNormally) {
+        // A queue that didn't start its next prompt and isn't paused would
+        // wait with nothing to start it, and no Resume to show.
+        await ctx
+          .runMutation(internal.chat.send.startNextPrompt, { threadId })
+          .catch(async (startError: unknown) => {
+            console.error("Couldn't start the next queued prompt", startError);
+            await ctx.runMutation(internal.chat.queue.pauseQueue, {
+              threadId,
+            });
+          });
       }
     }
   },

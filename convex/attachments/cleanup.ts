@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
+import { isQueuedFile } from "../chat/queue";
 import { UPLOAD_GRANT_MAX_AGE_MS } from "./upload";
 
 /**
@@ -21,8 +22,8 @@ const CLEANUP_BATCH_SIZE = 100;
 const ROW_DELETE_BATCH_SIZE = 10;
 
 /**
- * Deletes uploads that were never sent: files no message references, and
- * that nothing has touched for 24 hours. It pages the Agent's
+ * Deletes uploads that were never sent: files no message or queued prompt
+ * references, and that nothing has touched for 24 hours. It pages the Agent's
  * getFilesToDelete, so it reads only unused files. For each file it deletes
  * the Agent's row, the storage object (the Agent's delete leaves it), and
  * the file's attachments rows.
@@ -65,11 +66,17 @@ async function cleanUpUploadsBatch(ctx: MutationCtx, cursor: string | null) {
     { paginationOpts: { numItems: CLEANUP_BATCH_SIZE, cursor } },
   );
 
+  // A queued prompt holds its files however long it waits, though no
+  // message references them yet.
+  const queued = await Promise.all(
+    page.map((file) => isQueuedFile(ctx, file._id)),
+  );
+  const unqueued = page.filter((_, index) => !queued[index]);
   // deleteFiles checks the refcount and the 24 hours again, and returns the
   // files it deleted. Only those lose their storage object and rows.
   const deletedFileIds = new Set(
     await ctx.runMutation(components.agent.files.deleteFiles, {
-      fileIds: page.map((file) => file._id),
+      fileIds: unqueued.map((file) => file._id),
     }),
   );
   for (const file of page) {

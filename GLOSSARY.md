@@ -30,6 +30,18 @@ _Avoid_: cancelled reply, aborted reply
 A reply that picks up again once the user has approved or cancelled every action card in it. It's the same reply, so it isn't a send.
 _Avoid_: continuation, resumed reply
 
+**Queued prompt**:
+A prompt the user sent while a reply was still running, waiting in line to start its own turn. Queued prompts start oldest first, each once the thread is free. The model doesn't see one until it starts.
+_Avoid_: pending message, queued message, draft
+
+**Queue**:
+A thread's queued prompts, oldest first. It holds while an action card waits, and goes on by itself once every card is decided.
+_Avoid_: backlog, outbox
+
+**Paused queue**:
+A queue that waits for the user to resume it, after a Stop or a failed reply. A send while the queue is paused skips ahead of it.
+_Avoid_: stopped queue, held queue
+
 **Turn**:
 One prompt together with its reply.
 _Avoid_: exchange, round
@@ -39,7 +51,7 @@ A file (an image or a PDF) sent with a prompt.
 _Avoid_: upload, file
 
 **Send**:
-Any user action that asks the model for a new reply: a new prompt, an edited prompt, or a regenerated reply. The send rate limits count sends. Web searches and connector tool calls have limits of their own.
+Any user action that asks the model for a new reply: a new prompt, an edited prompt, or a regenerated reply. The send rate limits count sends, and count a queued prompt when it's queued. Web searches and connector tool calls have limits of their own.
 _Avoid_: request, message (as a unit of usage)
 
 ### Apps
@@ -97,7 +109,7 @@ A tool call that writes to or deletes from an app, like sending an email. Every 
 _Avoid_: write, operation, mutation
 
 **Action card**:
-The preview of an action waiting in a reply, showing the app, the target and the content, where the user approves or cancels it. A new prompt sent while a card is waiting cancels that action.
+The preview of an action waiting in a reply, showing the app, the target and the content, where the user approves or cancels it. A new prompt sent while a card is waiting cancels that action, unless the queue is holding for the card. Then the prompt joins the queue.
 _Avoid_: approval request, pending action (in UI copy), confirmation
 
 **Decision**:

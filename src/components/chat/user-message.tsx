@@ -1,28 +1,19 @@
 "use client";
 
 import { PencilIcon } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { memo } from "react";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea,
-} from "@/components/ui/input-group";
 import { Message, MessageContent } from "@/components/ui/message";
-import { Spinner } from "@/components/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { errorMessage } from "@/lib/errors";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { getAttachmentKind } from "../../../convex/lib/attachments";
-import { checkPrompt } from "../../../convex/lib/prompt";
 import { SentImageThumbnail, SentPdfChip } from "./attachments";
+import { PromptEditor } from "./prompt-editor";
 import { useThreadActionsContext } from "./thread-actions-context";
 
 /**
@@ -111,95 +102,3 @@ export const UserMessage = memo(function UserMessage({
     </Message>
   );
 });
-
-/**
- * Edits a prompt's text. Enter saves, Shift+Enter adds a line, and Esc
- * cancels. Saving the same text cancels too, so it doesn't ask for a new
- * reply.
- */
-function PromptEditor({
-  text,
-  attachmentCount,
-  onSave,
-  onCancel,
-}: {
-  text: string;
-  attachmentCount: number;
-  onSave: (prompt: string) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [draft, setDraft] = useState(text);
-  const [saving, setSaving] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Opens with the cursor after the text.
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }, []);
-
-  async function save() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      // The server runs the same check. Running it here first refuses a
-      // blank edit without a failed call, which the Convex client would log
-      // as a console error.
-      const prompt = checkPrompt(draft, attachmentCount);
-      if (prompt === text) onCancel();
-      else await onSave(prompt);
-    } catch (error) {
-      toast.error(errorMessage(error));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    // The padding makes room for the focus ring. The list item paints
-    // nothing outside itself (content-visibility: auto).
-    <form
-      className="w-full p-1"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
-      <InputGroup>
-        <InputGroupTextarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              onCancel();
-            } else if (
-              // Skip while an IME is composing: its Enter confirms a word.
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              void save();
-            }
-          }}
-          rows={1}
-          aria-label="Edit message"
-          className="max-h-52 min-h-11 px-3 pt-3"
-        />
-        <InputGroupAddon align="block-end" className="justify-end">
-          <InputGroupButton size="sm" onClick={onCancel}>
-            Cancel
-          </InputGroupButton>
-          <InputGroupButton type="submit" variant="default" size="sm">
-            {saving && <Spinner data-icon="inline-start" />}
-            Save
-          </InputGroupButton>
-        </InputGroupAddon>
-      </InputGroup>
-    </form>
-  );
-}

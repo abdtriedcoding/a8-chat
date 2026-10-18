@@ -10,6 +10,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "connectorView",
   "errors",
   "prompt",
+  "queue",
   "timeZone",
 ];
 
