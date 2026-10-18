@@ -26,6 +26,11 @@ export type StoredToolList = {
   tools: string;
   /** About how many tokens the tools' definitions take (estimateToolTokens). */
   estimatedTokens: number;
+  /**
+   * The list lacks a server that failed to list its tools, so it's due for
+   * a refresh as soon as it's stored (writeToolList).
+   */
+  stale?: boolean;
 };
 
 /** The longest description a8 stores, in characters. */

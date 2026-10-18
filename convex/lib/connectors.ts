@@ -184,6 +184,12 @@ const GOOGLE_AUTH_ORIGINS = [
   "https://oauth2.googleapis.com",
 ];
 
+const GOOGLE_DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly";
+const GOOGLE_DRIVE_FILE = "https://www.googleapis.com/auth/drive.file";
+const GOOGLE_DOCS = "https://www.googleapis.com/auth/documents";
+const GOOGLE_SHEETS = "https://www.googleapis.com/auth/spreadsheets";
+const GOOGLE_SLIDES = "https://www.googleapis.com/auth/presentations";
+
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
     servers: {
@@ -311,6 +317,57 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       tool: "list_drafts",
       arguments: { pageSize: 1, view: "DRAFT_VIEW_METADATA_ONLY" },
       field: "drafts.0.sender",
+    },
+  },
+  googledrive: {
+    servers: {
+      drive: { url: "https://drivemcp.googleapis.com/mcp/v1" },
+      docs: { url: "https://docsmcp.googleapis.com/mcp/v1" },
+      sheets: { url: "https://sheetsmcp.googleapis.com/mcp/v1" },
+      slides: { url: "https://slidesmcp.googleapis.com/mcp/v1" },
+    },
+    ...GOOGLE_ACCESS,
+    pinnedOrigins: [
+      "https://drivemcp.googleapis.com",
+      "https://docsmcp.googleapis.com",
+      "https://sheetsmcp.googleapis.com",
+      "https://slidesmcp.googleapis.com",
+      ...GOOGLE_AUTH_ORIGINS,
+    ],
+    scopes: [
+      GOOGLE_DRIVE_READONLY,
+      GOOGLE_DRIVE_FILE,
+      GOOGLE_DOCS,
+      GOOGLE_SHEETS,
+      GOOGLE_SLIDES,
+    ],
+    // All four servers take drive.readonly for reads, so a user who unticks
+    // an editing scope keeps every read.
+    toolScopes: {
+      search_files: GOOGLE_DRIVE_READONLY,
+      list_recent_files: GOOGLE_DRIVE_READONLY,
+      read_file_content: GOOGLE_DRIVE_READONLY,
+      create_file: GOOGLE_DRIVE_FILE,
+      read_doc: GOOGLE_DRIVE_READONLY,
+      update_doc: GOOGLE_DOCS,
+      get_spreadsheet: GOOGLE_DRIVE_READONLY,
+      get_values: GOOGLE_DRIVE_READONLY,
+      update_values: GOOGLE_SHEETS,
+      update_spreadsheet: GOOGLE_SHEETS,
+      read_presentation: GOOGLE_DRIVE_READONLY,
+      update_presentation: GOOGLE_SLIDES,
+    },
+    // No Drive tool says who the account is, but each file names its
+    // owner's email. A user who owns no files gets no label.
+    accountLabel: {
+      from: "tool",
+      tool: "search_files",
+      arguments: {
+        query: "owner = 'me'",
+        pageSize: 1,
+        excludeContentSnippets: true,
+      },
+      field: "files.0.owner",
     },
   },
 };

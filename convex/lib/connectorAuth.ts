@@ -345,27 +345,58 @@ async function createClient(
 export type ServerClient = { server: ConnectorServer; mcp: MCPClient };
 
 /**
- * Opens an MCP client to each of the connector's servers, in order, with
- * `accessToken` (openMcpClient), and passes them to `run`. Closes every client it opened once `run` ends or a
- * server fails to open.
+ * Opens an MCP client to each of the connector's servers with
+ * `accessToken` (openMcpClient), and passes the ones that opened to `run`,
+ * in server order. A server that fails to open is left out, as
+ * withoutFailedServers says. Closes every client it opened once `run` ends.
  */
 export async function withMcpClients<T>(
   connector: Connector,
   accessToken: string | undefined,
   run: (clients: ServerClient[]) => Promise<T>,
 ): Promise<T> {
-  const clients: ServerClient[] = [];
+  const opened = await Promise.allSettled(
+    connector.servers.map(async (server) => ({
+      server,
+      mcp: await openMcpClient(connector, server, accessToken),
+    })),
+  );
   try {
-    for (const server of connector.servers) {
-      clients.push({
-        server,
-        mcp: await openMcpClient(connector, server, accessToken),
-      });
-    }
-    return await run(clients);
+    return await run(withoutFailedServers(opened));
   } finally {
-    await Promise.allSettled(clients.map(async ({ mcp }) => await mcp.close()));
+    await Promise.allSettled(
+      opened.map(async (result) => {
+        if (result.status === "fulfilled") await result.value.mcp.close();
+      }),
+    );
   }
+}
+
+/**
+ * The results of one step run on each of a connector's servers, like
+ * opening a client, without the servers it failed on. One server that's
+ * down, or whose API the deployer turned off, then doesn't take the
+ * connector's other servers with it. Throws the first failure if the
+ * vendor refused the token with a 401, which withAccessToken answers with a
+ * token refresh, or if the step failed on every server.
+ */
+export function withoutFailedServers<T>(
+  results: PromiseSettledResult<T>[],
+): T[] {
+  const failures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason as unknown] : [],
+  );
+  const expired = failures.find((error) => refusedStatus(error) === 401);
+  if (expired !== undefined) throw expired;
+  if (failures.length > 0 && failures.length === results.length) {
+    throw failures[0];
+  }
+  for (const error of failures) {
+    console.error("An MCP server failed, so a8 left it out", error);
+  }
+  return results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
 }
 
 /**

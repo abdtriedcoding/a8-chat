@@ -1,6 +1,6 @@
 # Setting up Google
 
-a8 reaches Google Calendar and Gmail through Google's own MCP servers (ADR 0007). Google has no dynamic registration, so each deployment signs in through an OAuth client from its own Google Cloud project. Both connectors share that client. Until the deployment has its ID and secret, the Google Calendar and Gmail cards on the Connectors page say "Not set up" and have no toggle.
+a8 reaches Google Calendar, Gmail and Google Drive through Google's own MCP servers (ADR 0007). Google Drive uses four of them, for Drive, Docs, Sheets and Slides, under one sign-in. Google has no dynamic registration, so each deployment signs in through an OAuth client from its own Google Cloud project. All three connectors share that client. Until the deployment has its ID and secret, the Google cards on the Connectors page say "Not set up" and have no toggle.
 
 Google's MCP servers are in the Google Workspace Developer Preview. Pre-GA terms bar users outside the deployer's Google Workspace organization, so this guide sets up an Internal consent screen, and only accounts in that organization can connect.
 
@@ -10,10 +10,16 @@ Enroll the Google Cloud project in the [Google Workspace Developer Preview Progr
 
 ## 2. Turn on the APIs
 
-In the project, turn on the Google Calendar and Gmail APIs and their MCP APIs:
+In the project, turn on each app's API and its MCP API. For Google Calendar and Gmail:
 
 ```bash
 gcloud services enable calendar-json.googleapis.com calendarmcp.googleapis.com gmail.googleapis.com gmailmcp.googleapis.com --project=<project-id>
+```
+
+For Google Drive:
+
+```bash
+gcloud services enable drive.googleapis.com drivemcp.googleapis.com docs.googleapis.com docsmcp.googleapis.com sheets.googleapis.com sheetsmcp.googleapis.com slides.googleapis.com slidesmcp.googleapis.com --project=<project-id>
 ```
 
 ## 3. Set up the consent screen
@@ -22,13 +28,22 @@ In Google Auth Platform:
 
 1. Under Branding, set the app name to a8 and add a support email.
 2. Under Audience, pick Internal.
-3. Under Data Access, add these scopes:
+3. Under Data Access, add the scopes of each connector you turn on. Google Calendar:
    - `https://www.googleapis.com/auth/calendar.events`
    - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
+
+   Gmail:
    - `https://www.googleapis.com/auth/gmail.readonly`
    - `https://www.googleapis.com/auth/gmail.compose`
 
-Google Calendar asks for the two calendar scopes and Gmail for the two Gmail ones. A user can untick any of them on the consent screen. a8 then loads only the tools whose scope was granted, and the card says "Some permissions missing" with a Reconnect button.
+   Google Drive:
+   - `https://www.googleapis.com/auth/drive.readonly`
+   - `https://www.googleapis.com/auth/drive.file`
+   - `https://www.googleapis.com/auth/documents`
+   - `https://www.googleapis.com/auth/spreadsheets`
+   - `https://www.googleapis.com/auth/presentations`
+
+Each connector asks for exactly its own scopes. A user can untick any of them on the consent screen. a8 then loads only the tools whose scope was granted, and the card says "Some permissions missing" with a Reconnect button. Google Drive's reads all need only `drive.readonly`, so unticking an editing scope, like `documents`, keeps every read and drops that app's edits.
 
 ## 4. Create the OAuth client
 
@@ -47,7 +62,7 @@ npx convex env set GOOGLE_MCP_CLIENT_ID <client id>
 npx convex env set GOOGLE_MCP_CLIENT_SECRET <client secret>
 ```
 
-Add `--prod` for the production deployment. These are separate from `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, which sign users in to a8 itself. Reload the Connectors page and the Google Calendar and Gmail cards get their toggles.
+Add `--prod` for the production deployment. These are separate from `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, which sign users in to a8 itself. Reload the Connectors page and the Google cards get their toggles.
 
 ## What a8 does with it
 
@@ -55,7 +70,8 @@ Add `--prod` for the production deployment. These are separate from `GOOGLE_CLIE
 - The connection stores the scopes Google granted, read from the token response.
 - Disconnecting revokes the refresh token at `https://oauth2.googleapis.com/revoke`.
 - Gmail's server has no send tool. a8 writes a draft, and the user sends it from Gmail. No Gmail tool returns the account's address, so the Gmail card takes it from the sender of the account's newest draft. Until the account has a draft, the card shows no account.
+- No Drive tool returns the account's address either, so the Google Drive card takes it from the owner of a file the account owns. An account that owns no files shows no account.
 
 ## Screening tool results
 
-Google's MCP documentation warns about indirect prompt injection, where an event's description or an email carries instructions for the model, and asks clients to screen what goes to and from the server. a8 wraps every connector tool result in an `<untrusted-data>` tag before the model sees it, and its system prompt tells the model never to follow instructions inside that tag (`convex/lib/connectorTools.ts`, `convex/lib/instructions.ts`). Every tool that changes the calendar, like creating or deleting an event, waits for the user to approve its action card. So does Gmail's draft tool.
+Google's MCP documentation warns about indirect prompt injection, where an event's description, an email or a file's text carries instructions for the model, and asks clients to screen what goes to and from the server. a8 wraps every connector tool result in an `<untrusted-data>` tag before the model sees it, and its system prompt tells the model never to follow instructions inside that tag (`convex/lib/connectorTools.ts`, `convex/lib/instructions.ts`). Every tool that changes the calendar or a file, like deleting an event or editing a Doc, waits for the user to approve its action card. So does Gmail's draft tool.
