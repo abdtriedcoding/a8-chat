@@ -197,7 +197,8 @@ export const sendMessage = mutation({
  * Starts the oldest queued prompt as its own turn, if the thread is free.
  * streamReply calls this when a reply ends normally. That includes a reply
  * that paused on action cards, and then this starts nothing. If starting
- * the prompt throws, streamReply pauses the queue.
+ * the prompt throws, streamReply pauses the queue. settleStop schedules it
+ * too, for a prompt sent while a stopped reply was still running.
  */
 export const startNextPrompt = internalMutation({
   args: { threadId: v.string() },
@@ -390,7 +391,8 @@ async function redoLastTurn(
  * Starts nothing while the queue is paused, an action card waits or a
  * reply is running or could still start (isThreadBusy). Unless `resuming`,
  * it also pauses the queue after a failed reply, since the runner doesn't
- * always see the failure. It pauses the queue too if one of the prompt's
+ * always see the failure. A stopped reply with no text is saved as failed
+ * too, and doesn't pause it. It pauses the queue too if one of the prompt's
  * attachments is gone, and returns "attachmentGone" then.
  */
 async function startNextQueuedPrompt(
@@ -407,7 +409,12 @@ async function startNextQueuedPrompt(
   ) {
     return null;
   }
-  if (!resuming && turn[0]?.status === "failed") {
+  const latest = turn[0];
+  if (
+    !resuming &&
+    latest?.status === "failed" &&
+    !(await getStoppedReply(ctx, threadId, latest.order))
+  ) {
     await pauseThreadQueue(ctx, threadId);
     return null;
   }
