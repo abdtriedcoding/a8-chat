@@ -1,6 +1,6 @@
 # Setting up Google
 
-a8 reaches Google Calendar, Gmail, Google Drive, Google Docs and Google Sheets through Google's own MCP servers (ADR 0007). Google Drive uses four of them, for Drive, Docs, Sheets and Slides, under one sign-in. Google Docs uses two, Drive and Docs, and Google Sheets uses Drive and Sheets. Google has no dynamic registration, so each deployment signs in through an OAuth client from its own Google Cloud project. All five connectors share that client. Until the deployment has its ID and secret, the Google cards on the Connectors page say "Not set up" and have no toggle.
+a8 reaches Google Calendar, Gmail, Google Drive, Google Docs, Google Sheets and Google Slides through Google's own MCP servers (ADR 0007). Google Drive uses four of them, for Drive, Docs, Sheets and Slides, under one sign-in. Google Docs uses two, Drive and Docs. Google Sheets uses Drive and Sheets, and Google Slides uses Drive and Slides. Google has no dynamic registration, so each deployment signs in through an OAuth client from its own Google Cloud project. All six connectors share that client. Until the deployment has its ID and secret, the Google cards on the Connectors page say "Not set up" and have no toggle.
 
 Google's MCP servers are in the Google Workspace Developer Preview. Pre-GA terms bar users outside the deployer's Google Workspace organization, so this guide sets up an Internal consent screen, and only accounts in that organization can connect.
 
@@ -34,6 +34,12 @@ For Google Sheets alone:
 gcloud services enable drive.googleapis.com drivemcp.googleapis.com sheets.googleapis.com sheetsmcp.googleapis.com --project=<project-id>
 ```
 
+For Google Slides alone:
+
+```bash
+gcloud services enable drive.googleapis.com drivemcp.googleapis.com slides.googleapis.com slidesmcp.googleapis.com --project=<project-id>
+```
+
 ## 3. Set up the consent screen
 
 In Google Auth Platform:
@@ -65,7 +71,12 @@ In Google Auth Platform:
    - `https://www.googleapis.com/auth/drive.file`
    - `https://www.googleapis.com/auth/spreadsheets`
 
-Each connector asks for exactly its own scopes. A user can untick any of them on the consent screen. a8 then loads only the tools whose scope was granted, and the card says "Some permissions missing" with a Reconnect button. The reads of Google Drive, Google Docs and Google Sheets all need only `drive.readonly`, so unticking an editing scope, like `documents`, keeps every read and drops that app's edits.
+   Google Slides:
+   - `https://www.googleapis.com/auth/drive.readonly`
+   - `https://www.googleapis.com/auth/drive.file`
+   - `https://www.googleapis.com/auth/presentations`
+
+Each connector asks for exactly its own scopes. A user can untick any of them on the consent screen. a8 then loads only the tools whose scope was granted, and the card says "Some permissions missing" with a Reconnect button. The reads of Google Drive, Google Docs, Google Sheets and Google Slides all need only `drive.readonly`, so unticking an editing scope, like `documents`, keeps every read and drops that app's edits.
 
 ## 4. Create the OAuth client
 
@@ -92,8 +103,8 @@ Add `--prod` for the production deployment. These are separate from `GOOGLE_CLIE
 - The connection stores the scopes Google granted, read from the token response.
 - Disconnecting revokes the refresh token at `https://oauth2.googleapis.com/revoke`.
 - Gmail's server has no send tool. a8 writes a draft, and the user sends it from Gmail. No Gmail tool returns the account's address, so the Gmail card takes it from the sender of the account's newest draft. Until the account has a draft, the card shows no account.
-- No Drive tool returns the account's address either, so the Google Drive, Google Docs and Google Sheets cards take it from the owner of a file the account owns. An account that owns no files shows no account.
-- Google Docs' server only reads and edits a doc by its ID. The Google Docs connector finds docs with Drive's `search_files` and `list_recent_files`, and creates or copies one with Drive's `create_file` and `copy_file`. Google Sheets' server is the same, and the Google Sheets connector uses the same four Drive tools.
+- No Drive tool returns the account's address either, so the Google Drive, Google Docs, Google Sheets and Google Slides cards take it from the owner of a file the account owns. An account that owns no files shows no account.
+- Google Docs' server only reads and edits a doc by its ID. The Google Docs connector finds docs with Drive's `search_files` and `list_recent_files`, and creates or copies one with Drive's `create_file` and `copy_file`. Google Sheets' and Google Slides' servers are the same, and their connectors use the same four Drive tools.
 
 ## Screening tool results
 

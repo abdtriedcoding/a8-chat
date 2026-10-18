@@ -425,6 +425,31 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
     },
     accountLabel: DRIVE_FILE_OWNER,
   },
+  googleslides: {
+    servers: {
+      drive: { url: "https://drivemcp.googleapis.com/mcp/v1" },
+      slides: { url: "https://slidesmcp.googleapis.com/mcp/v1" },
+    },
+    ...GOOGLE_ACCESS,
+    pinnedOrigins: [
+      "https://drivemcp.googleapis.com",
+      "https://slidesmcp.googleapis.com",
+      ...GOOGLE_AUTH_ORIGINS,
+    ],
+    scopes: [GOOGLE_DRIVE_READONLY, GOOGLE_DRIVE_FILE, GOOGLE_SLIDES],
+    // As in Google Drive, every read needs only drive.readonly.
+    toolScopes: {
+      search_files: GOOGLE_DRIVE_READONLY,
+      list_recent_files: GOOGLE_DRIVE_READONLY,
+      create_file: GOOGLE_DRIVE_FILE,
+      copy_file: GOOGLE_DRIVE_FILE,
+      read_presentation: GOOGLE_DRIVE_READONLY,
+      read_slide_page: GOOGLE_DRIVE_READONLY,
+      read_slide_page_thumbnail: GOOGLE_DRIVE_READONLY,
+      update_presentation: GOOGLE_SLIDES,
+    },
+    accountLabel: DRIVE_FILE_OWNER,
+  },
 };
 
 /**

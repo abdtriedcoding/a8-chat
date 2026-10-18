@@ -557,6 +557,52 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "googleslides",
+    name: "Google Slides",
+    handle: "slides",
+    description: "Find, read and edit your Google Slides, and create new ones.",
+    examplePrompt: "@slides find my latest deck and list each slide's title",
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/google.md",
+    // Slides' server only reads and edits a deck by its ID, so Drive's
+    // server finds and creates decks.
+    servers: {
+      drive: {
+        tools: {
+          search_files: { kind: "read", label: "Searching Google Slides" },
+          list_recent_files: { kind: "read", label: "Finding recent Google Slides" },
+          // Makes a blank deck when `contentMimeType` is a Google Slides deck's.
+          create_file: {
+            kind: "action",
+            label: "Creating a Google Slides deck",
+            target: ["parentId"],
+          },
+          copy_file: {
+            kind: "action",
+            label: "Copying a Google Slides deck",
+            target: ["fileId", "parentId"],
+          },
+        },
+      },
+      slides: {
+        tools: {
+          read_presentation: { kind: "read", label: "Reading Google Slides" },
+          read_slide_page: { kind: "read", label: "Reading a Google Slides slide" },
+          // Returns a link to a PNG of the slide, with its size.
+          read_slide_page_thumbnail: {
+            kind: "read",
+            label: "Getting a Google Slides thumbnail",
+          },
+          update_presentation: {
+            kind: "action",
+            label: "Editing Google Slides",
+            target: ["presentationId"],
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */
