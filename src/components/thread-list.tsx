@@ -2,10 +2,16 @@
 
 import { useConvexAuth, usePaginatedQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { MoreHorizontalIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import {
+  ArchiveIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
+  Trash2Icon,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ThreadTitleInput } from "@/components/thread-title-input";
 import {
   DropdownMenu,
@@ -30,6 +36,8 @@ import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useConfirm } from "@/hooks/use-confirm";
 import { useRemoveThread } from "@/hooks/use-remove-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
+import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
+import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
 
@@ -52,6 +60,27 @@ export function ThreadList() {
   const [confirmDialog, confirm] = useConfirm();
   const router = useRouter();
   const removeThread = useRemoveThread();
+  const setThreadArchived = useSetThreadArchived();
+
+  async function archiveThread(thread: Thread) {
+    const threadId = thread._id;
+    try {
+      await setThreadArchived({ threadId, archived: true });
+    } catch (error) {
+      toast.error(errorMessage(error));
+      return;
+    }
+    toast.success(`Archived “${threadTitle(thread)}”.`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setThreadArchived({ threadId, archived: false }).catch(
+            (error: unknown) => toast.error(errorMessage(error)),
+          );
+        },
+      },
+    });
+  }
 
   async function deleteThread(thread: Thread) {
     const confirmed = await confirm({
@@ -84,7 +113,7 @@ export function ThreadList() {
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
-        ) : results.length === 0 ? (
+        ) : results.length === 0 && status === "Exhausted" ? (
           <Empty className="p-4">
             <EmptyDescription>
               No chats yet. The ones you start show up here.
@@ -135,6 +164,12 @@ export function ThreadList() {
                         >
                           <PencilIcon />
                           Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => void archiveThread(thread)}
+                        >
+                          <ArchiveIcon />
+                          Archive
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"

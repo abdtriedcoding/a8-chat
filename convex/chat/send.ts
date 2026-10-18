@@ -18,6 +18,7 @@ import {
 } from "../lib/prompt";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { limitSend, vRateLimited } from "../rateLimits";
+import { setThreadStatus } from "../threads";
 import { closeUnrunActions } from "./approval";
 import { getStoppedReply } from "./stop";
 import { getLastTurn, hasPendingReply } from "./turns";
@@ -36,6 +37,9 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 // startThread and sendMessage load their attachments before the rate limits
 // (prepareSend), and sendMessage checks for a running reply first. limitSend
 // counts the Send, so a refusal after it would still be counted.
+//
+// sendMessage, regenerateReply and editPrompt move an archived thread back
+// to the user's chats.
 
 /**
  * Why a Send was refused: the thread's reply is still running. sendMessage
@@ -131,6 +135,7 @@ export const sendMessage = mutation({
     const { message, attachments } = prepared;
     // Nothing above writes to the thread, so lastTurn is still current.
     await closeUnrunActions(ctx, threadId, lastTurn);
+    await setThreadStatus(ctx, threadId, "active");
     await sendPrompt(ctx, {
       threadId,
       message,
@@ -239,6 +244,7 @@ async function redoLastTurn(
   if (hasPendingReply(turn)) {
     throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS.message);
   }
+  await setThreadStatus(ctx, threadId, "active");
 
   // The Agent also aborts any stream still running at this order.
   await chatAgent.deleteMessages(ctx, {

@@ -23,6 +23,7 @@ export const config = {
     "/chat",
     "/c/:path*",
     "/connectors",
+    "/archived",
     "/settings/account",
   ],
 };

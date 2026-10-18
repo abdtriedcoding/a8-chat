@@ -1,10 +1,10 @@
 // See the docs at https://docs.convex.dev/agents/threads
-import { updateThreadMetadata } from "@convex-dev/agent";
+import { getThreadMetadata, updateThreadMetadata } from "@convex-dev/agent";
 import {
   paginationOptsValidator,
   paginationResultValidator,
 } from "convex/server";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { components, internal } from "./_generated/api";
 import {
   internalMutation,
@@ -27,38 +27,74 @@ const vThreadSummary = v.object({
   title: v.optional(v.string()),
 });
 
+/** The most Agent thread pages one call to `list` reads. */
+const MAX_PAGES_PER_LIST = 10;
+
+/**
+ * The user's threads, newest first: the active ones, or with `archived`, the
+ * archived ones. The Agent's thread list can't filter by status, so this
+ * reads its pages until it has `numItems` matches, the list ends, or it has
+ * read MAX_PAGES_PER_LIST pages. So a page can come back short, even empty,
+ * before the list is done.
+ */
 export const list = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    paginationOpts: paginationOptsValidator,
+    archived: v.optional(v.boolean()),
+  },
   returns: paginationResultValidator(vThreadSummary),
-  handler: async (ctx, { paginationOpts }) => {
+  handler: async (ctx, { paginationOpts, archived = false }) => {
     const user = await optionalUser(ctx);
     if (!user) return { page: [], isDone: true, continueCursor: "" };
 
-    // Always pass a real userId: undefined would list the threads with no owner.
-    const result = await ctx.runQuery(
-      components.agent.threads.listThreadsByUserId,
-      { userId: user._id, paginationOpts },
-    );
-    return {
-      ...result,
-      page: result.page.map((thread) => ({
-        _id: thread._id,
-        _creationTime: thread._creationTime,
-        title: thread.title,
-      })),
-    };
+    const status = archived ? "archived" : "active";
+    const page: Infer<typeof vThreadSummary>[] = [];
+    let cursor = paginationOpts.cursor;
+    let isDone = false;
+    for (let read = 0; read < MAX_PAGES_PER_LIST; read++) {
+      // Always pass a real userId: undefined would list the threads with no
+      // owner.
+      const result = await ctx.runQuery(
+        components.agent.threads.listThreadsByUserId,
+        { userId: user._id, paginationOpts: { ...paginationOpts, cursor } },
+      );
+      for (const thread of result.page) {
+        if (thread.status !== status) continue;
+        page.push({
+          _id: thread._id,
+          _creationTime: thread._creationTime,
+          title: thread.title,
+        });
+      }
+      cursor = result.continueCursor;
+      isDone = result.isDone;
+      // An endCursor pins the page's end, and one read reaches it.
+      if (isDone || paginationOpts.endCursor) break;
+      if (page.length >= paginationOpts.numItems) break;
+    }
+    return { page, isDone, continueCursor: cursor ?? "" };
   },
 });
 
 export const get = query({
   args: { threadId: v.string() },
   returns: v.union(
-    v.object({ _id: v.string(), title: v.optional(v.string()) }),
+    v.object({
+      _id: v.string(),
+      title: v.optional(v.string()),
+      archived: v.boolean(),
+    }),
     v.null(),
   ),
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
-    return thread ? { _id: thread._id, title: thread.title } : null;
+    return thread
+      ? {
+          _id: thread._id,
+          title: thread.title,
+          archived: thread.status === "archived",
+        }
+      : null;
   },
 });
 
@@ -146,6 +182,38 @@ export const rename = mutation({
     return null;
   },
 });
+
+/**
+ * Archives a thread, or moves it back to the user's chats. An archived
+ * thread keeps its messages but leaves the sidebar list. A Send to it moves
+ * it back.
+ */
+export const setArchived = mutation({
+  args: { threadId: v.string(), archived: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, archived }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    await setThreadStatus(ctx, threadId, archived ? "archived" : "active");
+    return null;
+  },
+});
+
+/**
+ * Sets the thread's status. It writes only on a change, so a Send to an
+ * active thread doesn't rerun every thread list.
+ */
+export async function setThreadStatus(
+  ctx: MutationCtx,
+  threadId: string,
+  status: "active" | "archived",
+) {
+  const thread = await getThreadMetadata(ctx, components.agent, { threadId });
+  if (thread.status === status) return;
+  await updateThreadMetadata(ctx, components.agent, {
+    threadId,
+    patch: { status },
+  });
+}
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in

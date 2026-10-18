@@ -2,11 +2,17 @@
 
 import { useUIMessages } from "@convex-dev/agent/react";
 import { useConvexAuth, useQuery } from "convex/react";
-import { MessageSquareOffIcon } from "lucide-react";
+import { ArchiveIcon, MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useThreadShortcuts } from "@/components/keyboard-shortcuts";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -21,6 +27,7 @@ import { useDecideAction } from "@/hooks/use-decide-action";
 import { useEditPrompt } from "@/hooks/use-edit-prompt";
 import { useRegenerateReply } from "@/hooks/use-regenerate-reply";
 import { useSendPrompt } from "@/hooks/use-send-prompt";
+import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { useStableMessages } from "@/hooks/use-stable-messages";
 import { useStopReply } from "@/hooks/use-stop-reply";
@@ -153,6 +160,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
         </ThreadActionsProvider>
       )}
       <div className="shrink-0 px-4 pb-4">
+        {thread?.archived && <ArchivedNotice threadId={threadId} />}
         <Composer
           onSend={send}
           onStop={replyInProgress ? stop : undefined}
@@ -163,6 +171,33 @@ export function ThreadView({ threadId }: { threadId: string }) {
         />
       </div>
     </>
+  );
+}
+
+/** Says the thread is archived, with a button to move it back. */
+function ArchivedNotice({ threadId }: { threadId: string }) {
+  const setThreadArchived = useSetThreadArchived();
+  return (
+    <Alert role="status" className="mx-auto mb-2 max-w-3xl pr-30">
+      <ArchiveIcon />
+      <AlertTitle>This chat is archived</AlertTitle>
+      <AlertDescription>
+        Sending a message moves it back to your chats.
+      </AlertDescription>
+      <AlertAction>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setThreadArchived({ threadId, archived: false }).catch(
+              (error: unknown) => toast.error(errorMessage(error)),
+            );
+          }}
+        >
+          Unarchive
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }
 

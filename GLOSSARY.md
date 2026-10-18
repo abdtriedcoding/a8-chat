@@ -10,6 +10,10 @@ An open-source AI workspace where a person chats with a model that can act acros
 One ongoing exchange between a user and the assistant, with its own title and history. UI copy calls it a "chat"; everywhere else it's a thread.
 _Avoid_: conversation, chat (outside UI copy)
 
+**Archived thread**:
+A thread the user moved out of the sidebar without deleting it. It keeps its messages and still shows in search, and a send moves it back to the sidebar. Deleting a thread, archived or not, removes it for good.
+_Avoid_: hidden thread, soft-deleted thread
+
 **Prompt**:
 A message the user writes to the assistant, with any attachments sent alongside it.
 _Avoid_: query, user message
