@@ -92,7 +92,17 @@ Don't reply yet. Babysit the PR first.
 
 ## 7. Babysit until CodeRabbit approves, then merge
 
-Poll every few minutes with `gh pr checks <n>`, `gh pr view <n> --comments` and `gh api repos/abdtriedcoding/a8-chat/pulls/<n>/comments`.
+CodeRabbit reports as a check named `CodeRabbit`. It's done when that check stops being `pending`. Wait for it with this loop in the background (`run_in_background`). It uses `gh`'s own `--jq`, because Git Bash on this machine has no `jq`, and a loop that pipes to `jq` fails on every pass and never exits. It also exits after 20 minutes, so a stuck check can't keep you waiting forever:
+
+```bash
+for i in $(seq 1 40); do
+  s=$(gh pr checks <n> --json name,bucket --jq '.[] | "\(.name)=\(.bucket)"' 2>&1)
+  echo "$s" | grep -q '^CodeRabbit=' && ! echo "$s" | grep -q '^CodeRabbit=pending' && { echo "$s"; exit 0; }
+  sleep 30
+done; echo "TIMEOUT"; echo "$s"
+```
+
+When it exits, read the review with `gh pr view <n> --comments` and `gh api repos/abdtriedcoding/a8-chat/pulls/<n>/comments`. On `TIMEOUT`, check those by hand before waiting again. If the user says CodeRabbit already answered, stop the wait and read the comments.
 
 1. Read each CodeRabbit comment. Fix the ones that point at a real bug, a missed requirement, or a standards violation. Skip nitpicks, style taste, and suggestions that contradict the issue or `GLOSSARY.md`. Reply on the thread with one line saying why you skipped.
 2. After fixes, rerun `bun run typecheck` and `bun run lint`, commit, push, and poll again. CodeRabbit re-reviews each push.
