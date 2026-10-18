@@ -1,7 +1,10 @@
 "use client";
 
+import { SquarePenIcon } from "lucide-react";
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ThreadTitleInput } from "@/components/thread-title-input";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
@@ -26,6 +29,16 @@ export function ChatHeader({ children }: { children?: ReactNode }) {
           {children}
         </>
       )}
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="ml-auto md:hidden"
+        asChild
+      >
+        <Link href="/chat" aria-label="New chat">
+          <SquarePenIcon />
+        </Link>
+      </Button>
     </header>
   );
 }
