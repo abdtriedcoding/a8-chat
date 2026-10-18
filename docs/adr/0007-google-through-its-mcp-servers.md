@@ -1,6 +1,6 @@
 # Google apps run through Google's MCP servers as three connectors, on self-hosted deployments first
 
-Partly built. Google Calendar is in the catalog (#111). Google Drive and Gmail aren't yet (#112, #113). Each consequence below that needs code says whether that code exists.
+Partly built. Google Calendar and Gmail are in the catalog (#111, #112). Google Drive isn't yet (#113). Each consequence below that needs code says whether that code exists.
 
 a8 offers Google as three connectors: Google Drive, Google Calendar and Gmail. Google Drive spans four of Google's MCP servers (Drive, Docs, Sheets and Slides) under one sign-in, because users treat Docs as part of Drive, and "find my Q3 doc and update it" crosses Drive search and a Docs edit. One OAuth client, from the deployment's own Google Cloud project, serves all three. This replaces ADR 0003's plan to wait for Google and build Gmail on its REST API.
 
@@ -17,5 +17,5 @@ a8 offers Google as three connectors: Google Drive, Google Calendar and Gmail. G
 - Google has no dynamic registration, so a8 signs in with the deployment's own client ID and secret, from `GOOGLE_MCP_CLIENT_ID` and `GOOGLE_MCP_CLIENT_SECRET`. This is built, as the `preRegistered` sign-in. Without both env vars, the connectors show as not set up. The setup guide is `docs/connectors/google.md`.
 - Google sends no `scope` in its 401 and gives no refresh token without `access_type=offline` and `prompt=consent`. This is built. A catalog entry's `scopes` and `authorizeParams` go on the authorize URL of every connect and reconnect, and the connection stores the scopes the vendor granted.
 - `initialize` and `tools/list` work without a token, so connecting doesn't trigger sign-in; a8 starts it. a8's `connect` already starts sign-in itself, without waiting for a 401.
-- Gmail's server has no send tool. a8 exposes reads and `create_draft`, and the user sends the draft from Gmail.
+- Gmail's server has no send tool. a8 exposes reads and `create_draft`, and the user sends the draft from Gmail. This is built.
 - Users can untick scopes on Google's consent screen. a8 loads only the tools whose scopes were granted and offers Reconnect. This is built. A catalog entry's `toolScopes` names the scope each tool needs, and the connection stores the scopes Google granted.

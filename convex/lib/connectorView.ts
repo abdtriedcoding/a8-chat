@@ -372,6 +372,33 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "gmail",
+    name: "Gmail",
+    description: "Search and read your email, and write drafts you send from Gmail.",
+    examplePrompt: "@gmail what needs a reply from me this week?",
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/google.md",
+    servers: {
+      gmail: {
+        tools: {
+          search_threads: { kind: "read", label: "Searching Gmail" },
+          get_thread: { kind: "read", label: "Reading a Gmail thread" },
+          get_message: { kind: "read", label: "Reading an email" },
+          list_drafts: { kind: "read", label: "Finding Gmail drafts" },
+          get_draft: { kind: "read", label: "Reading a Gmail draft" },
+          list_labels: { kind: "read", label: "Finding Gmail labels" },
+          // Gmail's server has no send tool, so the user sends the draft
+          // from Gmail (ADR 0007).
+          create_draft: {
+            kind: "action",
+            label: "Writing a Gmail draft",
+            target: ["to", "cc", "bcc", "replyToMessageId"],
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */
