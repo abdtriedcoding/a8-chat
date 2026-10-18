@@ -190,6 +190,22 @@ const GOOGLE_DOCS = "https://www.googleapis.com/auth/documents";
 const GOOGLE_SHEETS = "https://www.googleapis.com/auth/spreadsheets";
 const GOOGLE_SLIDES = "https://www.googleapis.com/auth/presentations";
 
+/**
+ * The account label of a connector on Google's Drive server. No Drive tool
+ * says who the account is, but each file names its owner's email. A user
+ * who owns no files gets no label.
+ */
+const DRIVE_FILE_OWNER = {
+  from: "tool",
+  tool: "search_files",
+  arguments: {
+    query: "owner = 'me'",
+    pageSize: 1,
+    excludeContentSnippets: true,
+  },
+  field: "files.0.owner",
+} as const;
+
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
     servers: {
@@ -357,18 +373,30 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       read_presentation: GOOGLE_DRIVE_READONLY,
       update_presentation: GOOGLE_SLIDES,
     },
-    // No Drive tool says who the account is, but each file names its
-    // owner's email. A user who owns no files gets no label.
-    accountLabel: {
-      from: "tool",
-      tool: "search_files",
-      arguments: {
-        query: "owner = 'me'",
-        pageSize: 1,
-        excludeContentSnippets: true,
-      },
-      field: "files.0.owner",
+    accountLabel: DRIVE_FILE_OWNER,
+  },
+  googledocs: {
+    servers: {
+      drive: { url: "https://drivemcp.googleapis.com/mcp/v1" },
+      docs: { url: "https://docsmcp.googleapis.com/mcp/v1" },
     },
+    ...GOOGLE_ACCESS,
+    pinnedOrigins: [
+      "https://drivemcp.googleapis.com",
+      "https://docsmcp.googleapis.com",
+      ...GOOGLE_AUTH_ORIGINS,
+    ],
+    scopes: [GOOGLE_DRIVE_READONLY, GOOGLE_DRIVE_FILE, GOOGLE_DOCS],
+    // As in Google Drive, every read needs only drive.readonly.
+    toolScopes: {
+      search_files: GOOGLE_DRIVE_READONLY,
+      list_recent_files: GOOGLE_DRIVE_READONLY,
+      create_file: GOOGLE_DRIVE_FILE,
+      copy_file: GOOGLE_DRIVE_FILE,
+      read_doc: GOOGLE_DRIVE_READONLY,
+      update_doc: GOOGLE_DOCS,
+    },
+    accountLabel: DRIVE_FILE_OWNER,
   },
 };
 

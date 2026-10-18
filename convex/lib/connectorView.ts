@@ -461,6 +461,46 @@ const ENTRIES = [
       },
     },
   },
+  {
+    id: "googledocs",
+    name: "Google Docs",
+    handle: "docs",
+    description: "Find, read and edit your Google Docs, and create new ones.",
+    examplePrompt: "@docs find my latest doc and list its open questions",
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/google.md",
+    // Docs' server only reads and edits a doc by its ID, so Drive's server
+    // finds and creates docs.
+    servers: {
+      drive: {
+        tools: {
+          search_files: { kind: "read", label: "Searching Google Docs" },
+          list_recent_files: { kind: "read", label: "Finding recent Google Docs" },
+          // Makes a blank Doc when `contentMimeType` is a Google Doc's.
+          create_file: {
+            kind: "action",
+            label: "Creating a Google Doc",
+            target: ["parentId"],
+          },
+          copy_file: {
+            kind: "action",
+            label: "Copying a Google Doc",
+            target: ["fileId", "parentId"],
+          },
+        },
+      },
+      docs: {
+        tools: {
+          read_doc: { kind: "read", label: "Reading a Google Doc" },
+          update_doc: {
+            kind: "action",
+            label: "Editing a Google Doc",
+            target: ["documentId"],
+          },
+        },
+      },
+    },
+  },
 ] as const satisfies readonly ConnectorViewEntry[];
 
 /** A catalog connector's id. A typo in one fails the typecheck. */

@@ -1,6 +1,6 @@
-# Google apps run through Google's MCP servers as three connectors, on self-hosted deployments first
+# Google apps run through Google's MCP servers as four connectors, on self-hosted deployments first
 
-a8 offers Google as three connectors: Google Drive, Google Calendar and Gmail. Google Drive spans four of Google's MCP servers (Drive, Docs, Sheets and Slides) under one sign-in, because users treat Docs as part of Drive, and "find my Q3 doc and update it" crosses Drive search and a Docs edit. One OAuth client, from the deployment's own Google Cloud project, serves all three. This replaces ADR 0003's plan to wait for Google and build Gmail on its REST API.
+a8 offers Google as four connectors: Google Drive, Google Docs, Google Calendar and Gmail. Google Drive spans four of Google's MCP servers (Drive, Docs, Sheets and Slides) under one sign-in, because users treat Docs as part of Drive, and "find my Q3 doc and update it" crosses Drive search and a Docs edit. Google Docs spans the Drive and Docs servers, for someone who wants a8 in their docs without granting Sheets and Slides, and it uses Drive's server to find and create docs for the same reason. Its Docs tools are the same ones Google Drive offers. One OAuth client, from the deployment's own Google Cloud project, serves all four. This replaces ADR 0003's plan to wait for Google and build Gmail on its REST API.
 
 ## Considered options
 
