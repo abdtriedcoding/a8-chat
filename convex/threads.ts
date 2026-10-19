@@ -1,5 +1,9 @@
 // See the docs at https://docs.convex.dev/agents/threads
-import { getThreadMetadata, updateThreadMetadata } from "@convex-dev/agent";
+import {
+  getThreadMetadata,
+  updateThreadMetadata,
+  type ThreadDoc,
+} from "@convex-dev/agent";
 import {
   paginationOptsValidator,
   paginationResultValidator,
@@ -19,6 +23,7 @@ import {
   getOwnThread,
   optionalUser,
 } from "./lib/guards";
+import { appError, ERROR_CODES } from "./lib/errors";
 import { checkTitle } from "./lib/prompt";
 import { snippetAround } from "./lib/threadSearchSnippet";
 
@@ -28,15 +33,23 @@ const vThreadSummary = v.object({
   title: v.optional(v.string()),
 });
 
+function toSummary(thread: ThreadDoc): Infer<typeof vThreadSummary> {
+  return {
+    _id: thread._id,
+    _creationTime: thread._creationTime,
+    title: thread.title,
+  };
+}
+
 /** The most Agent thread pages one call to `list` reads. */
 const MAX_PAGES_PER_LIST = 10;
 
 /**
- * The user's threads, newest first: the active ones, or with `archived`, the
- * archived ones. The Agent's thread list can't filter by status, so this
- * reads its pages until it has `numItems` matches, the list ends, or it has
- * read MAX_PAGES_PER_LIST pages. So a page can come back short, even empty,
- * before the list is done.
+ * The user's threads, newest first: the active ones but not the pinned ones,
+ * or with `archived`, the archived ones. The Agent's thread list can't filter
+ * by status, so this reads its pages until it has `numItems` matches, the
+ * list ends, or it has read MAX_PAGES_PER_LIST pages. So a page can come back
+ * short, even empty, before the list is done.
  */
 export const list = query({
   args: {
@@ -49,6 +62,14 @@ export const list = query({
     if (!user) return { page: [], isDone: true, continueCursor: "" };
 
     const status = archived ? "archived" : "active";
+    // Archived threads can't be pinned, so only the active list skips pins.
+    const pinned = new Set<string>();
+    if (!archived) {
+      const pins = ctx.db
+        .query("threadPins")
+        .withIndex("by_userId", (q) => q.eq("userId", user._id));
+      for await (const pin of pins) pinned.add(pin.threadId);
+    }
     const page: Infer<typeof vThreadSummary>[] = [];
     let cursor = paginationOpts.cursor;
     let isDone = false;
@@ -60,12 +81,8 @@ export const list = query({
         { userId: user._id, paginationOpts: { ...paginationOpts, cursor } },
       );
       for (const thread of result.page) {
-        if (thread.status !== status) continue;
-        page.push({
-          _id: thread._id,
-          _creationTime: thread._creationTime,
-          title: thread.title,
-        });
+        if (thread.status !== status || pinned.has(thread._id)) continue;
+        page.push(toSummary(thread));
       }
       cursor = result.continueCursor;
       isDone = result.isDone;
@@ -74,6 +91,32 @@ export const list = query({
       if (page.length >= paginationOpts.numItems) break;
     }
     return { page, isDone, continueCursor: cursor ?? "" };
+  },
+});
+
+/**
+ * The user's pinned threads, the most recently pinned first. Not paginated.
+ * Empty when signed out.
+ */
+export const listPinned = query({
+  args: {},
+  returns: v.array(vThreadSummary),
+  handler: async (ctx) => {
+    const user = await optionalUser(ctx);
+    if (!user) return [];
+
+    const pins = await ctx.db
+      .query("threadPins")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .collect();
+    const threads = await Promise.all(
+      pins.map((pin) => findOwnThread(ctx, user._id, pin.threadId)),
+    );
+    // Archiving and deleting unpin, so this guard shouldn't skip any.
+    return threads.flatMap((thread) =>
+      thread?.status === "active" ? [toSummary(thread)] : [],
+    );
   },
 });
 
@@ -200,14 +243,58 @@ export const setArchived = mutation({
 });
 
 /**
+ * Pins a thread to the top of the sidebar, or unpins it. Pinning a pinned
+ * thread or unpinning an unpinned one changes nothing. An archived thread
+ * isn't in the sidebar, so it can't be pinned.
+ */
+export const setPinned = mutation({
+  args: { threadId: v.string(), pinned: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, pinned }) => {
+    const user = await authorizeThreadAccess(ctx, threadId);
+    if (!pinned) {
+      await unpinThread(ctx, threadId);
+      return null;
+    }
+    const thread = await getThreadMetadata(ctx, components.agent, {
+      threadId,
+    });
+    if (thread.status === "archived") {
+      throw appError(
+        ERROR_CODES.THREAD_ARCHIVED,
+        "Unarchive this chat to pin it.",
+      );
+    }
+    if (!(await findPin(ctx, threadId))) {
+      await ctx.db.insert("threadPins", { userId: user._id, threadId });
+    }
+    return null;
+  },
+});
+
+function findPin(ctx: MutationCtx, threadId: string) {
+  return ctx.db
+    .query("threadPins")
+    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .unique();
+}
+
+async function unpinThread(ctx: MutationCtx, threadId: string) {
+  const pin = await findPin(ctx, threadId);
+  if (pin) await ctx.db.delete("threadPins", pin._id);
+}
+
+/**
  * Sets the thread's status. It writes only on a change, so a Send to an
- * active thread doesn't rerun every thread list.
+ * active thread doesn't rerun every thread list. Archiving unpins the
+ * thread, and moving it back doesn't pin it again.
  */
 export async function setThreadStatus(
   ctx: MutationCtx,
   threadId: string,
   status: "active" | "archived",
 ) {
+  if (status === "archived") await unpinThread(ctx, threadId);
   const thread = await getThreadMetadata(ctx, components.agent, { threadId });
   if (thread.status === status) return;
   await updateThreadMetadata(ctx, components.agent, {
@@ -218,8 +305,8 @@ export async function setThreadStatus(
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
- * the background. This deletes its stoppedReplies and deferredToolThreads
- * rows and its queue right away. Its attachments, queued ones included, are
+ * the background. This deletes its stoppedReplies, deferredToolThreads and
+ * threadPins rows and its queue right away. Its attachments, queued ones included, are
  * left unreferenced, and cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
@@ -249,6 +336,7 @@ async function deleteThread(ctx: MutationCtx, threadId: string) {
     .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
     .unique();
   if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
+  await unpinThread(ctx, threadId);
   await deleteThreadQueue(ctx, threadId);
 }
 

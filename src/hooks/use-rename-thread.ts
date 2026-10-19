@@ -13,6 +13,14 @@ export function useRenameThread() {
           ),
         });
       }
+      const pins = store.getQuery(api.threads.listPinned, {});
+      if (pins) {
+        store.setQuery(
+          api.threads.listPinned,
+          {},
+          pins.map((t) => (t._id === threadId ? { ...t, title } : t)),
+        );
+      }
       const thread = store.getQuery(api.threads.get, { threadId });
       if (thread) {
         store.setQuery(api.threads.get, { threadId }, { ...thread, title });

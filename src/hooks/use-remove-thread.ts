@@ -15,6 +15,14 @@ export function useRemoveThread() {
           page: value.page.filter((t) => t._id !== threadId),
         });
       }
+      const pins = store.getQuery(api.threads.listPinned, {});
+      if (pins) {
+        store.setQuery(
+          api.threads.listPinned,
+          {},
+          pins.filter((t) => t._id !== threadId),
+        );
+      }
     },
   );
 }
