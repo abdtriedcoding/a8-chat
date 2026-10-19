@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { vSharedMessage } from "./lib/sharedMessages";
 
 /** A connection's state. A connection that stops working needs reconnecting. */
 export const vConnectionStatus = v.union(
@@ -77,6 +78,53 @@ export default defineSchema({
   })
     .index("by_queuedPromptId", ["queuedPromptId"])
     .index("by_fileId", ["fileId"]),
+  // One row per shared snapshot (convex/sharedSnapshots.ts, ADR 0011). Its
+  // public link opens `version` of its copied messages. Sharing again copies
+  // the next version and switches to it once the copy is done. Unsharing or
+  // deleting the thread deletes the row.
+  sharedSnapshots: defineTable({
+    threadId: v.string(),
+    userId: v.string(),
+    // The token in the link. Random, so it can't be guessed from the
+    // thread ID.
+    publicId: v.string(),
+    // The thread's title when the live version was made.
+    title: v.optional(v.string()),
+    // The live version. 0 until the first copy is done.
+    version: v.number(),
+    // When the live version was made.
+    updatedAt: v.optional(v.number()),
+    // When the newest message the live version copied was made, so the
+    // dialog can tell whether the thread has newer finished turns.
+    copiedUpTo: v.optional(v.number()),
+    // Set while version + 1 is being copied.
+    copying: v.boolean(),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_publicId", ["publicId"]),
+  // A shared snapshot's copied messages, redacted (lib/sharedMessages.ts).
+  // One row per UI message.
+  sharedSnapshotMessages: defineTable({
+    snapshotId: v.id("sharedSnapshots"),
+    version: v.number(),
+    // Sorts the messages oldest first: the turn's order, and the reply
+    // after its prompt.
+    position: v.number(),
+    message: vSharedMessage,
+  }).index("by_snapshotId_and_version_and_position", [
+    "snapshotId",
+    "version",
+    "position",
+  ]),
+  // One row per file a shared snapshot's version shows, so
+  // cleanUpUnsentUploads keeps the file while the snapshot holds it.
+  sharedSnapshotFiles: defineTable({
+    snapshotId: v.id("sharedSnapshots"),
+    version: v.number(),
+    fileId: v.string(),
+  })
+    .index("by_fileId", ["fileId"])
+    .index("by_snapshotId_and_version", ["snapshotId", "version"]),
   // One row per paused queue. Stop and a failed reply add it, Resume
   // deletes it, and so does deleting the last queued prompt, since an empty
   // queue is never paused.

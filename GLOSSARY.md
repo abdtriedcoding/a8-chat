@@ -18,6 +18,10 @@ _Avoid_: hidden thread, soft-deleted thread
 A thread the user keeps at the top of the sidebar, above their other threads. The most recently pinned comes first.
 _Avoid_: starred thread, favorite
 
+**Shared snapshot**:
+A read-only copy of a thread's finished turns that anyone with its link can open, signed in or not. It shows prompts, attachments, replies and web searches, but only the names of connector tool calls and action cards. A thread has at most one: sharing again updates it to the thread's latest finished turns. Unsharing or deleting the thread removes it, and archiving doesn't. UI copy says "shared link".
+_Avoid_: shared thread, public chat, share link (outside UI copy)
+
 **Prompt**:
 A message the user writes to the assistant, with any attachments sent alongside it.
 _Avoid_: query, user message

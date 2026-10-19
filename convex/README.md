@@ -16,7 +16,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 
 - `auth.ts`: Better Auth's options, `getCurrentUser`, and `purgeAccount`, which deletes a user's data when they delete their account.
 - `emails.ts`: queues verification and password reset emails through Resend.
-- `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins and connector tool calls. Sends and web searches also have a daily cap across all users.
+- `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins, connector tool calls and shares. Sends and web searches also have a daily cap across all users.
 
 ### Chat
 
@@ -29,6 +29,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `chat/turns.ts`: reads a thread's turns, such as its last turn and the turn a continuing reply picks up.
 - `chat/messages.ts`: `listThreadMessages`, the thread's messages for the UI.
 - `threads.ts`: listing, getting, searching, renaming and deleting threads.
+- `sharedSnapshots.ts`: sharing a thread through a public link (ADR 0011). It copies the thread's finished turns in batches, unshares, and serves the public page's queries.
 - `titles.ts`: a new thread's title, written by the model from its first prompt.
 - `tools/webSearch.ts`: the web search tool, and the only code that calls Tavily (ADR 0001).
 
@@ -57,6 +58,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/instructions.ts`: the system prompt, and its connector part.
 - `lib/replyFailure.ts`: the reason a failed reply shows.
 - `lib/timeZone.ts`: the browser's time zone, which a reply uses for the user's date.
+- `lib/sharedMessages.ts`: what a shared snapshot keeps of a message, and the redaction that drops the rest.
 - `lib/threadSearchSnippet.ts`: the snippet thread search shows around a match.
 - `lib/authEmails.ts`: the text and HTML of the auth emails.
 - `lib/connectorView.ts`: the client-safe view of the catalog. It's the only connector module the browser imports.

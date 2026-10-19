@@ -19,7 +19,11 @@ export type ConnectorToolCall = {
   label: string;
   /** The tool's target arguments from the catalog, if it marks any. */
   target?: readonly string[];
-  state: string;
+  /**
+   * Unset on a call in a shared snapshot, which keeps only the tool's name
+   * (convex/lib/sharedMessages.ts).
+   */
+  state?: string;
   // Partial while the model is still writing it.
   input?: unknown;
   output?: unknown;
@@ -42,7 +46,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
     // fields every tool part has.
     const call = part as unknown as {
       toolCallId: string;
-      state: string;
+      state?: string;
       input?: unknown;
       output?: unknown;
       errorText?: string;
@@ -110,7 +114,9 @@ function isCancelled(call: ConnectorToolCall): boolean {
 
 /**
  * One connector tool call in a reply: the connector's logo and a label like
- * "Searching Notion". Opening it shows the arguments and the result.
+ * "Searching Notion". Opening it shows the arguments and the result. A
+ * call in a shared snapshot shows only its label, since the snapshot keeps
+ * nothing else.
  *
  * `running` is false for a call a stopped reply left unfinished.
  */
@@ -121,6 +127,14 @@ export function ConnectorToolRow({
   call: ConnectorToolCall;
   running: boolean;
 }) {
+  if (call.state === undefined) {
+    return (
+      <div className="flex max-w-full items-center gap-2 text-sm text-muted-foreground">
+        <ConnectorLogo connector={call.connector} size="sm" />
+        <span className="truncate">{call.label}</span>
+      </div>
+    );
+  }
   const failed = call.state === "output-error";
   const cancelled = isCancelled(call);
   // Approved, but the user stopped the reply before it ran.

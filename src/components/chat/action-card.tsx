@@ -29,7 +29,7 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
 
   // A second click before the call ends does nothing.
   async function decide(approve: boolean) {
-    if (deciding || !call.approval) return;
+    if (deciding || !call.approval || !decideAction) return;
     setDeciding(approve ? "approve" : "cancel");
     try {
       await decideAction(call.approval.id, approve);
@@ -74,20 +74,22 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
           </ActionDetail>
         )
       )}
-      <footer className="flex justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void decide(false)}
-        >
-          {deciding === "cancel" && <Spinner data-icon="inline-start" />}
-          Cancel
-        </Button>
-        <Button size="sm" onClick={() => void decide(true)}>
-          {deciding === "approve" && <Spinner data-icon="inline-start" />}
-          Approve
-        </Button>
-      </footer>
+      {decideAction && (
+        <footer className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void decide(false)}
+          >
+            {deciding === "cancel" && <Spinner data-icon="inline-start" />}
+            Cancel
+          </Button>
+          <Button size="sm" onClick={() => void decide(true)}>
+            {deciding === "approve" && <Spinner data-icon="inline-start" />}
+            Approve
+          </Button>
+        </footer>
+      )}
     </section>
   );
 }

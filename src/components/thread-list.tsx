@@ -8,12 +8,14 @@ import {
   PencilIcon,
   PinIcon,
   PinOffIcon,
+  Share2Icon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ShareDialog } from "@/components/share-dialog";
 import { ThreadTitleInput } from "@/components/thread-title-input";
 import {
   DropdownMenu,
@@ -64,6 +66,7 @@ export function ThreadList() {
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<Thread | null>(null);
   const [confirmDialog, confirm] = useConfirm();
   const router = useRouter();
   const removeThread = useRemoveThread();
@@ -152,6 +155,10 @@ export function ThreadList() {
                 {isPinned ? <PinOffIcon /> : <PinIcon />}
                 {isPinned ? "Unpin" : "Pin"}
               </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setSharing(thread)}>
+                <Share2Icon />
+                Share
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setRenamingId(thread._id)}>
                 <PencilIcon />
                 Rename
@@ -233,6 +240,16 @@ export function ThreadList() {
         </SidebarGroup>
       )}
       {confirmDialog}
+      {sharing && (
+        <ShareDialog
+          threadId={sharing._id}
+          title={sharing.title}
+          open
+          onOpenChange={(open) => {
+            if (!open) setSharing(null);
+          }}
+        />
+      )}
     </>
   );
 }
