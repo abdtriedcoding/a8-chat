@@ -1,5 +1,6 @@
 "use client";
 
+import { useConvexAuth, useQuery } from "convex/react";
 import { CalendarClockIcon, PlugIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -7,6 +8,7 @@ import { AppIcon } from "@/components/icons/app-icon";
 import { NavUser } from "@/components/nav-user";
 import { ThreadList } from "@/components/thread-list";
 import { ThreadSearchButton } from "@/components/thread-search";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -16,10 +18,16 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
+import { api } from "../../convex/_generated/api";
 
 export function AppSidebar() {
   const closeOnMobile = useCloseSidebarOnMobile();
   const pathname = usePathname();
+  const { isAuthenticated } = useConvexAuth();
+  const unreadRuns = useQuery(
+    api.scheduledPrompts.unreadCount,
+    isAuthenticated ? {} : "skip",
+  );
   return (
     <Sidebar>
       <SidebarHeader className="gap-3">
@@ -65,6 +73,14 @@ export function AppSidebar() {
             >
               <CalendarClockIcon data-icon="inline-start" />
               Scheduled
+              {(unreadRuns ?? 0) > 0 && (
+                <Badge className="ml-auto tabular-nums">
+                  {unreadRuns}
+                  <span className="sr-only">
+                    {unreadRuns === 1 ? " unread run" : " unread runs"}
+                  </span>
+                </Badge>
+              )}
             </Link>
           </Button>
         </div>

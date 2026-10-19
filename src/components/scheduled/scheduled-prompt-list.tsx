@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,15 @@ function formatRunTime(at: number, timeZone: string) {
     timeStyle: "short",
     timeZone,
   }).format(at);
+}
+
+function subscribeToHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function readHash() {
+  return window.location.hash.slice(1);
 }
 
 const LAST_RUN_OUTCOMES = {
@@ -106,6 +115,14 @@ export function ScheduledPromptList() {
   const [confirmDialog, confirm] = useConfirm();
   const [editing, setEditing] = useState<ScheduledPrompt | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  // The row a thread's Scheduled badge links to, as /scheduled#<id>.
+  const linkedId = useSyncExternalStore(subscribeToHash, readHash, () => "");
+  const loaded = scheduledPrompts !== undefined;
+  useEffect(() => {
+    if (loaded && linkedId) {
+      document.getElementById(linkedId)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [loaded, linkedId]);
 
   const query = search.trim().toLowerCase();
   const matches = scheduledPrompts?.filter(
@@ -203,7 +220,11 @@ export function ScheduledPromptList() {
           {matches.map((row) => (
             <li
               key={row._id}
-              className="flex items-start justify-between gap-3 px-4 py-3"
+              id={row._id}
+              className={cn(
+                "flex scroll-m-4 items-start justify-between gap-3 px-4 py-3",
+                row._id === linkedId && "bg-muted",
+              )}
             >
               <div className="flex min-w-0 flex-col gap-1">
                 <div className="flex min-w-0 items-center gap-2">

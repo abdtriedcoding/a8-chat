@@ -32,6 +32,25 @@ export function findThreadScheduledPrompt(ctx: QueryCtx, threadId: string) {
 }
 
 /**
+ * The user's scheduled prompts that have unread runs. Not capped, so no dot
+ * or count goes missing. Opening a thread clears its row from the list.
+ */
+export function listUnreadScheduledPrompts(ctx: QueryCtx, userId: string) {
+  return ctx.db
+    .query("scheduledPrompts")
+    .withIndex("by_userId_and_unreadRuns", (q) =>
+      q.eq("userId", userId).gt("unreadRuns", 0),
+    )
+    .collect();
+}
+
+/** The IDs of the user's threads whose scheduled prompt has unread runs. */
+export async function listUnreadThreadIds(ctx: QueryCtx, userId: string) {
+  const rows = await listUnreadScheduledPrompts(ctx, userId);
+  return new Set(rows.map((row) => row.threadId));
+}
+
+/**
  * Cancels the scheduled prompt's next run if it's still pending. A run that
  * already started can't be canceled, and finds the row changed when it reads
  * it.

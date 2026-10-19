@@ -1,8 +1,13 @@
 "use client";
 
 import { useUIMessages } from "@convex-dev/agent/react";
-import { useConvexAuth, useQuery } from "convex/react";
-import { ArchiveIcon, GhostIcon, MessageSquareOffIcon } from "lucide-react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import {
+  ArchiveIcon,
+  CalendarClockIcon,
+  GhostIcon,
+  MessageSquareOffIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -76,6 +81,14 @@ export function ThreadView({ threadId }: { threadId: string }) {
   useEffect(() => {
     if (temporary) openTemporaryThread(threadId);
   }, [temporary, threadId, openTemporaryThread]);
+
+  // Opening the thread, or a run ending while it's open, clears its unread
+  // runs. If that fails, the dot stays and the next open tries again.
+  const markRead = useMutation(api.scheduledPrompts.markRead);
+  const unread = thread?.unread === true;
+  useEffect(() => {
+    if (unread) markRead({ threadId }).catch(() => {});
+  }, [unread, threadId, markRead]);
 
   const messages = useStableMessages(rawMessages);
   const stopped = stoppedTurns(messages);
@@ -177,6 +190,14 @@ export function ThreadView({ threadId }: { threadId: string }) {
         {thread && !thread.temporary && (
           <>
             <ThreadHeading threadId={threadId} title={thread.title} />
+            {thread.scheduledPromptId && (
+              <Badge variant="secondary" asChild>
+                <Link href={`/scheduled#${thread.scheduledPromptId}`}>
+                  <CalendarClockIcon data-icon="inline-start" />
+                  Scheduled
+                </Link>
+              </Badge>
+            )}
             <ShareButton threadId={threadId} title={thread.title} />
           </>
         )}
