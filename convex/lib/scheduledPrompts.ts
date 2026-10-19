@@ -31,12 +31,9 @@ export function findThreadScheduledPrompt(ctx: QueryCtx, threadId: string) {
     .unique();
 }
 
-/** The most scheduled prompts with unread runs the sidebar reads. */
-const MAX_UNREAD_SCHEDULED_PROMPTS = 100;
-
 /**
- * The user's scheduled prompts that have unread runs, up to
- * MAX_UNREAD_SCHEDULED_PROMPTS.
+ * The user's scheduled prompts that have unread runs. Not capped, so no dot
+ * or count goes missing. Opening a thread clears its row from the list.
  */
 export function listUnreadScheduledPrompts(ctx: QueryCtx, userId: string) {
   return ctx.db
@@ -44,7 +41,7 @@ export function listUnreadScheduledPrompts(ctx: QueryCtx, userId: string) {
     .withIndex("by_userId_and_unreadRuns", (q) =>
       q.eq("userId", userId).gt("unreadRuns", 0),
     )
-    .take(MAX_UNREAD_SCHEDULED_PROMPTS);
+    .collect();
 }
 
 /** The IDs of the user's threads whose scheduled prompt has unread runs. */
