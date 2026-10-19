@@ -43,6 +43,7 @@ import type * as lib_prompt from "../lib/prompt.js";
 import type * as lib_queue from "../lib/queue.js";
 import type * as lib_replyFailure from "../lib/replyFailure.js";
 import type * as lib_replyTools from "../lib/replyTools.js";
+import type * as lib_runEmails from "../lib/runEmails.js";
 import type * as lib_schedule from "../lib/schedule.js";
 import type * as lib_scheduleText from "../lib/scheduleText.js";
 import type * as lib_scheduledPrompts from "../lib/scheduledPrompts.js";
@@ -103,6 +104,7 @@ declare const fullApi: ApiFromModules<{
   "lib/queue": typeof lib_queue;
   "lib/replyFailure": typeof lib_replyFailure;
   "lib/replyTools": typeof lib_replyTools;
+  "lib/runEmails": typeof lib_runEmails;
   "lib/schedule": typeof lib_schedule;
   "lib/scheduleText": typeof lib_scheduleText;
   "lib/scheduledPrompts": typeof lib_scheduledPrompts;

@@ -2,7 +2,7 @@
 
 a8 is an open-source AI workspace where a person chats with a model that can act across their apps. A user writes prompts in threads and attaches images and PDFs, and the model can search the web while it replies. Connectors link a8 to apps like Notion and Linear through each vendor's own MCP server. a8 labels each catalog tool a read or an action. Reads run without asking, and every action waits for the user to approve it on an action card.
 
-The app is Next.js in `src/` and a Convex backend in `convex/`. Sign-in uses Better Auth, replies come from Anthropic's models, and Resend sends the sign-up and password reset emails.
+The app is Next.js in `src/` and a Convex backend in `convex/`. Sign-in uses Better Auth, replies come from Anthropic's models, and Resend sends the sign-up, password reset and scheduled run emails.
 
 ## Running a8
 
@@ -67,7 +67,7 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 | `TRUSTED_ORIGINS` | No | Comma-separated origins besides `SITE_URL` that may call the auth API, such as a preview or staging domain. |
 | `GOOGLE_CLIENT_ID` | Yes | The client ID of a Google OAuth client, for "Sign in with Google". |
 | `GOOGLE_CLIENT_SECRET` | Yes | That client's secret. Give the client the redirect URI `<SITE_URL>/api/auth/callback/google`. |
-| `RESEND_API_KEY` | Yes | The [Resend](https://resend.com) API key that sends verification and password reset emails. |
+| `RESEND_API_KEY` | Yes | The [Resend](https://resend.com) API key that sends verification, password reset and scheduled run emails. |
 | `EMAIL_FROM` | Yes | The sender of those emails, like `a8 <noreply@your-domain.com>`. Resend needs the domain verified. |
 | `RESEND_TEST_MODE` | No | Set to `true` and Resend only delivers to its `resend.dev` test addresses. Unset or any other value sends to real addresses. |
 
