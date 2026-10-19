@@ -49,7 +49,7 @@ import { MentionMenu } from "./mention-menu";
  *
  * The mic dictates into the box (useComposerDictation) when the deployment
  * has dictation set up. Typing, Esc or the mic stops it, and a Send while
- * dictating waits up to 1s for the last words.
+ * dictating waits for the last words (useDictation's stop).
  *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
@@ -146,18 +146,6 @@ export function Composer({
         event.preventDefault();
         void send();
       }}
-      onKeyDown={(event) => {
-        // Comes after the box's own keys, such as Esc closing the mention
-        // menu, and before Esc stops the reply.
-        if (
-          event.key === "Escape" &&
-          dictation.active &&
-          !event.defaultPrevented
-        ) {
-          event.preventDefault();
-          void dictation.stop();
-        }
-      }}
     >
       <input
         ref={fileInputRef}
@@ -243,6 +231,10 @@ export function Composer({
           }}
           {...mentions.comboboxProps}
           {...mentions.caretHandlers}
+          onFocus={(event) => {
+            mentions.caretHandlers.onFocus(event);
+            dictation.prewarm();
+          }}
           onPaste={(event) => {
             // A screenshot pastes as a file with no text. Text copied from
             // some apps, such as spreadsheets, comes with a picture of it
@@ -297,7 +289,8 @@ export function Composer({
               <DictationButton
                 state={dictation.state}
                 level={dictation.level}
-                onClick={dictation.toggle}
+                onToggle={dictation.toggle}
+                onWarmUp={() => dictation.prewarm({ likely: true })}
               />
             )}
             {onStop && (

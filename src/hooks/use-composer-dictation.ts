@@ -1,5 +1,7 @@
 import { useQuery } from "convex/react";
 import {
+  useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useSyncExternalStore,
@@ -7,7 +9,7 @@ import {
   type SetStateAction,
 } from "react";
 import { toast } from "sonner";
-import { useDictationShortcut } from "@/components/keyboard-shortcuts";
+import { useDictationShortcuts } from "@/components/keyboard-shortcuts";
 import { useDictation } from "@/hooks/use-dictation";
 import { api } from "../../convex/_generated/api";
 
@@ -30,11 +32,14 @@ type Draft = {
  *
  * Call stopForTyping from the box's onChange, since typing stops dictation.
  * The words shown so far stay. A Send while dictating awaits finish() for
- * the last words. Ctrl/Cmd+Shift+Space starts and stops dictation while the
- * box is mounted.
+ * the last words. While the box is mounted, Ctrl/Cmd+Shift+Space starts and
+ * stops dictation, and Esc anywhere on the page stops it.
  *
  * `available` is false when the deployment has no Deepgram key or the
- * browser can't record, and the box shows no mic then.
+ * browser can't record, and the box shows no mic then. Call prewarm when
+ * the user may be about to dictate, such as when the box gets focus, so the
+ * mic doesn't wait to connect. Pass `likely` when the pointer or focus
+ * reaches the mic.
  */
 export function useComposerDictation({
   text,
@@ -55,17 +60,34 @@ export function useComposerDictation({
   // Where the caret goes once the box shows the last update.
   const caretRef = useRef<number | null>(null);
   const finishingRef = useRef(false);
-  // The box's text as of the last render, for finish() to read after its
-  // await.
+  // The box's text as of the last render or the last dictated words, for
+  // code that runs after an await.
   const latestTextRef = useRef(text);
 
   function show(draft: Draft) {
     const { text: nextText, caret } = composeDraft(draft);
     caretRef.current = caret;
+    latestTextRef.current = nextText;
     setText(nextText);
   }
 
   const dictation = useDictation({
+    // A tap while the last dictation's words were still coming starts after
+    // they're in, so this reads the text and caret they left, rendered or not.
+    onStart: () => {
+      const current = latestTextRef.current;
+      const textarea = getTextarea();
+      const selectionStart =
+        caretRef.current ?? textarea?.selectionStart ?? current.length;
+      const selectionEnd =
+        caretRef.current ?? textarea?.selectionEnd ?? current.length;
+      draftRef.current = {
+        before: current.slice(0, selectionStart),
+        after: current.slice(selectionEnd),
+        confirmed: "",
+        unconfirmed: "",
+      };
+    },
     onInterim: (words) => {
       const draft = draftRef.current;
       if (!draft) return;
@@ -80,8 +102,10 @@ export function useComposerDictation({
     },
     onError: (message) => toast.error(message),
   });
-  const active =
+  const recording =
     dictation.state === "connecting" || dictation.state === "listening";
+  // Typing or a Send while stopping still has to deal with the last words.
+  const active = recording || dictation.state === "stopping";
 
   // Setting the box's value moves its caret to the end, so put it back after
   // the dictated words.
@@ -93,26 +117,27 @@ export function useComposerDictation({
     getTextarea()?.setSelectionRange(caret, caret);
   }, [text, getTextarea]);
 
-  function start() {
-    const textarea = getTextarea();
-    const selectionStart = textarea?.selectionStart ?? text.length;
-    const selectionEnd = textarea?.selectionEnd ?? text.length;
-    draftRef.current = {
-      before: text.slice(0, selectionStart),
-      after: text.slice(selectionEnd),
-      confirmed: "",
-      unconfirmed: "",
-    };
-    dictation.start();
-  }
-
   function toggle() {
-    if (active) void dictation.stop();
-    else start();
+    if (recording) void dictation.stop();
+    else dictation.start();
   }
 
   const available = configured && canRecord;
-  useDictationShortcut(available ? toggle : undefined);
+  useDictationShortcuts(
+    available
+      ? { toggle, stop: recording ? () => void dictation.stop() : undefined }
+      : {},
+  );
+
+  // Warms a socket for a box that already has focus: when dictation turns
+  // out to be set up after the box got focus, as on the new-chat page, and
+  // when a dictation ends, so the next one in a row starts warm too.
+  const prewarmIfFocused = useEffectEvent(() => {
+    if (getTextarea() === document.activeElement) dictation.prewarm();
+  });
+  useEffect(() => {
+    if (available && !active) prewarmIfFocused();
+  }, [available, active]);
 
   return {
     available,
@@ -120,6 +145,9 @@ export function useComposerDictation({
     state: dictation.state,
     level: dictation.level,
     toggle,
+    prewarm: (options?: { likely?: boolean }) => {
+      if (available) dictation.prewarm(options);
+    },
     stop: dictation.stop,
     stopForTyping: () => {
       if (!active) return;

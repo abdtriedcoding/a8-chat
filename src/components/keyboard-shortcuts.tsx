@@ -32,6 +32,13 @@ type Shortcut =
   | "dictate"
   | "help";
 
+/** What the dictation keys do in the message box on screen. */
+export type DictationShortcuts = {
+  toggle?: () => void;
+  /** Set while dictation is on, so Esc stops it before the reply. */
+  stop?: () => void;
+};
+
 export type ThreadShortcuts = {
   stopReply?: () => void;
   editLastPrompt?: () => void;
@@ -43,7 +50,11 @@ const HELP: { shortcut: Shortcut; label: string; keys: string[] }[] = [
   { shortcut: "search", label: "Search chats", keys: ["Mod", "K"] },
   { shortcut: "newChat", label: "New chat", keys: ["Mod", "Shift", "O"] },
   { shortcut: "toggleSidebar", label: "Toggle sidebar", keys: ["Mod", "B"] },
-  { shortcut: "stopReply", label: "Stop the reply", keys: ["Esc"] },
+  {
+    shortcut: "stopReply",
+    label: "Stop dictation or the reply",
+    keys: ["Esc"],
+  },
   {
     shortcut: "editLastPrompt",
     label: "Edit your last message, from an empty message box",
@@ -65,8 +76,8 @@ const HELP: { shortcut: Shortcut; label: string; keys: string[] }[] = [
 const SetThreadShortcutsContext = createContext<
   ((shortcuts: ThreadShortcuts) => void) | null
 >(null);
-const SetDictationShortcutContext = createContext<
-  ((toggle: (() => void) | undefined) => void) | null
+const SetDictationShortcutsContext = createContext<
+  ((shortcuts: DictationShortcuts) => void) | null
 >(null);
 const OpenHelpContext = createContext<(() => void) | null>(null);
 
@@ -81,7 +92,7 @@ export function KeyboardShortcutsProvider({
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const threadShortcutsRef = useRef<ThreadShortcuts>({});
-  const toggleDictationRef = useRef<(() => void) | undefined>(undefined);
+  const dictationShortcutsRef = useRef<DictationShortcuts>({});
   const router = useRouter();
   const { toggleSearch } = useThreadSearch();
   const { toggleSidebar } = useSidebar();
@@ -109,14 +120,20 @@ export function KeyboardShortcutsProvider({
         copyLastReply?.();
         break;
       case "dictate":
-        if (!toggleDictationRef.current) return;
-        toggleDictationRef.current();
+        if (!dictationShortcutsRef.current.toggle) return;
+        dictationShortcutsRef.current.toggle();
         break;
       case "stopReply":
         // An open dialog, menu or editor takes Esc first and prevents its
         // default.
-        if (event.defaultPrevented || !stopReply) return;
-        stopReply();
+        if (event.defaultPrevented) return;
+        if (dictationShortcutsRef.current.stop) {
+          dictationShortcutsRef.current.stop();
+        } else if (stopReply) {
+          stopReply();
+        } else {
+          return;
+        }
         break;
       case "editLastPrompt":
         if (!isEmptyComposer(event.target) || !editLastPrompt) return;
@@ -139,9 +156,9 @@ export function KeyboardShortcutsProvider({
         threadShortcutsRef.current = shortcuts;
       }}
     >
-      <SetDictationShortcutContext
-        value={(toggle) => {
-          toggleDictationRef.current = toggle;
+      <SetDictationShortcutsContext
+        value={(shortcuts) => {
+          dictationShortcutsRef.current = shortcuts;
         }}
       >
         <OpenHelpContext value={() => setHelpOpen(true)}>
@@ -158,7 +175,7 @@ export function KeyboardShortcutsProvider({
             </DialogContent>
           </Dialog>
         </OpenHelpContext>
-      </SetDictationShortcutContext>
+      </SetDictationShortcutsContext>
     </SetThreadShortcutsContext>
   );
 }
@@ -178,21 +195,20 @@ export function useThreadShortcuts(shortcuts: ThreadShortcuts) {
 }
 
 /**
- * Lets the dictation shortcut start and stop dictation in the caller's
- * message box while it's mounted. Without `toggle`, the shortcut does
- * nothing.
+ * Lets Ctrl/Cmd+Shift+Space and Esc act on dictation in the caller's message
+ * box while it's mounted.
  */
-export function useDictationShortcut(toggle: (() => void) | undefined) {
-  const setToggle = useContext(SetDictationShortcutContext);
-  if (!setToggle) {
+export function useDictationShortcuts(shortcuts: DictationShortcuts) {
+  const setShortcuts = useContext(SetDictationShortcutsContext);
+  if (!setShortcuts) {
     throw new Error(
-      "useDictationShortcut must be used within KeyboardShortcutsProvider.",
+      "useDictationShortcuts must be used within KeyboardShortcutsProvider.",
     );
   }
   useEffect(() => {
-    setToggle(toggle);
-    return () => setToggle(undefined);
-  }, [setToggle, toggle]);
+    setShortcuts(shortcuts);
+    return () => setShortcuts({});
+  }, [setShortcuts, shortcuts]);
 }
 
 /** Opens the shortcuts dialog. */
