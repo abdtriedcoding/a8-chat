@@ -1,6 +1,6 @@
 "use client";
 
-import { PlugIcon, SquarePenIcon } from "lucide-react";
+import { CalendarClockIcon, PlugIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AppIcon } from "@/components/icons/app-icon";
@@ -19,7 +19,7 @@ import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 
 export function AppSidebar() {
   const closeOnMobile = useCloseSidebarOnMobile();
-  const onConnectorsPage = usePathname() === "/connectors";
+  const pathname = usePathname();
   return (
     <Sidebar>
       <SidebarHeader className="gap-3">
@@ -46,11 +46,25 @@ export function AppSidebar() {
           >
             <Link
               href="/connectors"
-              aria-current={onConnectorsPage ? "page" : undefined}
+              aria-current={pathname === "/connectors" ? "page" : undefined}
               onClick={closeOnMobile}
             >
               <PlugIcon data-icon="inline-start" />
               Connectors
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            className="justify-start aria-[current=page]:bg-muted"
+            asChild
+          >
+            <Link
+              href="/scheduled"
+              aria-current={pathname === "/scheduled" ? "page" : undefined}
+              onClick={closeOnMobile}
+            >
+              <CalendarClockIcon data-icon="inline-start" />
+              Scheduled
             </Link>
           </Button>
         </div>
