@@ -9,7 +9,7 @@ import { MAX_REPLY_STEPS } from "../agents/chat";
  * action cards also saves the user's decisions, and the results of the
  * actions they approved.
  */
-const MAX_TURN_MESSAGES = 4 * MAX_REPLY_STEPS + 1;
+export const MAX_TURN_MESSAGES = 4 * MAX_REPLY_STEPS + 1;
 
 /** The thread's last turn, newest message first, with every status. */
 export async function getLastTurn(

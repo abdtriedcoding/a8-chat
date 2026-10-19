@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useThreadShortcuts } from "@/components/keyboard-shortcuts";
+import { ShareButton } from "@/components/share-dialog";
 import {
   Alert,
   AlertAction,
@@ -156,7 +157,12 @@ export function ThreadView({ threadId }: { threadId: string }) {
   return (
     <>
       <ChatHeader>
-        {thread && <ThreadHeading threadId={threadId} title={thread.title} />}
+        {thread && (
+          <>
+            <ThreadHeading threadId={threadId} title={thread.title} />
+            <ShareButton threadId={threadId} title={thread.title} />
+          </>
+        )}
       </ChatHeader>
       {thread === undefined || status === "LoadingFirstPage" ? (
         <ConversationSkeleton />

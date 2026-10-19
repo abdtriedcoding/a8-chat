@@ -10,10 +10,12 @@ export type DecideAction = (
 
 /**
  * What a thread's messages can do to it, and whether the last prompt's
- * editor is open.
+ * editor is open. A shared snapshot's page sets no actions, so its messages
+ * are read-only.
  */
 export type ThreadActions = {
-  decide: DecideAction;
+  /** Unset where nobody can decide on action cards. */
+  decide?: DecideAction;
   /** Replaces the last reply. Unset while the last turn can't be redone. */
   regenerate?: () => Promise<void>;
   /** Edits the last prompt. Unset while the last turn can't be redone. */

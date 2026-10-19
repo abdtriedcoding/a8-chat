@@ -83,6 +83,9 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: MINUTE,
     capacity: 10,
   },
+  // Each user's shares and link updates. Each one copies a thread, so a
+  // script can't fill the deployment with copies.
+  userShares: { kind: "fixed window", rate: 30, period: HOUR },
 });
 
 /** Why a Send was refused. The Send mutations return it instead of throwing. */
@@ -295,6 +298,21 @@ export async function limitConnectStart(
 }
 
 /**
+ * Counts one share or link update against the user's limit. Returns the
+ * milliseconds until one would go through, or null if this one can go
+ * ahead.
+ */
+export async function limitShare(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<number | null> {
+  const { ok, retryAfter } = await rateLimiter.limit(ctx, "userShares", {
+    key: userId,
+  });
+  return ok ? null : retryAfter;
+}
+
+/**
  * Deletes a deleted user's rate limit counters. The sign-in counter's key is
  * the email. Better Auth's own counters are keyed by IP and path, not user.
  */
@@ -312,6 +330,7 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userDailyUploadBytes", key);
   await rateLimiter.reset(ctx, "userConnectorToolCalls", key);
   await rateLimiter.reset(ctx, "userConnectStarts", key);
+  await rateLimiter.reset(ctx, "userShares", key);
   await rateLimiter.reset(ctx, "signInByEmail", {
     key: email.trim().toLowerCase(),
   });
