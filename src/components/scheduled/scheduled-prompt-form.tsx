@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { CircleAlertIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -43,6 +44,10 @@ import { WEEKDAYS } from "../../../convex/lib/scheduleText";
 import { browserTimeZone } from "../../../convex/lib/timeZone";
 
 type Kind = Schedule["kind"];
+
+export type ScheduledPrompt = FunctionReturnType<
+  typeof api.scheduledPrompts.list
+>[number];
 
 const KINDS: { kind: Kind; label: string }[] = [
   { kind: "once", label: "Once" },
@@ -88,12 +93,12 @@ const formSchema = z
 type FormValues = z.infer<typeof formSchema>;
 
 /**
- * The browser's time zones, with its own zone and UTC in the list even when
- * the browser leaves them out.
+ * The browser's time zones, plus UTC and `extra`, such as its own zone,
+ * which the browser can leave out.
  */
-function timeZoneOptions(own: string) {
+function timeZoneOptions(extra: (string | undefined)[]) {
   const zones = new Set(Intl.supportedValuesOf("timeZone"));
-  zones.add(own);
+  for (const zone of extra) if (zone) zones.add(zone);
   zones.add("UTC");
   return [...zones].sort();
 }
@@ -101,6 +106,25 @@ function timeZoneOptions(own: string) {
 /** Today in `timeZone`, as "YYYY-MM-DD". */
 function today(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(Date.now());
+}
+
+/** The form filled in from `row`, or blank for a new scheduled prompt. */
+function toFormValues(
+  row: ScheduledPrompt | undefined,
+  ownTimeZone: string,
+): FormValues {
+  const timeZone = row?.timeZone ?? ownTimeZone;
+  const schedule = row?.schedule;
+  return {
+    title: row?.title ?? "",
+    prompt: row?.prompt ?? "",
+    kind: schedule?.kind ?? "daily",
+    date: schedule?.kind === "once" ? schedule.date : today(timeZone),
+    time: schedule?.time ?? "09:00",
+    days: schedule?.kind === "weekly" ? schedule.days.map(String) : ["1"],
+    dayOfMonth: schedule?.kind === "monthly" ? String(schedule.day) : "1",
+    timeZone,
+  };
 }
 
 function toSchedule(values: FormValues): Schedule {
@@ -140,30 +164,65 @@ export function NewScheduledPromptSheet() {
         </SheetHeader>
         {/* The sheet's content mounts only when open, in the browser, so the
             form can read the browser's time zone as it renders. */}
-        <CreateForm onCreated={() => setOpen(false)} />
+        <ScheduledPromptForm onDone={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );
 }
 
-function CreateForm({ onCreated }: { onCreated: () => void }) {
+/**
+ * The sheet with the form that edits `row`. The list that opens it keeps
+ * `row` set while the sheet closes, so the form doesn't blank mid-animation.
+ */
+export function EditScheduledPromptSheet({
+  row,
+  open,
+  onOpenChange,
+}: {
+  row: ScheduledPrompt | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="gap-0 sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Edit scheduled task</SheetTitle>
+          <SheetDescription>
+            Changes apply from its next run. Past runs stay as they were.
+          </SheetDescription>
+        </SheetHeader>
+        {row && (
+          <ScheduledPromptForm
+            key={row._id}
+            row={row}
+            onDone={() => onOpenChange(false)}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** Makes a scheduled prompt, or saves changes to `row` when it's set. */
+function ScheduledPromptForm({
+  row,
+  onDone,
+}: {
+  row?: ScheduledPrompt;
+  onDone: () => void;
+}) {
   const create = useMutation(api.scheduledPrompts.create);
+  const update = useMutation(api.scheduledPrompts.update);
   const router = useRouter();
   const [ownTimeZone] = useState(browserTimeZone);
-  const [timeZones] = useState(() => timeZoneOptions(ownTimeZone));
+  const [timeZones] = useState(() =>
+    timeZoneOptions([ownTimeZone, row?.timeZone]),
+  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      title: "",
-      prompt: "",
-      kind: "daily",
-      date: today(ownTimeZone),
-      time: "09:00",
-      days: ["1"],
-      dayOfMonth: "1",
-      timeZone: ownTimeZone,
-    },
+    defaultValues: toFormValues(row, ownTimeZone),
   });
 
   const pending = form.formState.isSubmitting;
@@ -171,20 +230,30 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
   const dayOfMonth = useWatch({ control: form.control, name: "dayOfMonth" });
 
   async function onSubmit(values: FormValues) {
+    const fields = {
+      title: values.title,
+      prompt: values.prompt,
+      schedule: toSchedule(values),
+      timeZone: values.timeZone,
+    };
     try {
-      const { threadId } = await create({
-        title: values.title,
-        prompt: values.prompt,
-        schedule: toSchedule(values),
-        timeZone: values.timeZone,
-      });
-      toast.success("Scheduled task created.", {
-        action: {
-          label: "Open chat",
-          onClick: () => router.push(`/c/${threadId}`),
-        },
-      });
-      onCreated();
+      if (row) {
+        await update({
+          ...fields,
+          scheduledPromptId: row._id,
+          email: row.email,
+        });
+        toast.success("Scheduled task saved.");
+      } else {
+        const { threadId } = await create(fields);
+        toast.success("Scheduled task created.", {
+          action: {
+            label: "Open chat",
+            onClick: () => router.push(`/c/${threadId}`),
+          },
+        });
+      }
+      onDone();
     } catch (caught) {
       form.setError("root", { message: errorMessage(caught) });
     }
@@ -422,7 +491,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
         </SheetClose>
         <Button type="submit" disabled={pending}>
           {pending && <Spinner data-icon="inline-start" />}
-          Schedule
+          {row ? "Save" : "Schedule"}
         </Button>
       </SheetFooter>
     </form>
