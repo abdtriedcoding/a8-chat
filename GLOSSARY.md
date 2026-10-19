@@ -43,7 +43,7 @@ A reply that picks up again once the user has approved or cancelled every action
 _Avoid_: continuation, resumed reply
 
 **Queued prompt**:
-A prompt the user sent while a reply was still running, waiting in line to start its own turn. Queued prompts start oldest first, each once the thread is free. The model doesn't see one until it starts.
+A prompt the user sent while a reply was still running, or a scheduled run that couldn't start right away, waiting in line to start its own turn. Queued prompts start oldest first, each once the thread is free. The model doesn't see one until it starts.
 _Avoid_: pending message, queued message, draft
 
 **Queue**:
@@ -63,11 +63,11 @@ A scheduled prompt that won't run until the user resumes it. The user can pause 
 _Avoid_: disabled task, stopped schedule
 
 **Scheduled run**:
-One time a scheduled prompt sends itself. It counts as a send, joins the queue like a queued prompt when the thread is busy, and its reply waits for the user's decision on any action card like any other reply. The model sees earlier runs in the thread. "Run now" starts one by hand.
+One time a scheduled prompt sends itself. It counts as a send. It never cancels a card. It joins the queue as a queued prompt while a reply is running or an action card is waiting. It also joins when the queue has prompts or is paused. A queued run still counts as a run when it starts. Its reply waits for the user's decision on any action card like any other reply. The model sees earlier runs in the thread. A run moves an archived thread back to the sidebar. "Run now" starts one by hand, and is never skipped.
 _Avoid_: execution, occurrence, trigger
 
 **Skipped run**:
-A scheduled run that never happens because the scheduled prompt's last run is still waiting, on an action card or in the queue. A scheduled prompt has at most one run waiting.
+A scheduled run that never happens because the scheduled prompt's last run hasn't finished. That run is still in the queue, still replying, or has an action card waiting. The scheduled prompt records it as its last run. A scheduled prompt has at most one run waiting.
 _Avoid_: missed run, dropped run
 
 **Turn**:

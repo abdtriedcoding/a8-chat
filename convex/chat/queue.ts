@@ -14,10 +14,11 @@ import { MAX_ATTACHMENTS_PER_PROMPT } from "../lib/attachments";
 import { MAX_QUEUED_PROMPTS } from "../lib/queue";
 
 // A thread's queue holds the prompts the user sent while a reply was
-// running. sendMessage queues them, and startNextPrompt (convex/chat/send.ts) starts
-// them oldest first, each as its own turn. This module holds the queue's
-// rows and the functions that manage it. Starting a queued prompt is a Send,
-// so it lives with the Sends.
+// running, and scheduled runs that couldn't start right away (sendRun in
+// convex/scheduledPrompts.ts). sendMessage queues the user's prompts, and
+// startNextPrompt (convex/chat/send.ts) starts them oldest first, each as
+// its own turn. This module holds the queue's rows and the functions that
+// manage it. Starting a queued prompt is a Send, so it lives with the Sends.
 
 const vQueuedPromptView = v.object({
   _id: v.id("queuedPrompts"),
@@ -161,8 +162,8 @@ export async function unpauseThreadQueue(ctx: MutationCtx, threadId: string) {
 }
 
 /**
- * Adds a prompt to the end of the thread's queue. The caller has checked
- * the prompt, its attachments and the rate limits.
+ * Adds a prompt to the end of the thread's queue and returns its id. The
+ * caller has checked the prompt, its attachments and the rate limits.
  */
 export async function addQueuedPrompt(
   ctx: MutationCtx,
@@ -172,6 +173,7 @@ export async function addQueuedPrompt(
   for (const fileId of fields.attachmentFileIds) {
     await ctx.db.insert("queuedPromptFiles", { queuedPromptId, fileId });
   }
+  return queuedPromptId;
 }
 
 /**
