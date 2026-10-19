@@ -1,6 +1,6 @@
 export type AuthEmail = { subject: string; text: string; html: string };
 
-function escapeHtml(value: string) {
+export function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
