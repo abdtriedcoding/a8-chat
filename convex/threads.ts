@@ -26,7 +26,11 @@ import {
 } from "./lib/guards";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { checkTitle } from "./lib/prompt";
-import { deleteThreadScheduledPrompt } from "./lib/scheduledPrompts";
+import {
+  deleteThreadScheduledPrompt,
+  findThreadScheduledPrompt,
+  listUnreadThreadIds,
+} from "./lib/scheduledPrompts";
 import {
   findTemporaryThread,
   listTemporaryThreadIds,
@@ -38,13 +42,19 @@ const vThreadSummary = v.object({
   _id: v.string(),
   _creationTime: v.number(),
   title: v.optional(v.string()),
+  // Whether its scheduled prompt has runs the user hasn't opened it to see.
+  unread: v.boolean(),
 });
 
-function toSummary(thread: ThreadDoc): Infer<typeof vThreadSummary> {
+function toSummary(
+  thread: ThreadDoc,
+  unreadThreadIds: Set<string>,
+): Infer<typeof vThreadSummary> {
   return {
     _id: thread._id,
     _creationTime: thread._creationTime,
     title: thread.title,
+    unread: unreadThreadIds.has(thread._id),
   };
 }
 
@@ -78,7 +88,10 @@ export const list = query({
         .withIndex("by_userId", (q) => q.eq("userId", user._id));
       for await (const pin of pins) pinned.add(pin.threadId);
     }
-    const temporary = await listTemporaryThreadIds(ctx, user._id);
+    const [temporary, unreadThreadIds] = await Promise.all([
+      listTemporaryThreadIds(ctx, user._id),
+      listUnreadThreadIds(ctx, user._id),
+    ]);
     const page: Infer<typeof vThreadSummary>[] = [];
     let cursor = paginationOpts.cursor;
     let isDone = false;
@@ -97,7 +110,7 @@ export const list = query({
         ) {
           continue;
         }
-        page.push(toSummary(thread));
+        page.push(toSummary(thread, unreadThreadIds));
       }
       cursor = result.continueCursor;
       isDone = result.isDone;
@@ -125,17 +138,18 @@ export const listPinned = query({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .order("desc")
       .collect();
-    const [threads, temporary] = await Promise.all([
+    const [threads, temporary, unreadThreadIds] = await Promise.all([
       Promise.all(
         pins.map((pin) => findOwnThread(ctx, user._id, pin.threadId)),
       ),
       listTemporaryThreadIds(ctx, user._id),
+      listUnreadThreadIds(ctx, user._id),
     ]);
     // Archiving and deleting unpin, and a temporary thread can't be pinned,
     // so this guard shouldn't skip any.
     return threads.flatMap((thread) =>
       thread?.status === "active" && !temporary.has(thread._id)
-        ? [toSummary(thread)]
+        ? [toSummary(thread, unreadThreadIds)]
         : [],
     );
   },
@@ -149,17 +163,27 @@ export const get = query({
       title: v.optional(v.string()),
       archived: v.boolean(),
       temporary: v.boolean(),
+      // The scheduled prompt whose runs go here, or null.
+      scheduledPromptId: v.union(v.id("scheduledPrompts"), v.null()),
+      // Whether that scheduled prompt has runs the user hasn't seen.
+      unread: v.boolean(),
     }),
     v.null(),
   ),
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
     if (!thread) return null;
+    const [temporary, scheduledPrompt] = await Promise.all([
+      findTemporaryThread(ctx, threadId),
+      findThreadScheduledPrompt(ctx, threadId),
+    ]);
     return {
       _id: thread._id,
       title: thread.title,
       archived: thread.status === "archived",
-      temporary: (await findTemporaryThread(ctx, threadId)) !== null,
+      temporary: temporary !== null,
+      scheduledPromptId: scheduledPrompt?._id ?? null,
+      unread: (scheduledPrompt?.unreadRuns ?? 0) > 0,
     };
   },
 });

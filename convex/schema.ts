@@ -151,7 +151,10 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_threadId", ["threadId"])
-    .index("by_userId_and_status", ["userId", "status"]),
+    .index("by_userId_and_status", ["userId", "status"])
+    // For the sidebar's unread dots and count. The thread lists read only
+    // rows with unread runs, so a run of any other row doesn't rerun them.
+    .index("by_userId_and_unreadRuns", ["userId", "unreadRuns"]),
   // One row per shared snapshot (convex/sharedSnapshots.ts, ADR 0011). Its
   // public link opens `version` of its copied messages. Sharing again copies
   // the next version and switches to it once the copy is done. Unsharing or

@@ -26,6 +26,7 @@ import { MAX_QUEUED_PROMPTS } from "./lib/queue";
 import {
   cancelScheduledRun,
   findThreadScheduledPrompt,
+  listUnreadScheduledPrompts,
   vRunEnding,
 } from "./lib/scheduledPrompts";
 import {
@@ -48,7 +49,6 @@ const MAX_ACTIVE_SCHEDULED_PROMPTS = 10;
 
 /** Failed runs in a row that pause a scheduled prompt. */
 const MAX_FAILED_RUNS = 3;
-
 
 const vScheduledPromptView = v.object({
   _id: v.id("scheduledPrompts"),
@@ -98,6 +98,39 @@ export const list = query({
           ? row.consecutiveFailures
           : undefined,
     }));
+  },
+});
+
+/**
+ * How many runs the user hasn't opened the thread to see, across their
+ * scheduled prompts. 0 when signed out.
+ */
+export const unreadCount = query({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const user = await optionalUser(ctx);
+    if (!user) return 0;
+    const rows = await listUnreadScheduledPrompts(ctx, user._id);
+    return rows.reduce((count, row) => count + row.unreadRuns, 0);
+  },
+});
+
+/**
+ * Clears the unread runs of the thread's scheduled prompt. The thread page
+ * calls it when it opens with unread runs. Does nothing for a thread with no
+ * scheduled prompt, or someone else's.
+ */
+export const markRead = mutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    const user = await requireUser(ctx);
+    const row = await findThreadScheduledPrompt(ctx, threadId);
+    if (row?.userId === user._id && row.unreadRuns > 0) {
+      await ctx.db.patch("scheduledPrompts", row._id, { unreadRuns: 0 });
+    }
+    return null;
   },
 });
 
@@ -328,7 +361,8 @@ export const run = internalMutation({
  * adds to it (recordFailedRun). A reply can also end on an action card.
  * The run then waits until the reply continues and ends, and that end
  * records the run's outcome again. A reply that never started records
- * nothing, unless the user stopped it.
+ * nothing, unless the user stopped it. A finished reply adds an unread run,
+ * and so does one that ends on a card.
  *
  * A prompt the user sends while the run's cards wait cancels them, and the
  * run's reply never continues. When that prompt's reply ends, the run is
@@ -387,16 +421,17 @@ export const recordRunOutcome = internalMutation({
     const latest = turn[0]?.order === order ? turn[0] : undefined;
     if (ending === "failed" || latest?.status === "failed") {
       await recordFailedRun(ctx, row);
-    } else if (latest && waitingApprovalIds(turn).length > 0) {
-      await ctx.db.patch("scheduledPrompts", row._id, {
-        lastRun: { at, outcome: "actionWaiting" },
-      });
-    } else {
-      await ctx.db.patch("scheduledPrompts", row._id, {
-        lastRun: { at, outcome: "finished" },
-        consecutiveFailures: 0,
-      });
+      return null;
     }
+    // A continuing reply ends after the user decided the cards, so they've
+    // seen it.
+    const unreadRuns = continuing ? row.unreadRuns : row.unreadRuns + 1;
+    const actionWaiting = latest && waitingApprovalIds(turn).length > 0;
+    await ctx.db.patch("scheduledPrompts", row._id, {
+      lastRun: { at, outcome: actionWaiting ? "actionWaiting" : "finished" },
+      unreadRuns,
+      ...(actionWaiting ? {} : { consecutiveFailures: 0 }),
+    });
     return null;
   },
 });

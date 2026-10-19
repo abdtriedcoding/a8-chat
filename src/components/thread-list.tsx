@@ -137,7 +137,13 @@ export function ThreadList() {
             aria-current={active ? "page" : undefined}
             onClick={closeOnMobile}
           >
-            <span>{threadTitle(thread)}</span>
+            <span className="truncate">{threadTitle(thread)}</span>
+            {/* A scheduled run the user hasn't opened the thread to see. */}
+            {thread.unread && (
+              <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
+                <span className="sr-only">Unread</span>
+              </span>
+            )}
           </Link>
         </SidebarMenuButton>
         <DropdownMenu>
