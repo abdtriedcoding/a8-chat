@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { LogoMark } from "@/components/icons/logo-mark";
+import { AppIcon } from "@/components/icons/app-icon";
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -9,7 +9,7 @@ export function Logo({ className }: { className?: string }) {
         className,
       )}
     >
-      <LogoMark className="size-7 text-primary" />
+      <AppIcon className="size-[1.4em]" />
       a8
     </span>
   );

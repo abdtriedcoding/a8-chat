@@ -2,7 +2,7 @@
 
 import { useSmoothText } from "@convex-dev/agent/react";
 import { memo } from "react";
-import { LogoMark } from "@/components/icons/logo-mark";
+import { AppIcon } from "@/components/icons/app-icon";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   Message,
@@ -101,8 +101,8 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   return (
     <Message align="start">
-      <MessageAvatar className="size-8 self-start group-has-data-[slot=message-footer]/message:translate-y-0">
-        <LogoMark className="size-4 text-primary" />
+      <MessageAvatar className="size-8 self-start rounded-none bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0">
+        <AppIcon />
       </MessageAvatar>
       <MessageContent className="pt-1">
         {toolRows.length > 0 && (
@@ -160,8 +160,8 @@ export const AssistantMessage = memo(function AssistantMessage({
 export function ThinkingMessage() {
   return (
     <Message align="start">
-      <MessageAvatar className="size-8 self-start">
-        <LogoMark className="size-4 text-primary" />
+      <MessageAvatar className="size-8 self-start rounded-none bg-transparent">
+        <AppIcon />
       </MessageAvatar>
       <MessageContent className="pt-1">
         <Bubble variant="ghost">

@@ -20,7 +20,7 @@ export default function SharedLayout({ children }: { children: ReactNode }) {
             aria-label="a8 home"
             className="rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <Logo className="text-lg [&_svg]:size-6" />
+            <Logo className="text-lg" />
           </Link>
         </div>
       </header>

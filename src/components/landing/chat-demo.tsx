@@ -8,7 +8,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { LogoMark } from "@/components/icons/logo-mark";
+import { AppIcon } from "@/components/icons/app-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -147,9 +147,7 @@ function AssistantMessage({
 }) {
   return (
     <div className="flex gap-3">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-card ring-1 ring-foreground/10">
-        <LogoMark className="size-4 text-primary" />
-      </span>
+      <AppIcon className="size-7" />
       <div className="flex min-w-0 flex-1 flex-col gap-2 text-sm leading-relaxed">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <CheckIcon className="size-3.5 text-success" />

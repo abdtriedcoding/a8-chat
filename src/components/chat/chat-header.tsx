@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
@@ -22,12 +23,19 @@ import { threadTitle } from "@/lib/thread-title";
 export function ChatHeader({
   children,
   end,
+  className,
 }: {
   children?: ReactNode;
   end?: ReactNode;
+  className?: string;
 }) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+    <header
+      className={cn(
+        "flex h-12 shrink-0 items-center gap-2 border-b px-3",
+        className,
+      )}
+    >
       <SidebarTrigger variant="outline" />
       {children && (
         <>

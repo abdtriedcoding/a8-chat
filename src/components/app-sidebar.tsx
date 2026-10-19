@@ -3,7 +3,7 @@
 import { PlugIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Logo } from "@/components/logo";
+import { AppIcon } from "@/components/icons/app-icon";
 import { NavUser } from "@/components/nav-user";
 import { ThreadList } from "@/components/thread-list";
 import { ThreadSearchButton } from "@/components/thread-search";
@@ -29,7 +29,7 @@ export function AppSidebar() {
           onClick={closeOnMobile}
           className="self-start rounded-md px-2 pt-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          <Logo className="text-lg" />
+          <AppIcon />
         </Link>
         <div className="flex flex-col gap-1">
           <Button variant="outline" className="justify-start" asChild>

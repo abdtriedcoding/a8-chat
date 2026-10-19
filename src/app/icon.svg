@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The same icon as AppIcon (src/components/icons/app-icon.tsx). -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0079e2" />
+      <stop offset="1" stop-color="#5cb8f5" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7.36" fill="url(#sky)" />
+  <g transform="translate(5.12 5.12) scale(0.9067)" fill="none" stroke="#fff" stroke-width="3.5">
+    <circle cx="12" cy="7.25" r="4.25" stroke-opacity="0.6" />
+    <circle cx="12" cy="16.25" r="5" />
+  </g>
+</svg>
