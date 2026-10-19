@@ -10,7 +10,7 @@ import {
   query,
   type MutationCtx,
 } from "./_generated/server";
-import { waitingApprovalIds } from "./chat/approval";
+import { closeUnrunActions, waitingApprovalIds } from "./chat/approval";
 import { getPausedQueue, listQueuedPrompts } from "./chat/queue";
 import { isThreadBusy, sendPrompt } from "./chat/send";
 import { getLastTurn } from "./chat/turns";
@@ -27,6 +27,7 @@ import {
 import { resolveTimeZone } from "./lib/timeZone";
 import { limitSend } from "./rateLimits";
 import { vScheduledPromptStatus } from "./schema";
+import { setThreadStatus } from "./threads";
 
 // A scheduled prompt sends itself into its own thread, once or on a
 // repeating schedule (GLOSSARY.md, ADR 0013). Each row keeps only its next
@@ -125,7 +126,7 @@ export const create = mutation({
  * schedules the run after this one first, from this run's due time so the
  * schedule doesn't drift, or marks a one-off done. Then it sends the prompt
  * into the thread as a Send, counted against the send limits, in the row's
- * time zone.
+ * time zone. Like a Send, it moves an archived thread back to the sidebar.
  *
  * Does nothing when the row is gone or isn't active, as when the job fired
  * just as the user paused. Sends nothing while the thread is in use or the
@@ -156,6 +157,11 @@ export const run = internalMutation({
       return null;
     }
     if (await limitSend(ctx, row.userId)) return null;
+    await setThreadStatus(ctx, threadId, "active");
+    // No card is waiting, so this cancels nothing the user hasn't seen. It
+    // ends approved actions that never ran, like one in a stopped reply,
+    // which Anthropic needs a result for.
+    await closeUnrunActions(ctx, threadId, turn);
     await sendPrompt(ctx, {
       threadId,
       message: buildPromptMessage(row.prompt, []),
