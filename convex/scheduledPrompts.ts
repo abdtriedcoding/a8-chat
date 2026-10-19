@@ -1,4 +1,4 @@
-import { createThread } from "@convex-dev/agent";
+import { createThread, type MessageDoc } from "@convex-dev/agent";
 import { pick } from "convex-helpers";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
@@ -34,6 +34,7 @@ import {
   vSchedule,
   type Schedule,
 } from "./lib/schedule";
+import type { RunEmailKind } from "./lib/runEmails";
 import { resolveTimeZone } from "./lib/timeZone";
 import { limitSend } from "./rateLimits";
 import { vLastRun, vScheduledPromptStatus } from "./schema";
@@ -333,6 +334,11 @@ export const run = internalMutation({
  * A prompt the user sends while the run's cards wait cancels them, and the
  * run's reply never continues. When that prompt's reply ends, the run is
  * recorded as finished.
+ *
+ * When the row's email is on, a finished reply emails its text, and one that
+ * stopped on a card emails what it had and says a card waits. A continuing
+ * reply's end sends nothing, since the user is there. The pause after
+ * failed runs sends its own email (recordFailedRun).
  */
 export const recordRunOutcome = internalMutation({
   args: {
@@ -391,11 +397,13 @@ export const recordRunOutcome = internalMutation({
       await ctx.db.patch("scheduledPrompts", row._id, {
         lastRun: { at, outcome: "actionWaiting" },
       });
+      if (!continuing) await emailRun(ctx, row, "actionWaiting", turn);
     } else {
       await ctx.db.patch("scheduledPrompts", row._id, {
         lastRun: { at, outcome: "finished" },
         consecutiveFailures: 0,
       });
+      if (!continuing && latest) await emailRun(ctx, row, "reply", turn);
     }
     return null;
   },
@@ -561,6 +569,36 @@ async function recordFailedRun(
     status: "paused",
     nextRunAt: undefined,
     scheduledJobId: undefined,
+  });
+  await emailRun(ctx, row, "paused", [], consecutiveFailures);
+}
+
+/**
+ * Emails the user about a run, if the row's email is on. The email holds the
+ * reply text of `turn`, the run's turn with the newest message first.
+ */
+async function emailRun(
+  ctx: MutationCtx,
+  row: Doc<"scheduledPrompts">,
+  kind: RunEmailKind,
+  turn: MessageDoc[],
+  failures = 0,
+) {
+  if (!row.email) return;
+  // Like replyText in the client, a reply's steps get a blank line between.
+  const reply = turn
+    .filter((message) => message.message?.role === "assistant" && message.text)
+    .map((message) => message.text)
+    .reverse()
+    .join("\n\n");
+  // Scheduled, so a failure to queue the email can't undo the outcome.
+  await ctx.scheduler.runAfter(0, internal.emails.sendRunEmail, {
+    kind,
+    userId: row.userId,
+    threadId: row.threadId,
+    title: row.title,
+    reply,
+    failures,
   });
 }
 

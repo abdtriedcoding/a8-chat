@@ -15,7 +15,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 ### Accounts
 
 - `auth.ts`: Better Auth's options, `getCurrentUser`, and `purgeAccount`, which deletes a user's data when they delete their account.
-- `emails.ts`: queues verification and password reset emails through Resend.
+- `emails.ts`: queues verification, password reset and scheduled run emails through Resend.
 - `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins, connector tool calls and shares. Sends and web searches also have a daily cap across all users.
 
 ### Chat
@@ -61,6 +61,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/sharedMessages.ts`: what a shared snapshot keeps of a message, and the redaction that drops the rest.
 - `lib/threadSearchSnippet.ts`: the snippet thread search shows around a match.
 - `lib/authEmails.ts`: the text and HTML of the auth emails.
+- `lib/runEmails.ts`: the subject, text and HTML of a scheduled run's emails.
 - `lib/connectorView.ts`: the client-safe view of the catalog. It's the only connector module the browser imports.
 - `lib/connectors.ts`: the server catalog, with each connector's MCP server URLs, pinned origins and sign-in settings.
 - `lib/connectorAuth.ts`: the OAuth provider, the pinned fetch, revocation, OAuth error handling and opening MCP clients.
