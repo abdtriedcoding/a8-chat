@@ -15,8 +15,17 @@ import {
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { threadTitle } from "@/lib/thread-title";
 
-/** The bar above a chat. `children` go after the sidebar button. */
-export function ChatHeader({ children }: { children?: ReactNode }) {
+/**
+ * The bar above a chat. `children` go after the sidebar button, and `end`
+ * at the far end.
+ */
+export function ChatHeader({
+  children,
+  end,
+}: {
+  children?: ReactNode;
+  end?: ReactNode;
+}) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
       <SidebarTrigger variant="outline" />
@@ -29,16 +38,14 @@ export function ChatHeader({ children }: { children?: ReactNode }) {
           {children}
         </>
       )}
-      <Button
-        variant="outline"
-        size="icon-sm"
-        className="ml-auto md:hidden"
-        asChild
-      >
-        <Link href="/chat" aria-label="New chat">
-          <SquarePenIcon />
-        </Link>
-      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        {end}
+        <Button variant="outline" size="icon-sm" className="md:hidden" asChild>
+          <Link href="/chat" aria-label="New chat">
+            <SquarePenIcon />
+          </Link>
+        </Button>
+      </div>
     </header>
   );
 }

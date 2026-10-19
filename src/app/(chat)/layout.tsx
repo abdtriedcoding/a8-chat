@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
 import { SessionGuard } from "@/components/session-guard";
+import { TemporaryThreadProvider } from "@/components/temporary-thread";
 import { ThreadSearchProvider } from "@/components/thread-search";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { getToken } from "@/lib/auth-server";
@@ -23,14 +24,16 @@ export default async function ChatLayout({
   return (
     <ConvexClientProvider initialToken={token}>
       <SessionGuard />
-      <SidebarProvider defaultOpen={defaultOpen} className="h-svh">
-        <ThreadSearchProvider>
-          <KeyboardShortcutsProvider>
-            <AppSidebar />
-            <SidebarInset className="min-w-0">{children}</SidebarInset>
-          </KeyboardShortcutsProvider>
-        </ThreadSearchProvider>
-      </SidebarProvider>
+      <TemporaryThreadProvider>
+        <SidebarProvider defaultOpen={defaultOpen} className="h-svh">
+          <ThreadSearchProvider>
+            <KeyboardShortcutsProvider>
+              <AppSidebar />
+              <SidebarInset className="min-w-0">{children}</SidebarInset>
+            </KeyboardShortcutsProvider>
+          </ThreadSearchProvider>
+        </SidebarProvider>
+      </TemporaryThreadProvider>
     </ConvexClientProvider>
   );
 }

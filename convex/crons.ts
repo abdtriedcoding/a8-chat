@@ -35,4 +35,13 @@ crons.interval(
   {},
 );
 
+// A temporary thread is deleted after a day with no new message, so an
+// hourly sweep keeps it to about 25 hours.
+crons.interval(
+  "delete idle temporary threads",
+  { hours: 1 },
+  internal.temporaryThreads.deleteIdleTemporaryThreads,
+  {},
+);
+
 export default crons;

@@ -18,6 +18,10 @@ _Avoid_: hidden thread, soft-deleted thread
 A thread the user keeps at the top of the sidebar, above their other threads. The most recently pinned comes first.
 _Avoid_: starred thread, favorite
 
+**Temporary thread**:
+A thread kept out of the user's history. It never shows in the sidebar, search or archive, and can't be shared, pinned, archived or renamed. It's deleted when the user opens another thread, starts a new chat or signs out, even mid-reply, or after a day with no new message. A reload keeps it. The user picks it before the first send, and a thread can't switch between temporary and regular. Actions it takes in apps stay done. UI copy says "temporary chat".
+_Avoid_: incognito thread, ephemeral thread, private chat
+
 **Shared snapshot**:
 A read-only copy of a thread's finished turns that anyone with its link can open, signed in or not. It shows prompts, attachments, replies and web searches, but only the names of connector tool calls and action cards. A thread has at most one: sharing again updates it to the thread's latest finished turns. Unsharing or deleting the thread removes it, and archiving doesn't. UI copy says "shared link".
 _Avoid_: shared thread, public chat, share link (outside UI copy)
