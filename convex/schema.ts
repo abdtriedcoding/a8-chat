@@ -96,7 +96,8 @@ export default defineSchema({
   // creation time. sendMessage adds one while a reply is running or the
   // queue isn't paused, and startNextPrompt (convex/chat/send.ts) removes
   // it when it starts. sendMessage checks the text and counts the Send
-  // before it adds the row.
+  // before it adds the row. A scheduled run (convex/scheduledPrompts.ts)
+  // adds one too when it can't start right away.
   queuedPrompts: defineTable({
     threadId: v.string(),
     userId: v.string(),
@@ -104,6 +105,9 @@ export default defineSchema({
     attachmentFileIds: v.array(v.string()),
     // The browser's time zone when the prompt was queued, unchecked.
     timeZone: v.optional(v.string()),
+    // Set when a scheduled run queued the prompt, so starting it moves the
+    // scheduled prompt's waitingRun to the prompt message.
+    scheduledPromptId: v.optional(v.id("scheduledPrompts")),
   }).index("by_threadId", ["threadId"]),
   // One row per file a queued prompt attaches, so cleanUpUnsentUploads can
   // look a file up and keep it while the prompt waits. An array field can't

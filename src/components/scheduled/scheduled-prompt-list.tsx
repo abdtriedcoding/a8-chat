@@ -101,13 +101,18 @@ export function ScheduledPromptList() {
 
   function run(row: ScheduledPrompt) {
     runNow({ scheduledPromptId: row._id }).then(
-      () =>
-        toast.success("Running now.", {
-          action: {
-            label: "Open chat",
-            onClick: () => router.push(`/c/${row.threadId}`),
+      ({ status }) =>
+        toast.success(
+          status === "sent"
+            ? "Running now."
+            : "Queued. It starts when its chat is free.",
+          {
+            action: {
+              label: "Open chat",
+              onClick: () => router.push(`/c/${row.threadId}`),
+            },
           },
-        }),
+        ),
       (error: unknown) => toast.error(errorMessage(error)),
     );
   }
@@ -197,11 +202,7 @@ export function ScheduledPromptList() {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="shrink-0"
-                  >
+                  <Button variant="ghost" size="icon-sm" className="shrink-0">
                     <MoreHorizontalIcon />
                     <span className="sr-only">
                       More options for {row.title}

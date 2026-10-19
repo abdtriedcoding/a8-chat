@@ -11,12 +11,17 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { closeUnrunActions, waitingApprovalIds } from "./chat/approval";
-import { getPausedQueue, listQueuedPrompts } from "./chat/queue";
+import {
+  addQueuedPrompt,
+  getPausedQueue,
+  listQueuedPrompts,
+} from "./chat/queue";
 import { isThreadBusy, sendPrompt } from "./chat/send";
 import { getLastTurn } from "./chat/turns";
 import { appError, ERROR_CODES, type AppErrorData } from "./lib/errors";
 import { optionalUser, requireUser } from "./lib/guards";
 import { buildPromptMessage, checkPrompt, checkTitle } from "./lib/prompt";
+import { MAX_QUEUED_PROMPTS } from "./lib/queue";
 import { cancelScheduledRun } from "./lib/scheduledPrompts";
 import {
   findNextRun,
@@ -235,14 +240,18 @@ export const remove = mutation({
 });
 
 /**
- * Runs a scheduled prompt now, whatever its status, as a Send. A one-off is
- * then done. A recurring one keeps its next run, or stays paused. Throws
- * when the thread is in use or the send limit refuses, and then changes
+ * Runs a scheduled prompt now, whatever its status, as a Send (sendRun). A
+ * one-off is then done. A recurring one keeps its next run, or stays
+ * paused. It's never skipped, even while the last run waits. Returns
+ * whether the prompt was sent or joined the queue. Throws when the
+ * thread's queue is full or the send limit refuses, and then changes
  * nothing.
  */
 export const runNow = mutation({
   args: { scheduledPromptId: v.id("scheduledPrompts") },
-  returns: v.null(),
+  returns: v.object({
+    status: v.union(v.literal("sent"), v.literal("queued")),
+  }),
   handler: async (ctx, { scheduledPromptId }) => {
     const { row } = await requireOwnScheduledPrompt(ctx, scheduledPromptId);
     if (row.status === "active") {
@@ -250,9 +259,9 @@ export const runNow = mutation({
     } else if (row.status === "paused" && row.schedule.kind === "once") {
       await ctx.db.patch("scheduledPrompts", row._id, { status: "done" });
     }
-    const refused = await sendRun(ctx, row);
-    if (refused) throw appError(refused.code, refused.message);
-    return null;
+    const result = await sendRun(ctx, row);
+    if ("code" in result) throw appError(result.code, result.message);
+    return result;
   },
 });
 
@@ -260,7 +269,8 @@ export const runNow = mutation({
  * One scheduled run. The scheduler fires it at the row's next run time. It
  * schedules the run after this one first, from this run's due time so the
  * schedule doesn't drift, or marks a one-off done. Then it sends the prompt
- * (sendRun).
+ * (sendRun). While the last run hasn't finished (isRunWaiting), it records
+ * a skipped run instead, so at most one run waits.
  *
  * Does nothing when the row is gone or isn't active, as when the job fired
  * just as the user paused.
@@ -272,6 +282,12 @@ export const run = internalMutation({
     const row = await ctx.db.get("scheduledPrompts", scheduledPromptId);
     if (!row || row.status !== "active") return null;
     await scheduleNextRun(ctx, row);
+    if (await isRunWaiting(ctx, row)) {
+      await ctx.db.patch("scheduledPrompts", row._id, {
+        lastRun: { at: Date.now(), outcome: "skipped" },
+      });
+      return null;
+    }
     await sendRun(ctx, row);
     return null;
   },
@@ -315,46 +331,92 @@ export const nextRun = internalQuery({
 
 /**
  * Sends the scheduled prompt into its thread as a Send, counted against the
- * send limits, in the row's time zone. Like a Send, it moves an archived
- * thread back to the sidebar. Returns why it sent nothing: the thread is in
- * use, or the send limit refused.
+ * send limits, in the row's time zone, and stores it as the waiting run.
+ * It never interrupts a reply or cancels a card. While a reply is running
+ * or a card waits, the prompt joins the queue instead. It also joins when
+ * the queue has prompts or is paused. Like a Send, it moves an archived
+ * thread back to the sidebar. Returns whether it sent or queued the prompt, or why it sent
+ * nothing: the queue is full, or the send limit refused.
  */
 async function sendRun(
   ctx: MutationCtx,
   row: Doc<"scheduledPrompts">,
-): Promise<AppErrorData | null> {
+): Promise<{ status: "sent" | "queued" } | AppErrorData> {
   const { threadId } = row;
   const [turn, queue, paused] = await Promise.all([
     getLastTurn(ctx, threadId),
     listQueuedPrompts(ctx, threadId),
     getPausedQueue(ctx, threadId),
   ]);
-  // Never interrupts a reply or cancels a waiting card.
-  if (
+  const shouldQueue =
     (await isThreadBusy(ctx, threadId, turn)) ||
     waitingApprovalIds(turn).length > 0 ||
     queue.length > 0 ||
-    paused !== null
-  ) {
+    paused !== null;
+  if (shouldQueue && queue.length >= MAX_QUEUED_PROMPTS) {
     return {
-      code: ERROR_CODES.REPLY_IN_PROGRESS,
-      message: "Its chat is busy. Open it and finish what's waiting first.",
+      code: ERROR_CODES.QUEUE_FULL,
+      message: `Its chat already has ${MAX_QUEUED_PROMPTS} queued prompts. Open it and wait for one to start.`,
     };
   }
   const limited = await limitSend(ctx, row.userId);
   if (limited) return limited;
   await setThreadStatus(ctx, threadId, "active");
+  if (shouldQueue) {
+    const queuedPromptId = await addQueuedPrompt(ctx, {
+      threadId,
+      userId: row.userId,
+      prompt: row.prompt,
+      attachmentFileIds: [],
+      timeZone: row.timeZone,
+      scheduledPromptId: row._id,
+    });
+    await ctx.db.patch("scheduledPrompts", row._id, {
+      waitingRun: { queuedPromptId },
+    });
+    return { status: "queued" };
+  }
   // No card is waiting, so this cancels nothing the user hasn't seen. It
   // ends approved actions that never ran, like one in a stopped reply,
   // which Anthropic needs a result for.
   await closeUnrunActions(ctx, threadId, turn);
-  await sendPrompt(ctx, {
+  const promptMessageId = await sendPrompt(ctx, {
     threadId,
     message: buildPromptMessage(row.prompt, []),
     attachmentFileIds: [],
     timeZone: row.timeZone,
   });
-  return null;
+  await ctx.db.patch("scheduledPrompts", row._id, {
+    waitingRun: { promptMessageId },
+  });
+  return { status: "sent" };
+}
+
+/**
+ * Whether the scheduled prompt's last run hasn't finished. That's while its
+ * queued prompt is still in the queue, or its prompt is in the thread's
+ * last turn and that turn's reply is running or has a card waiting. A run
+ * whose turn isn't the last one anymore has finished. A later prompt starts
+ * only once the user has decided its cards, or sent a prompt that cancelled
+ * them. A regenerate or an edit replaces the run's prompt, and moves
+ * waitingRun to the new one.
+ */
+async function isRunWaiting(ctx: MutationCtx, row: Doc<"scheduledPrompts">) {
+  const { waitingRun, threadId } = row;
+  if (!waitingRun) return false;
+  if ("queuedPromptId" in waitingRun) {
+    return (
+      (await ctx.db.get("queuedPrompts", waitingRun.queuedPromptId)) !== null
+    );
+  }
+  const turn = await getLastTurn(ctx, threadId);
+  if (!turn.some((message) => message._id === waitingRun.promptMessageId)) {
+    return false;
+  }
+  return (
+    (await isThreadBusy(ctx, threadId, turn)) ||
+    waitingApprovalIds(turn).length > 0
+  );
 }
 
 /**
@@ -434,10 +496,7 @@ function checkSchedule(schedule: Schedule, timeZone: string) {
  * A recurring run fired by hand before the due time leaves the next run as
  * it is. A one-off fired by hand is done, and its pending run is canceled.
  */
-async function scheduleNextRun(
-  ctx: MutationCtx,
-  row: Doc<"scheduledPrompts">,
-) {
+async function scheduleNextRun(ctx: MutationCtx, row: Doc<"scheduledPrompts">) {
   const now = Date.now();
   const early = row.nextRunAt !== undefined && row.nextRunAt > now;
   if (early && row.schedule.kind !== "once") return;

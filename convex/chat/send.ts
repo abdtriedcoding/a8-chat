@@ -26,6 +26,10 @@ import {
   titleFromPrompt,
 } from "../lib/prompt";
 import { MAX_QUEUED_PROMPTS, REPLY_START_TIMEOUT_MS } from "../lib/queue";
+import {
+  findThreadScheduledPrompt,
+  moveWaitingRun,
+} from "../lib/scheduledPrompts";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { limitSend, vRateLimited } from "../rateLimits";
 import { setThreadStatus } from "../threads";
@@ -390,18 +394,27 @@ async function redoLastTurn(
     newText === undefined
       ? prompt.message
       : replacePromptText(prompt.message, newText);
-  await sendPrompt(ctx, {
+  const newPromptId = await sendPrompt(ctx, {
     threadId,
     message: newPrompt,
     attachmentFileIds: prompt.fileIds ?? [],
     timeZone,
   });
+  // A scheduled run redone this way is still its scheduled prompt's
+  // waiting run.
+  await moveWaitingRun(
+    ctx,
+    await findThreadScheduledPrompt(ctx, threadId),
+    { promptMessageId: prompt._id },
+    newPromptId,
+  );
 }
 
 /**
  * Starts the thread's oldest queued prompt. It takes the prompt off the
  * queue, loads its attachments and sends it as sendMessage would. It isn't
- * counted again, since queueing it counted it.
+ * counted again, since queueing it counted it. A queued scheduled run keeps
+ * counting as its scheduled prompt's waiting run (moveWaitingRun).
  *
  * Starts nothing while the queue is paused, an action card waits or a
  * reply is running or could still start (isThreadBusy). Unless `resuming`,
@@ -447,12 +460,20 @@ async function startNextQueuedPrompt(
   // ends approved actions that never ran, like one in a stopped reply,
   // which Anthropic needs a result for.
   await closeUnrunActions(ctx, threadId, turn);
-  await sendPrompt(ctx, {
+  const promptMessageId = await sendPrompt(ctx, {
     threadId,
     message: buildPromptMessage(next.prompt, attachments.parts),
     attachmentFileIds: attachments.fileIds,
     timeZone: next.timeZone,
   });
+  if (next.scheduledPromptId) {
+    await moveWaitingRun(
+      ctx,
+      await ctx.db.get("scheduledPrompts", next.scheduledPromptId),
+      { queuedPromptId: next._id },
+      promptMessageId,
+    );
+  }
   return "started";
 }
 
@@ -482,11 +503,12 @@ export async function isThreadBusy(
 }
 
 /**
- * Saves a prompt and schedules the reply to it (streamReply). startThread,
- * sendMessage, startNextQueuedPrompt, redoLastTurn and a scheduled run
- * (convex/scheduledPrompts.ts) all send through here. It leaves the last
- * turn's actions as they are. sendMessage and startNextQueuedPrompt close
- * them first (closeUnrunActions).
+ * Saves a prompt, schedules the reply to it (streamReply) and returns the
+ * prompt's message id. startThread, sendMessage, startNextQueuedPrompt,
+ * redoLastTurn and a scheduled run (convex/scheduledPrompts.ts) all send
+ * through here. It leaves the last turn's actions as they are.
+ * sendMessage, startNextQueuedPrompt and a scheduled run close them first
+ * (closeUnrunActions).
  *
  * `attachmentFileIds` are the files the prompt attaches. Saving them with
  * the prompt keeps the Agent from counting them as unused.
@@ -520,4 +542,5 @@ export async function sendPrompt(
     order: savedPrompt.order,
     timeZone: resolveTimeZone(timeZone),
   });
+  return messageId;
 }
