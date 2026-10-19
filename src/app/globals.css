@@ -58,8 +58,8 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Indigo on cool grays. The values are Tailwind's indigo and gray scales, so
-   raw utilities and tokens line up. */
+/* Sky blue on cool grays, to match the sky behind a new chat. The values are
+   Tailwind's sky and gray scales, so raw utilities and tokens line up. */
 :root {
   --background: oklch(0.985 0.002 247.839); /* gray-50 */
   --foreground: oklch(0.21 0.034 264.665); /* gray-900 */
@@ -67,10 +67,10 @@
   --card-foreground: oklch(0.21 0.034 264.665);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.034 264.665);
-  --primary: oklch(0.511 0.262 276.966); /* indigo-600 */
+  --primary: oklch(0.5 0.134 242.749); /* sky-700, so white text passes AA */
   --primary-foreground: oklch(1 0 0);
   /* The darker bottom edge of solid buttons. */
-  --primary-edge: oklch(0.398 0.195 277.366); /* indigo-800 */
+  --primary-edge: oklch(0.391 0.09 240.876); /* sky-900 */
   --secondary: oklch(0.967 0.003 264.542); /* gray-100 */
   --secondary-foreground: oklch(0.21 0.034 264.665);
   --muted: oklch(0.967 0.003 264.542);
@@ -79,30 +79,35 @@
   --accent: oklch(0.967 0.003 264.542);
   --accent-foreground: oklch(0.21 0.034 264.665);
   /* The marker behind highlighted words and @mentions. */
-  --highlight: oklch(0.93 0.034 272.788); /* indigo-100 */
+  --highlight: oklch(0.951 0.026 236.824); /* sky-100 */
   --success: oklch(0.627 0.194 149.214); /* green-600 */
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.928 0.006 264.531); /* gray-200 */
   --input: oklch(0.872 0.01 258.338); /* gray-300 */
-  --ring: oklch(0.585 0.233 277.117); /* indigo-500 */
-  --chart-1: oklch(0.785 0.115 274.713);
-  --chart-2: oklch(0.673 0.182 276.935);
-  --chart-3: oklch(0.585 0.233 277.117);
-  --chart-4: oklch(0.511 0.262 276.966);
-  --chart-5: oklch(0.398 0.195 277.366);
+  --ring: oklch(0.685 0.169 237.323); /* sky-500 */
+  --chart-1: oklch(0.828 0.111 230.318);
+  --chart-2: oklch(0.746 0.16 232.661);
+  --chart-3: oklch(0.685 0.169 237.323);
+  --chart-4: oklch(0.588 0.158 241.966);
+  --chart-5: oklch(0.443 0.11 240.79);
   --radius: 0.625rem;
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.21 0.034 264.665);
-  --sidebar-primary: oklch(0.511 0.262 276.966);
+  --sidebar-primary: oklch(0.5 0.134 242.749);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.967 0.003 264.542);
   --sidebar-accent-foreground: oklch(0.21 0.034 264.665);
   --sidebar-border: oklch(0.928 0.006 264.531);
-  --sidebar-ring: oklch(0.585 0.233 277.117);
+  --sidebar-ring: oklch(0.685 0.169 237.323);
+  /* The day sky behind a new chat, taken from the sky photo's blues. It
+     shows in the clearing the photo leaves for the heading. */
+  --sky-top: oklch(0.579 0.183 253.7);
+  --sky-middle: oklch(0.649 0.169 247.2);
+  --sky-horizon: oklch(0.912 0.038 248.2);
 }
 
 /* Notion's dark mode: neutral grays with no tint, soft off-white text, and
-   borders and hovers as faint white overlays. Indigo stays the accent. */
+   borders and hovers as faint white overlays. Sky blue stays the accent. */
 .dark {
   --background: oklch(0.213 0 0); /* #191919 */
   --foreground: oklch(0.87 0 0); /* #d4d4d4 */
@@ -110,34 +115,49 @@
   --card-foreground: oklch(0.87 0 0);
   --popover: oklch(0.264 0 0); /* #252525 */
   --popover-foreground: oklch(0.87 0 0);
-  --primary: oklch(0.585 0.233 277.117); /* indigo-500 */
+  --primary: oklch(0.5 0.134 242.749); /* sky-700 */
   --primary-foreground: oklch(1 0 0);
-  --primary-edge: oklch(0.457 0.24 277.023); /* indigo-700 */
+  --primary-edge: oklch(0.391 0.09 240.876); /* sky-900 */
   --secondary: oklch(0.285 0 0); /* #2a2a2a */
   --secondary-foreground: oklch(0.87 0 0);
   --muted: oklch(0.285 0 0);
   --muted-foreground: oklch(0.689 0 0); /* #9b9b9b */
   --accent: oklch(0.305 0 0); /* #2f2f2f */
   --accent-foreground: oklch(0.94 0 0);
-  --highlight: oklch(0.585 0.233 277.117 / 25%);
+  --highlight: oklch(0.685 0.169 237.323 / 25%);
   --success: oklch(0.723 0.219 149.579); /* green-500 */
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.673 0.182 276.935); /* indigo-400 */
-  --chart-1: oklch(0.785 0.115 274.713);
-  --chart-2: oklch(0.673 0.182 276.935);
-  --chart-3: oklch(0.585 0.233 277.117);
-  --chart-4: oklch(0.511 0.262 276.966);
-  --chart-5: oklch(0.398 0.195 277.366);
+  --ring: oklch(0.746 0.16 232.661); /* sky-400 */
+  --chart-1: oklch(0.828 0.111 230.318);
+  --chart-2: oklch(0.746 0.16 232.661);
+  --chart-3: oklch(0.685 0.169 237.323);
+  --chart-4: oklch(0.588 0.158 241.966);
+  --chart-5: oklch(0.443 0.11 240.79);
   --sidebar: oklch(0.244 0 0); /* #202020 */
   --sidebar-foreground: oklch(0.87 0 0);
-  --sidebar-primary: oklch(0.585 0.233 277.117);
+  --sidebar-primary: oklch(0.5 0.134 242.749);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.305 0 0);
   --sidebar-accent-foreground: oklch(0.94 0 0);
   --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.673 0.182 276.935);
+  --sidebar-ring: oklch(0.746 0.16 232.661);
+  /* The same blues after the night grade (sky-night.jpg). */
+  --sky-top: oklch(0.186 0.06 268.3);
+  --sky-middle: oklch(0.234 0.071 265.3);
+  --sky-horizon: oklch(0.559 0.104 262.7);
+}
+
+/* The sky behind a new chat (SkyBackdrop). */
+@utility bg-sky {
+  background-image: linear-gradient(
+    to bottom,
+    var(--sky-top),
+    var(--sky-middle) 42%,
+    var(--sky-horizon) 70%,
+    var(--background) 95%
+  );
 }
 
 /* A dot grid for canvas-like surfaces. */

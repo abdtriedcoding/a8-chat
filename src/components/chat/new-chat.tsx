@@ -4,7 +4,6 @@ import { useMutation } from "convex/react";
 import { GhostIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { LogoMark } from "@/components/icons/logo-mark";
 import { useOpenTemporaryThread } from "@/components/temporary-thread";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +24,7 @@ import { api } from "../../../convex/_generated/api";
 import { browserTimeZone } from "../../../convex/lib/timeZone";
 import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
+import { SkyBackdrop } from "./sky-backdrop";
 
 /**
  * Puts the caret after a prompt the box starts with, so typing adds to it.
@@ -63,8 +63,10 @@ export function NewChat({ prompt }: { prompt?: string }) {
   }
 
   return (
-    <>
+    <div className="relative isolate flex min-h-0 flex-1 flex-col">
+      <SkyBackdrop className="absolute inset-0 -z-10" />
       <ChatHeader
+        className="border-transparent"
         end={
           <Tooltip>
             <TooltipTrigger asChild>
@@ -85,32 +87,23 @@ export function NewChat({ prompt }: { prompt?: string }) {
           </Tooltip>
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-4 pb-16">
-        <Empty className="flex-none p-0">
-          <EmptyHeader>
-            <EmptyMedia>
-              {temporary ? (
-                <GhostIcon className="size-10 text-primary" />
-              ) : (
-                <LogoMark className="size-10 text-primary" />
-              )}
-            </EmptyMedia>
-            {temporary ? (
-              <>
-                <EmptyTitle>Temporary chat</EmptyTitle>
-                <EmptyDescription>
-                  It won&apos;t appear in your history, and it&apos;s deleted
-                  when you leave.
-                </EmptyDescription>
-              </>
-            ) : (
-              <>
-                <EmptyTitle>What can I help with?</EmptyTitle>
-                <EmptyDescription>
-                  Ask a question, or paste something you want to work on.
-                </EmptyDescription>
-              </>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-4 pb-16">
+        {/* Dark on the day sky's blue, white on the night sky. */}
+        <Empty className="flex-none p-0 text-gray-950 dark:text-white dark:[text-shadow:0_1px_12px_rgb(15_23_80/0.35)]">
+          <EmptyHeader className="max-w-xl">
+            {temporary && (
+              <EmptyMedia>
+                <GhostIcon className="size-10" />
+              </EmptyMedia>
             )}
+            <EmptyTitle className="text-3xl font-medium tracking-tight sm:text-4xl">
+              {temporary ? "Temporary chat" : "What can I help with?"}
+            </EmptyTitle>
+            <EmptyDescription className="text-base font-medium text-gray-900 dark:text-white/90">
+              {temporary
+                ? "It won't appear in your history, and it's deleted when you leave."
+                : "Ask a question, or paste something you want to work on."}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
         <Composer
@@ -120,9 +113,9 @@ export function NewChat({ prompt }: { prompt?: string }) {
           onSend={send}
           disabled={busy}
           autoFocus
-          className="w-full max-w-2xl"
+          className="w-full max-w-2xl *:data-[slot=input-group]:rounded-xl *:data-[slot=input-group]:border-white/60 *:data-[slot=input-group]:shadow-[0_12px_40px_-12px_rgb(30_58_138/0.45)] dark:*:data-[slot=input-group]:border-white/15 dark:*:data-[slot=input-group]:bg-card/75 dark:*:data-[slot=input-group]:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.6)] dark:*:data-[slot=input-group]:backdrop-blur-xl"
         />
       </div>
-    </>
+    </div>
   );
 }
