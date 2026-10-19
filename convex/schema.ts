@@ -46,6 +46,15 @@ export default defineSchema({
   deferredToolThreads: defineTable({
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
+  // One row per pinned thread (setPinned in convex/threads.ts). Its creation
+  // time is when the user pinned the thread. Archiving or deleting the thread
+  // deletes the row.
+  threadPins: defineTable({
+    userId: v.string(),
+    threadId: v.string(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_threadId", ["threadId"]),
   // A thread's queued prompts (convex/chat/queue.ts), oldest first by
   // creation time. sendMessage adds one while a reply is running or the
   // queue isn't paused, and startNextPrompt (convex/chat/send.ts) removes

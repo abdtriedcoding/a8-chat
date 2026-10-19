@@ -1,11 +1,13 @@
 "use client";
 
-import { useConvexAuth, usePaginatedQuery } from "convex/react";
+import { useConvexAuth, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArchiveIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  PinIcon,
+  PinOffIcon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +39,7 @@ import { useConfirm } from "@/hooks/use-confirm";
 import { useRemoveThread } from "@/hooks/use-remove-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
+import { useSetThreadPinned } from "@/hooks/use-set-thread-pinned";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
@@ -53,6 +56,10 @@ export function ThreadList() {
     isAuthenticated ? {} : "skip",
     { initialNumItems: PAGE_SIZE },
   );
+  const pinned = useQuery(
+    api.threads.listPinned,
+    isAuthenticated ? {} : "skip",
+  );
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();
@@ -61,6 +68,13 @@ export function ThreadList() {
   const router = useRouter();
   const removeThread = useRemoveThread();
   const setThreadArchived = useSetThreadArchived();
+  const setThreadPinned = useSetThreadPinned();
+
+  function setPinned(thread: Thread, pinned: boolean) {
+    setThreadPinned({ threadId: thread._id, pinned }).catch((error: unknown) =>
+      toast.error(errorMessage(error)),
+    );
+  }
 
   async function archiveThread(thread: Thread) {
     const threadId = thread._id;
@@ -98,108 +112,127 @@ export function ThreadList() {
     if (confirmed && thread._id === activeId) router.replace("/chat");
   }
 
-  return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Chats</SidebarGroupLabel>
-      <SidebarGroupContent>
-        {status === "LoadingFirstPage" ? (
-          <SidebarMenu aria-hidden="true">
-            {SKELETON_WIDTHS.map((width) => (
-              <SidebarMenuItem
-                key={width}
-                className="flex h-8 items-center px-2"
+  function renderThread(thread: Thread, isPinned: boolean) {
+    if (thread._id === renamingId) {
+      return (
+        <SidebarMenuItem key={thread._id}>
+          <ThreadTitleInput
+            title={thread.title}
+            onSave={(title) => renameThread({ threadId: thread._id, title })}
+            onClose={() => setRenamingId(null)}
+            className="bg-background shadow-none"
+          />
+        </SidebarMenuItem>
+      );
+    }
+    const active = thread._id === activeId;
+    return (
+      <SidebarMenuItem key={thread._id}>
+        <SidebarMenuButton asChild isActive={active}>
+          <Link
+            href={`/c/${thread._id}`}
+            aria-current={active ? "page" : undefined}
+            onClick={closeOnMobile}
+          >
+            <span>{threadTitle(thread)}</span>
+          </Link>
+        </SidebarMenuButton>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuAction showOnHover>
+              <MoreHorizontalIcon />
+              <span className="sr-only">
+                More options for {threadTitle(thread)}
+              </span>
+            </SidebarMenuAction>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="start">
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => setPinned(thread, !isPinned)}>
+                {isPinned ? <PinOffIcon /> : <PinIcon />}
+                {isPinned ? "Unpin" : "Pin"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setRenamingId(thread._id)}>
+                <PencilIcon />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void archiveThread(thread)}>
+                <ArchiveIcon />
+                Archive
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => void deleteThread(thread)}
               >
-                <Skeleton className="h-4" style={{ width }} />
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        ) : results.length === 0 && status === "Exhausted" ? (
-          <Empty className="p-4">
-            <EmptyDescription>
-              No chats yet. The ones you start show up here.
-            </EmptyDescription>
-          </Empty>
-        ) : (
-          <SidebarMenu>
-            {results.map((thread) => {
-              const active = thread._id === activeId;
-              if (thread._id === renamingId) {
-                return (
-                  <SidebarMenuItem key={thread._id}>
-                    <ThreadTitleInput
-                      title={thread.title}
-                      onSave={(title) =>
-                        renameThread({ threadId: thread._id, title })
-                      }
-                      onClose={() => setRenamingId(null)}
-                      className="bg-background shadow-none"
-                    />
+                <Trash2Icon />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    );
+  }
+
+  const loading = status === "LoadingFirstPage" || pinned === undefined;
+  const chatsEmpty = results.length === 0 && status === "Exhausted";
+  const hasPins = pinned !== undefined && pinned.length > 0;
+
+  return (
+    <>
+      {hasPins && (
+        <SidebarGroup>
+          <SidebarGroupLabel>Pinned</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {pinned.map((thread) => renderThread(thread, true))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      )}
+      {/* With every thread pinned, there's nothing to show under Chats. */}
+      {!(chatsEmpty && hasPins) && (
+        <SidebarGroup>
+          <SidebarGroupLabel>Chats</SidebarGroupLabel>
+          <SidebarGroupContent>
+            {loading ? (
+              <SidebarMenu aria-hidden="true">
+                {SKELETON_WIDTHS.map((width) => (
+                  <SidebarMenuItem
+                    key={width}
+                    className="flex h-8 items-center px-2"
+                  >
+                    <Skeleton className="h-4" style={{ width }} />
                   </SidebarMenuItem>
-                );
-              }
-              return (
-                <SidebarMenuItem key={thread._id}>
-                  <SidebarMenuButton asChild isActive={active}>
-                    <Link
-                      href={`/c/${thread._id}`}
-                      aria-current={active ? "page" : undefined}
-                      onClick={closeOnMobile}
+                ))}
+              </SidebarMenu>
+            ) : chatsEmpty ? (
+              <Empty className="p-4">
+                <EmptyDescription>
+                  No chats yet. The ones you start show up here.
+                </EmptyDescription>
+              </Empty>
+            ) : (
+              <SidebarMenu>
+                {results.map((thread) => renderThread(thread, false))}
+                {status !== "Exhausted" && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className="text-muted-foreground"
+                      disabled={status === "LoadingMore"}
+                      onClick={() => loadMore(PAGE_SIZE)}
                     >
-                      <span>{threadTitle(thread)}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuAction showOnHover>
-                        <MoreHorizontalIcon />
-                        <span className="sr-only">
-                          More options for {threadTitle(thread)}
-                        </span>
-                      </SidebarMenuAction>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent side="right" align="start">
-                      <DropdownMenuGroup>
-                        <DropdownMenuItem
-                          onSelect={() => setRenamingId(thread._id)}
-                        >
-                          <PencilIcon />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => void archiveThread(thread)}
-                        >
-                          <ArchiveIcon />
-                          Archive
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onSelect={() => void deleteThread(thread)}
-                        >
-                          <Trash2Icon />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarMenuItem>
-              );
-            })}
-            {status !== "Exhausted" && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  className="text-muted-foreground"
-                  disabled={status === "LoadingMore"}
-                  onClick={() => loadMore(PAGE_SIZE)}
-                >
-                  {status === "LoadingMore" && <Spinner />}
-                  <span>Load more</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                      {status === "LoadingMore" && <Spinner />}
+                      <span>Load more</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
             )}
-          </SidebarMenu>
-        )}
-      </SidebarGroupContent>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      )}
       {confirmDialog}
-    </SidebarGroup>
+    </>
   );
 }

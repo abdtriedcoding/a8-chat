@@ -11,8 +11,12 @@ One ongoing exchange between a user and the assistant, with its own title and hi
 _Avoid_: conversation, chat (outside UI copy)
 
 **Archived thread**:
-A thread the user moved out of the sidebar without deleting it. It keeps its messages and still shows in search, and a send moves it back to the sidebar. Deleting a thread, archived or not, removes it for good.
+A thread the user moved out of the sidebar without deleting it. It keeps its messages and still shows in search, and a send moves it back to the sidebar. Deleting a thread, archived or not, removes it for good. Archiving a pinned thread unpins it.
 _Avoid_: hidden thread, soft-deleted thread
+
+**Pinned thread**:
+A thread the user keeps at the top of the sidebar, above their other threads. The most recently pinned comes first.
+_Avoid_: starred thread, favorite
 
 **Prompt**:
 A message the user writes to the assistant, with any attachments sent alongside it.
