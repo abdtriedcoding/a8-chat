@@ -23,6 +23,7 @@ import type * as chat_turns from "../chat/turns.js";
 import type * as connections from "../connections.js";
 import type * as connectors from "../connectors.js";
 import type * as crons from "../crons.js";
+import type * as dictation from "../dictation.js";
 import type * as emails from "../emails.js";
 import type * as http from "../http.js";
 import type * as lib_attachments from "../lib/attachments.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   connections: typeof connections;
   connectors: typeof connectors;
   crons: typeof crons;
+  dictation: typeof dictation;
   emails: typeof emails;
   http: typeof http;
   "lib/attachments": typeof lib_attachments;

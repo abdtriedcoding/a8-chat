@@ -21,10 +21,12 @@ import {
   useComposerAttachments,
   type UploadedAttachment,
 } from "@/hooks/use-composer-attachments";
+import { useComposerDictation } from "@/hooks/use-composer-dictation";
 import { useComposerMentions } from "@/hooks/use-composer-mentions";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
+import { DictationButton } from "./dictation-button";
 import { FileDropZone } from "./file-drop-zone";
 import { MentionMenu } from "./mention-menu";
 
@@ -44,6 +46,10 @@ import { MentionMenu } from "./mention-menu";
  * prompt that mentions a connector that isn't connected can't be sent, and
  * a button above the text signs in to it. The sign-in comes back to this
  * page, and the box gets its text back on mount (useRestoredDraft).
+ *
+ * The mic dictates into the box (useComposerDictation) when the deployment
+ * has dictation set up. Typing, Esc or the mic stops it, and a Send while
+ * dictating waits up to 1s for the last words.
  *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
@@ -78,7 +84,15 @@ export function Composer({
     freePreviews,
   } = useComposerAttachments();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const mentions = useComposerMentions({ text, setText });
+  const dictation = useComposerDictation({
+    text,
+    setText,
+    getTextarea: () =>
+      formRef.current?.querySelector<HTMLTextAreaElement>("[data-composer]") ??
+      null,
+  });
 
   useRestoredDraft(setText);
 
@@ -98,7 +112,10 @@ export function Composer({
 
   async function send() {
     if (!canSend) return;
-    const prompt = text;
+    const prompt = dictation.active ? await dictation.finish() : text;
+    // Null when another Send is already waiting for the last words.
+    if (prompt === null) return;
+    if (prompt.trim() === "" && attachments.length === 0) return;
     const attachmentsToSend = attachments;
     setText("");
     clearAttachments();
@@ -123,10 +140,23 @@ export function Composer({
 
   return (
     <form
+      ref={formRef}
       className={cn("relative", className)}
       onSubmit={(event) => {
         event.preventDefault();
         void send();
+      }}
+      onKeyDown={(event) => {
+        // Comes after the box's own keys, such as Esc closing the mention
+        // menu, and before Esc stops the reply.
+        if (
+          event.key === "Escape" &&
+          dictation.active &&
+          !event.defaultPrevented
+        ) {
+          event.preventDefault();
+          void dictation.stop();
+        }
       }}
     >
       <input
@@ -207,6 +237,7 @@ export function Composer({
           }
           value={text}
           onChange={(event) => {
+            dictation.stopForTyping();
             setText(event.target.value);
             mentions.syncCaret(event.target);
           }}
@@ -261,28 +292,35 @@ export function Composer({
               <TooltipContent>Attach files</TooltipContent>
             </Tooltip>
           )}
-          {onStop && (
+          <div className="ml-auto flex items-center gap-2">
+            {dictation.available && (
+              <DictationButton
+                state={dictation.state}
+                level={dictation.level}
+                onClick={dictation.toggle}
+              />
+            )}
+            {onStop && (
+              <InputGroupButton
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => void stop()}
+              >
+                <SquareIcon className="fill-current" />
+                <span className="sr-only">Stop</span>
+              </InputGroupButton>
+            )}
             <InputGroupButton
-              type="button"
-              variant="outline"
+              type="submit"
+              variant="default"
               size="icon-sm"
-              className="ml-auto"
-              onClick={() => void stop()}
+              disabled={!canSend}
             >
-              <SquareIcon className="fill-current" />
-              <span className="sr-only">Stop</span>
+              {disabled ? <Spinner /> : <ArrowUpIcon />}
+              <span className="sr-only">Send</span>
             </InputGroupButton>
-          )}
-          <InputGroupButton
-            type="submit"
-            variant="default"
-            size="icon-sm"
-            className={onStop ? undefined : "ml-auto"}
-            disabled={!canSend}
-          >
-            {disabled ? <Spinner /> : <ArrowUpIcon />}
-            <span className="sr-only">Send</span>
-          </InputGroupButton>
+          </div>
         </InputGroupAddon>
       </InputGroup>
     </form>

@@ -4,10 +4,8 @@
       "command": "bunx",
       "args": [
         "@playwright/mcp@0.0.83",
-        "--browser",
-        "chrome",
-        "--output-dir",
-        ".playwright-mcp"
+        "--config",
+        "playwright-mcp.config.json"
       ]
     }
   }

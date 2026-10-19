@@ -60,6 +60,7 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | Yes | The Anthropic API key for replies and thread titles. |
 | `TAVILY_API_KEY` | No | A [Tavily](https://tavily.com) API key. Set it to turn on web search. |
+| `DEEPGRAM_API_KEY` | No | A [Deepgram](https://deepgram.com) API key with the Member role or higher. Set it to turn on dictation. |
 | `CONNECTION_ENCRYPTION_KEY` | Yes | A base64-encoded 32-byte key that encrypts connection tokens and OAuth client secrets. Generate one with `openssl rand -base64 32`. Don't change it once connections exist, because a8 can't rewrite stored secrets under a new key yet. See [the encryption key](docs/connectors/README.md#the-encryption-key). |
 | `BETTER_AUTH_SECRET` | Yes | The secret Better Auth signs sessions with. Generate one with `openssl rand -base64 32`. |
 | `SITE_URL` | Yes | The app's URL, like `http://localhost:3000`. Better Auth uses it as its base URL and trusted origin, and a connector sign-in returns the browser to `<SITE_URL>/connectors`. |

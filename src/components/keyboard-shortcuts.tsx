@@ -29,6 +29,7 @@ type Shortcut =
   | "stopReply"
   | "editLastPrompt"
   | "copyLastReply"
+  | "dictate"
   | "help";
 
 export type ThreadShortcuts = {
@@ -53,11 +54,19 @@ const HELP: { shortcut: Shortcut; label: string; keys: string[] }[] = [
     label: "Copy the last reply",
     keys: ["Mod", "Shift", "C"],
   },
+  {
+    shortcut: "dictate",
+    label: "Start or stop dictation",
+    keys: ["Mod", "Shift", "Space"],
+  },
   { shortcut: "help", label: "Keyboard shortcuts", keys: ["Mod", "/"] },
 ];
 
 const SetThreadShortcutsContext = createContext<
   ((shortcuts: ThreadShortcuts) => void) | null
+>(null);
+const SetDictationShortcutContext = createContext<
+  ((toggle: (() => void) | undefined) => void) | null
 >(null);
 const OpenHelpContext = createContext<(() => void) | null>(null);
 
@@ -72,6 +81,7 @@ export function KeyboardShortcutsProvider({
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const threadShortcutsRef = useRef<ThreadShortcuts>({});
+  const toggleDictationRef = useRef<(() => void) | undefined>(undefined);
   const router = useRouter();
   const { toggleSearch } = useThreadSearch();
   const { toggleSidebar } = useSidebar();
@@ -97,6 +107,10 @@ export function KeyboardShortcutsProvider({
       case "copyLastReply":
         // Blocks the browser's own Ctrl+Shift+C even with nothing to copy.
         copyLastReply?.();
+        break;
+      case "dictate":
+        if (!toggleDictationRef.current) return;
+        toggleDictationRef.current();
         break;
       case "stopReply":
         // An open dialog, menu or editor takes Esc first and prevents its
@@ -125,20 +139,26 @@ export function KeyboardShortcutsProvider({
         threadShortcutsRef.current = shortcuts;
       }}
     >
-      <OpenHelpContext value={() => setHelpOpen(true)}>
-        {children}
-        <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Keyboard shortcuts</DialogTitle>
-              <DialogDescription>
-                They work anywhere in your chats.
-              </DialogDescription>
-            </DialogHeader>
-            <ShortcutList />
-          </DialogContent>
-        </Dialog>
-      </OpenHelpContext>
+      <SetDictationShortcutContext
+        value={(toggle) => {
+          toggleDictationRef.current = toggle;
+        }}
+      >
+        <OpenHelpContext value={() => setHelpOpen(true)}>
+          {children}
+          <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Keyboard shortcuts</DialogTitle>
+                <DialogDescription>
+                  They work anywhere in your chats.
+                </DialogDescription>
+              </DialogHeader>
+              <ShortcutList />
+            </DialogContent>
+          </Dialog>
+        </OpenHelpContext>
+      </SetDictationShortcutContext>
     </SetThreadShortcutsContext>
   );
 }
@@ -155,6 +175,24 @@ export function useThreadShortcuts(shortcuts: ThreadShortcuts) {
     setThreadShortcuts(shortcuts);
     return () => setThreadShortcuts({});
   }, [setThreadShortcuts, shortcuts]);
+}
+
+/**
+ * Lets the dictation shortcut start and stop dictation in the caller's
+ * message box while it's mounted. Without `toggle`, the shortcut does
+ * nothing.
+ */
+export function useDictationShortcut(toggle: (() => void) | undefined) {
+  const setToggle = useContext(SetDictationShortcutContext);
+  if (!setToggle) {
+    throw new Error(
+      "useDictationShortcut must be used within KeyboardShortcutsProvider.",
+    );
+  }
+  useEffect(() => {
+    setToggle(toggle);
+    return () => setToggle(undefined);
+  }, [setToggle, toggle]);
 }
 
 /** Opens the shortcuts dialog. */
@@ -179,6 +217,7 @@ function shortcutFor(event: KeyboardEvent): Shortcut | null {
     if (event.shiftKey) {
       if (key === "o") return "newChat";
       if (key === "c") return "copyLastReply";
+      if (key === " ") return "dictate";
       return null;
     }
     if (key === "k") return "search";

@@ -62,6 +62,10 @@ _Avoid_: exchange, round
 A file (an image or a PDF) sent with a prompt.
 _Avoid_: upload, file
 
+**Dictation**:
+Speaking a prompt into the composer instead of typing it. The words land in the draft as the user speaks, and the user edits and sends the prompt as if they'd typed it. Dictation never sends anything by itself, and a8 keeps no audio. Not to be confused with a voice mode, where the assistant talks back.
+_Avoid_: voice input, speech-to-text (in UI copy), transcription, voice mode
+
 **Send**:
 Any user action that asks the model for a new reply: a new prompt, an edited prompt, or a regenerated reply. The send rate limits count sends, and count a queued prompt when it's queued. Web searches and connector tool calls have limits of their own.
 _Avoid_: request, message (as a unit of usage)

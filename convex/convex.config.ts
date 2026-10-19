@@ -32,6 +32,10 @@ const app = defineApp({
     // Google connectors show as not set up.
     GOOGLE_MCP_CLIENT_ID: v.optional(v.string()),
     GOOGLE_MCP_CLIENT_SECRET: v.optional(v.string()),
+    // Optional. Deepgram's key for Dictation (ADR 0012). It needs the Member
+    // role or higher to mint the browser's short-lived tokens. Without it,
+    // the composer shows no mic.
+    DEEPGRAM_API_KEY: v.optional(v.string()),
   },
 });
 
