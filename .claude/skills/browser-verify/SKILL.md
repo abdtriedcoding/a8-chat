@@ -26,6 +26,16 @@ The browser keeps its own profile, so a session carries over between runs. If a 
 
 Sending a chat message costs a model call, so only send one when the check needs a reply.
 
+## Dictation and the fake mic
+
+`.mcp.json` starts the server with `playwright-mcp.config.json`, which launches Chrome with a fake mic. Every `getUserMedia` call gets mic access without a prompt, and the mic plays `fixtures/dictation-en.wav` once from the start, then silence. The clip says "Write a short poem about the monsoon in Mumbai. Keep it under eight lines, and end it with a question." To dictate another clip, change the path in the config and restart the session, since the server reads the config when it starts. `fixtures/dictation-hinglish-1.wav` to `-3.wav` mix Hindi and English, spoken by Microsoft's hi-IN-SwaraNeural voice:
+
+1. "Mujhe ek email likhni hai apne manager ko, ki main kal office nahi aa paunga because of a doctor's appointment."
+2. "Is code mein ek bug hai, jab user login karta hai toh session expire ho jaata hai after five minutes."
+3. "Kal ki meeting ke liye ek short agenda bana do, teen points mein, aur end mein action items daal dena."
+
+Dictation needs `DEEPGRAM_API_KEY` on the deployment (`bunx convex env set DEEPGRAM_API_KEY <key>`). Each dictation costs a little of Deepgram's free credit and counts against the dictation rate limits.
+
 ## Screenshots as proof
 
 - Call `browser_take_screenshot` with `filename: ".playwright-mcp/<name>.png"` (gitignored), and `fullPage: true` for the whole page. A bare file name saves to the repo root.

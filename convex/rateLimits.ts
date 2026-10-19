@@ -86,6 +86,25 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Each user's shares and link updates. Each one copies a thread, so a
   // script can't fill the deployment with copies.
   userShares: { kind: "fixed window", rate: 30, period: HOUR },
+  // Each user's dictation starts. a8 can't see how long a dictation runs
+  // (ADR 0012), so these cap how often one starts. A start isn't a Send.
+  userDictationStarts: { kind: "fixed window", rate: 30, period: HOUR },
+  // Windows open at 00:00 UTC, like dailySends.
+  userDailyDictationStarts: {
+    kind: "fixed window",
+    rate: 200,
+    period: DAY,
+    start: 0,
+  },
+  // Everyone's dictation starts together, a ceiling on the day's speech
+  // spend. A dictation runs 5 minutes at most, so this is 2,500 minutes a
+  // day at worst. Windows open at 00:00 UTC, like dailySends.
+  dailyDictationStarts: {
+    kind: "fixed window",
+    rate: 500,
+    period: DAY,
+    start: 0,
+  },
 });
 
 /** Why a Send was refused. The Send mutations return it instead of throwing. */
@@ -313,6 +332,55 @@ export async function limitShare(
 }
 
 /**
+ * Counts one dictation start against the user's limits and the daily limit.
+ * Returns why it can't, or null if the dictation can start. Like limitSend,
+ * it checks every limit before counting against any.
+ */
+export async function limitDictationStart(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<RateLimited | null> {
+  const key = { key: userId };
+  const user = await rateLimiter.check(ctx, "userDictationStarts", key);
+  if (!user.ok) {
+    const minutes = Math.ceil(user.retryAfter / MINUTE);
+    return rateLimited(
+      `You hit the dictation limit. Try again in ${minutes} min.`,
+      user.retryAfter,
+    );
+  }
+  const userDaily = await rateLimiter.check(
+    ctx,
+    "userDailyDictationStarts",
+    key,
+  );
+  if (!userDaily.ok) {
+    return rateLimited(
+      "You hit your daily dictation limit. It resets at 00:00 UTC.",
+      userDaily.retryAfter,
+    );
+  }
+  const daily = await rateLimiter.check(ctx, "dailyDictationStarts");
+  if (!daily.ok) {
+    return rateLimited(
+      "a8 hit today's dictation limit. It resets at 00:00 UTC.",
+      daily.retryAfter,
+    );
+  }
+  // Every check passed in this transaction, so none of these can fail.
+  await rateLimiter.limit(ctx, "userDictationStarts", {
+    ...key,
+    throws: true,
+  });
+  await rateLimiter.limit(ctx, "userDailyDictationStarts", {
+    ...key,
+    throws: true,
+  });
+  await rateLimiter.limit(ctx, "dailyDictationStarts", { throws: true });
+  return null;
+}
+
+/**
  * Deletes a deleted user's rate limit counters. The sign-in counter's key is
  * the email. Better Auth's own counters are keyed by IP and path, not user.
  */
@@ -331,6 +399,8 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userConnectorToolCalls", key);
   await rateLimiter.reset(ctx, "userConnectStarts", key);
   await rateLimiter.reset(ctx, "userShares", key);
+  await rateLimiter.reset(ctx, "userDictationStarts", key);
+  await rateLimiter.reset(ctx, "userDailyDictationStarts", key);
   await rateLimiter.reset(ctx, "signInByEmail", {
     key: email.trim().toLowerCase(),
   });

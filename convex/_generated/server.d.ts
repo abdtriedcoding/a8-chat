@@ -33,6 +33,7 @@ type Env = {
   readonly ANTHROPIC_API_KEY: string;
   readonly BETTER_AUTH_SECRET: string;
   readonly CONNECTION_ENCRYPTION_KEY: string;
+  readonly DEEPGRAM_API_KEY: string | undefined;
   readonly EMAIL_FROM: string;
   readonly GOOGLE_CLIENT_ID: string;
   readonly GOOGLE_CLIENT_SECRET: string;
