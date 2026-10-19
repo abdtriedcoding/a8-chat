@@ -15,6 +15,7 @@ import {
 import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { replyInstructions } from "../lib/instructions";
+import type { RunEnding } from "../lib/scheduledPrompts";
 import {
   CACHE_BREAKPOINT,
   createReplyTools,
@@ -39,8 +40,8 @@ const REPLY_TIME_LIMIT_MS = 8 * 60 * 1000;
  * Gets the model's reply to a prompt and streams its text into the thread
  * as it arrives. sendPrompt schedules it, and decideAction schedules it
  * again to continue a reply that paused on action cards. Once the reply
- * ends, it starts the thread's next queued prompt, and once it fails, it
- * pauses the queue.
+ * ends, it records how a scheduled run went, and starts the thread's next
+ * queued prompt. Once it fails, it pauses the queue.
  */
 export const streamReply = internalAction({
   args: {
@@ -78,6 +79,9 @@ export const streamReply = internalAction({
     // cards. The runner then calls startNextPrompt. A runner that returned
     // early, failed or was stopped doesn't.
     let endedNormally = false;
+    // How the reply ended, for its scheduled run (recordRunOutcome). Unset
+    // when the thread was deleted under it.
+    let ending: RunEnding | undefined = "notStarted";
     try {
       // Null if the user pressed Stop first, a regenerate or an edit
       // replaced this turn, or a new prompt came after the action cards
@@ -157,6 +161,7 @@ export const streamReply = internalAction({
       // or using this call to consume it all.
       await result.consumeStream();
       endedNormally = !aborted;
+      ending = "returned";
     } catch (error) {
       // Deleting the thread mid-reply deletes the reply under the runner,
       // and the Agent's next save throws. There's nothing left to fail or
@@ -166,7 +171,11 @@ export const streamReply = internalAction({
         .runQuery(internal.chat.reply.threadExists, { threadId })
         .then((exists) => !exists)
         .catch(() => false);
-      if (threadDeleted) return;
+      if (threadDeleted) {
+        ending = undefined;
+        return;
+      }
+      ending = "failed";
       // The Agent fails the reply it saved when the model call fails. If
       // the error came before it saved one, the client would wait 60
       // seconds for a reply that isn't coming. We rethrow the error so it
@@ -189,6 +198,21 @@ export const streamReply = internalAction({
       throw error;
     } finally {
       await replyTools?.close();
+      // Before the next queued prompt starts, so the reply's turn is still
+      // the thread's last.
+      if (ending) {
+        await ctx
+          .runMutation(internal.scheduledPrompts.recordRunOutcome, {
+            threadId,
+            promptMessageId,
+            order,
+            continuing,
+            ending,
+          })
+          .catch((recordError: unknown) =>
+            console.error("Couldn't record the scheduled run", recordError),
+          );
+      }
       if (aborted) {
         await ctx.runMutation(internal.chat.stop.settleStop, {
           threadId,

@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import {
   CalendarClockIcon,
@@ -48,13 +49,40 @@ import {
   type ScheduledPrompt,
 } from "./scheduled-prompt-form";
 
-/** The next run's date and time, on the wall clock of the row's time zone. */
-function formatNextRun(at: number, timeZone: string) {
+/** A run's date and time, on the wall clock of the row's time zone. */
+function formatRunTime(at: number, timeZone: string) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,
   }).format(at);
+}
+
+const LAST_RUN_OUTCOMES = {
+  finished: "Finished",
+  actionWaiting: "Waiting on an action card",
+  failed: "Failed",
+  stopped: "Stopped",
+  skipped: "Skipped. The last run hadn't finished",
+} satisfies Record<NonNullable<ScheduledPrompt["lastRun"]>["outcome"], string>;
+
+/** The last run's outcome and time, and why it failed if we know. */
+function LastRun({ row }: { row: ScheduledPrompt }) {
+  const { lastRun } = row;
+  if (!lastRun) return null;
+  const failed = lastRun.outcome === "failed";
+  return (
+    <p
+      className={cn(
+        "text-xs text-muted-foreground",
+        failed && "text-destructive",
+      )}
+    >
+      Last run {formatRunTime(lastRun.at, row.timeZone)}:{" "}
+      {LAST_RUN_OUTCOMES[lastRun.outcome]}
+      {failed && lastRun.message ? `. ${lastRun.message}` : null}
+    </p>
+  );
 }
 
 /**
@@ -194,9 +222,16 @@ export function ScheduledPromptList() {
                 <p className="text-sm text-muted-foreground">
                   {describeSchedule(row.schedule)} · {row.timeZone}
                 </p>
+                {row.pausedAfterFailures !== undefined && (
+                  <p className="text-xs text-destructive">
+                    Paused itself after {row.pausedAfterFailures} failed runs
+                    in a row. Resume it to try again.
+                  </p>
+                )}
+                <LastRun row={row} />
                 {row.nextRunAt !== undefined && (
                   <p className="text-xs text-muted-foreground">
-                    Next run {formatNextRun(row.nextRunAt, row.timeZone)}
+                    Next run {formatRunTime(row.nextRunAt, row.timeZone)}
                   </p>
                 )}
               </div>

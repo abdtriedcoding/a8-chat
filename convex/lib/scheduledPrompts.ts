@@ -3,10 +3,25 @@
  * them are in convex/scheduledPrompts.ts. deleteThread (convex/threads.ts)
  * deletes a thread's row through here, so it doesn't import that module.
  */
+import { v, type Infer } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 type WaitingRun = NonNullable<Doc<"scheduledPrompts">["waitingRun"]>;
+
+/**
+ * How a reply's runner ended, for its scheduled run (recordRunOutcome in
+ * convex/scheduledPrompts.ts). "returned" when the stream ran to its end,
+ * which includes an aborted one, "failed" when the runner threw, and
+ * "notStarted" when it returned before the model call.
+ */
+export const vRunEnding = v.union(
+  v.literal("returned"),
+  v.literal("failed"),
+  v.literal("notStarted"),
+);
+
+export type RunEnding = Infer<typeof vRunEnding>;
 
 /** The thread's scheduled prompt, or null if it has none. */
 export function findThreadScheduledPrompt(ctx: QueryCtx, threadId: string) {
