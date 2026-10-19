@@ -26,6 +26,11 @@ import {
 } from "./lib/guards";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { checkTitle } from "./lib/prompt";
+import {
+  findTemporaryThread,
+  listTemporaryThreadIds,
+  refuseTemporaryThread,
+} from "./lib/temporaryThreads";
 import { snippetAround } from "./lib/threadSearchSnippet";
 
 const vThreadSummary = v.object({
@@ -47,8 +52,9 @@ const MAX_PAGES_PER_LIST = 10;
 
 /**
  * The user's threads, newest first: the active ones but not the pinned ones,
- * or with `archived`, the archived ones. The Agent's thread list can't filter
- * by status, so this reads its pages until it has `numItems` matches, the
+ * or with `archived`, the archived ones. Never the temporary ones. The
+ * Agent's thread list can't filter by status, so this reads its pages until
+ * it has `numItems` matches, the
  * list ends, or it has read MAX_PAGES_PER_LIST pages. So a page can come back
  * short, even empty, before the list is done.
  */
@@ -71,6 +77,7 @@ export const list = query({
         .withIndex("by_userId", (q) => q.eq("userId", user._id));
       for await (const pin of pins) pinned.add(pin.threadId);
     }
+    const temporary = await listTemporaryThreadIds(ctx, user._id);
     const page: Infer<typeof vThreadSummary>[] = [];
     let cursor = paginationOpts.cursor;
     let isDone = false;
@@ -82,7 +89,13 @@ export const list = query({
         { userId: user._id, paginationOpts: { ...paginationOpts, cursor } },
       );
       for (const thread of result.page) {
-        if (thread.status !== status || pinned.has(thread._id)) continue;
+        if (
+          thread.status !== status ||
+          pinned.has(thread._id) ||
+          temporary.has(thread._id)
+        ) {
+          continue;
+        }
         page.push(toSummary(thread));
       }
       cursor = result.continueCursor;
@@ -111,12 +124,18 @@ export const listPinned = query({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .order("desc")
       .collect();
-    const threads = await Promise.all(
-      pins.map((pin) => findOwnThread(ctx, user._id, pin.threadId)),
-    );
-    // Archiving and deleting unpin, so this guard shouldn't skip any.
+    const [threads, temporary] = await Promise.all([
+      Promise.all(
+        pins.map((pin) => findOwnThread(ctx, user._id, pin.threadId)),
+      ),
+      listTemporaryThreadIds(ctx, user._id),
+    ]);
+    // Archiving and deleting unpin, and a temporary thread can't be pinned,
+    // so this guard shouldn't skip any.
     return threads.flatMap((thread) =>
-      thread?.status === "active" ? [toSummary(thread)] : [],
+      thread?.status === "active" && !temporary.has(thread._id)
+        ? [toSummary(thread)]
+        : [],
     );
   },
 });
@@ -128,18 +147,19 @@ export const get = query({
       _id: v.string(),
       title: v.optional(v.string()),
       archived: v.boolean(),
+      temporary: v.boolean(),
     }),
     v.null(),
   ),
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
-    return thread
-      ? {
-          _id: thread._id,
-          title: thread.title,
-          archived: thread.status === "archived",
-        }
-      : null;
+    if (!thread) return null;
+    return {
+      _id: thread._id,
+      title: thread.title,
+      archived: thread.status === "archived",
+      temporary: (await findTemporaryThread(ctx, threadId)) !== null,
+    };
   },
 });
 
@@ -161,8 +181,8 @@ const vSearchResult = v.object({
 /**
  * The user's threads that match `query` in their title or in a message's
  * text, one result per thread. Title matches come first, then threads that
- * only matched in a message, each group in order of relevance. Empty when
- * signed out.
+ * only matched in a message, each group in order of relevance. Never a
+ * temporary thread. Empty when signed out.
  */
 export const search = query({
   args: { query: v.string() },
@@ -176,7 +196,7 @@ export const search = query({
     const terms = words.join(" ");
     if (!user || !terms) return [];
 
-    const [titleMatches, messageMatches] = await Promise.all([
+    const [titleMatches, messageMatches, temporary] = await Promise.all([
       ctx.runQuery(components.agent.threads.searchThreadTitles, {
         userId: user._id,
         query: terms,
@@ -187,15 +207,21 @@ export const search = query({
         text: terms,
         limit: MAX_MESSAGE_MATCHES,
       }),
+      listTemporaryThreadIds(ctx, user._id),
     ]);
 
     const snippets = new Map<string, string>();
     for (const message of messageMatches) {
-      if (message.text && !snippets.has(message.threadId)) {
+      if (
+        message.text &&
+        !snippets.has(message.threadId) &&
+        !temporary.has(message.threadId)
+      ) {
         snippets.set(message.threadId, snippetAround(message.text, words));
       }
     }
 
+    // A temporary thread has no title, so only its messages can match.
     const titled = titleMatches.map((thread) => ({
       threadId: thread._id,
       title: thread.title,
@@ -220,6 +246,7 @@ export const rename = mutation({
   returns: v.null(),
   handler: async (ctx, { threadId, title }) => {
     await authorizeThreadAccess(ctx, threadId);
+    await refuseTemporaryThread(ctx, threadId, "rename");
     await updateThreadMetadata(ctx, components.agent, {
       threadId,
       patch: { title: checkTitle(title) },
@@ -238,6 +265,7 @@ export const setArchived = mutation({
   returns: v.null(),
   handler: async (ctx, { threadId, archived }) => {
     await authorizeThreadAccess(ctx, threadId);
+    await refuseTemporaryThread(ctx, threadId, "archive");
     await setThreadStatus(ctx, threadId, archived ? "archived" : "active");
     return null;
   },
@@ -246,13 +274,14 @@ export const setArchived = mutation({
 /**
  * Pins a thread to the top of the sidebar, or unpins it. Pinning a pinned
  * thread or unpinning an unpinned one changes nothing. An archived thread
- * isn't in the sidebar, so it can't be pinned.
+ * isn't in the sidebar, so it can't be pinned. Neither can a temporary one.
  */
 export const setPinned = mutation({
   args: { threadId: v.string(), pinned: v.boolean() },
   returns: v.null(),
   handler: async (ctx, { threadId, pinned }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
+    await refuseTemporaryThread(ctx, threadId, "pin");
     if (!pinned) {
       await unpinThread(ctx, threadId);
       return null;
@@ -306,8 +335,9 @@ export async function setThreadStatus(
 
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
- * the background. This deletes its stoppedReplies, deferredToolThreads and
- * threadPins rows, its queue and its shared snapshot right away. Its
+ * the background. This deletes its stoppedReplies, deferredToolThreads,
+ * threadPins and temporaryThreads rows, its queue and its shared snapshot
+ * right away. Its
  * attachments, queued ones included, are left unreferenced, and
  * cleanUpUnsentUploads deletes them.
  */
@@ -321,7 +351,8 @@ export const remove = mutation({
   },
 });
 
-async function deleteThread(ctx: MutationCtx, threadId: string) {
+/** Deletes a thread the way remove does, with no access check. */
+export async function deleteThread(ctx: MutationCtx, threadId: string) {
   await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
     threadId,
   });
@@ -339,6 +370,8 @@ async function deleteThread(ctx: MutationCtx, threadId: string) {
     .unique();
   if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
   await unpinThread(ctx, threadId);
+  const temporary = await findTemporaryThread(ctx, threadId);
+  if (temporary) await ctx.db.delete("temporaryThreads", temporary._id);
   await deleteThreadQueue(ctx, threadId);
   await deleteThreadSnapshot(ctx, threadId);
 }

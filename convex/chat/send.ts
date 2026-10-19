@@ -62,6 +62,10 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 //
 // sendMessage, regenerateReply and editPrompt move an archived thread back
 // to the user's chats.
+//
+// startThread with `temporary` starts a temporary thread (lib/
+// temporaryThreads.ts). A thread can't become temporary later, so no other
+// Send takes the flag.
 
 /**
  * Why a Send was refused: the thread's queue already holds
@@ -86,13 +90,17 @@ export const startThread = mutation({
     prompt: v.string(),
     attachmentFileIds: vAttachmentFileIds,
     timeZone: vTimeZone,
+    temporary: v.optional(v.boolean()),
   },
   returns: v.union(
     v.object({ threadId: v.string() }),
     vRateLimited,
     vAttachmentNotFound,
   ),
-  handler: async (ctx, { prompt, attachmentFileIds = [], timeZone }) => {
+  handler: async (
+    ctx,
+    { prompt, attachmentFileIds = [], timeZone, temporary = false },
+  ) => {
     const user = await requireUser(ctx);
     const prepared = await prepareSend(
       ctx,
@@ -103,18 +111,25 @@ export const startThread = mutation({
     if ("code" in prepared) return prepared;
     const { text, message, attachments } = prepared;
     // Shown until the generated title replaces it, and kept if that fails.
-    // A prompt with no text is titled after its first attachment.
-    const placeholder = titleFromPrompt(text || attachments.filenames[0]);
+    // A prompt with no text is titled after its first attachment. A
+    // temporary thread shows no title, so it gets none.
+    const placeholder = temporary
+      ? undefined
+      : titleFromPrompt(text || attachments.filenames[0]);
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
       title: placeholder,
     });
+    if (temporary) {
+      await ctx.db.insert("temporaryThreads", { userId: user._id, threadId });
+    }
     await sendPrompt(ctx, {
       threadId,
       message,
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
+    if (placeholder === undefined) return { threadId };
     await ctx.scheduler.runAfter(0, internal.titles.generateTitle, {
       threadId,
       userId: user._id,
@@ -452,7 +467,7 @@ async function startNextQueuedPrompt(
  *
  * @param turn The thread's last turn (getLastTurn), newest message first.
  */
-async function isThreadBusy(
+export async function isThreadBusy(
   ctx: MutationCtx,
   threadId: string,
   turn: MessageDoc[],

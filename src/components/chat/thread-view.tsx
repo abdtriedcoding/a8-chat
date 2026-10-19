@@ -2,18 +2,20 @@
 
 import { useUIMessages } from "@convex-dev/agent/react";
 import { useConvexAuth, useQuery } from "convex/react";
-import { ArchiveIcon, MessageSquareOffIcon } from "lucide-react";
+import { ArchiveIcon, GhostIcon, MessageSquareOffIcon } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useThreadShortcuts } from "@/components/keyboard-shortcuts";
 import { ShareButton } from "@/components/share-dialog";
+import { useOpenTemporaryThread } from "@/components/temporary-thread";
 import {
   Alert,
   AlertAction,
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -67,6 +69,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
     api.chat.queue.getQueue,
     isAuthenticated && thread !== null ? { threadId } : "skip",
   );
+
+  // After a reload, marks the thread again, so leaving still deletes it.
+  const openTemporaryThread = useOpenTemporaryThread();
+  const temporary = thread?.temporary === true;
+  useEffect(() => {
+    if (temporary) openTemporaryThread(threadId);
+  }, [temporary, threadId, openTemporaryThread]);
 
   const messages = useStableMessages(rawMessages);
   const stopped = stoppedTurns(messages);
@@ -157,7 +166,15 @@ export function ThreadView({ threadId }: { threadId: string }) {
   return (
     <>
       <ChatHeader>
-        {thread && (
+        {thread?.temporary && (
+          <h1 className="min-w-0 flex-1 px-2">
+            <Badge variant="secondary">
+              <GhostIcon data-icon="inline-start" />
+              Temporary
+            </Badge>
+          </h1>
+        )}
+        {thread && !thread.temporary && (
           <>
             <ThreadHeading threadId={threadId} title={thread.title} />
             <ShareButton threadId={threadId} title={thread.title} />

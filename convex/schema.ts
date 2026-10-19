@@ -56,6 +56,15 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_threadId", ["threadId"]),
+  // One row per temporary thread (lib/temporaryThreads.ts). startThread
+  // adds it with the thread, and deleting the thread deletes it. Its
+  // creation time is when the thread started.
+  temporaryThreads: defineTable({
+    userId: v.string(),
+    threadId: v.string(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_threadId", ["threadId"]),
   // A thread's queued prompts (convex/chat/queue.ts), oldest first by
   // creation time. sendMessage adds one while a reply is running or the
   // queue isn't paused, and startNextPrompt (convex/chat/send.ts) removes

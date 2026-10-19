@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { toast } from "sonner";
 import { useOpenShortcutsHelp } from "@/components/keyboard-shortcuts";
+import { useLeaveTemporaryThread } from "@/components/temporary-thread";
 import { ThemeSubmenu } from "@/components/theme-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -35,6 +36,13 @@ import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/initials";
 import { api } from "../../convex/_generated/api";
 
+/**
+ * How long sign-out waits for the open temporary thread's delete. Mid-reply,
+ * the delete conflicts with the reply's writes and can retry for many
+ * seconds. The idle cron deletes the thread if the wait runs out.
+ */
+const TEMPORARY_THREAD_DELETE_WAIT_MS = 3000;
+
 type CurrentUser = NonNullable<
   FunctionReturnType<typeof api.auth.getCurrentUser>
 >;
@@ -44,11 +52,19 @@ export function NavUser() {
   const user = useQuery(api.auth.getCurrentUser, isAuthenticated ? {} : "skip");
   const { isMobile } = useSidebar();
   const openShortcutsHelp = useOpenShortcutsHelp();
+  const leaveTemporaryThread = useLeaveTemporaryThread();
 
   async function signOut() {
     const failed = () => {
       toast.error("Couldn't sign out. Please try again.");
     };
+    // Signing out reloads the page, so the route never changes.
+    await Promise.race([
+      leaveTemporaryThread(),
+      new Promise((resolve) =>
+        setTimeout(resolve, TEMPORARY_THREAD_DELETE_WAIT_MS),
+      ),
+    ]);
     try {
       await authClient.signOut({
         fetchOptions: {

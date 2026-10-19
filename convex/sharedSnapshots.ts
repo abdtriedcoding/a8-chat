@@ -28,6 +28,7 @@ import { hasPendingReply, MAX_TURN_MESSAGES } from "./chat/turns";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { authorizeThreadAccess, getOwnThread } from "./lib/guards";
 import { redactMessage, vSharedMessage } from "./lib/sharedMessages";
+import { refuseTemporaryThread } from "./lib/temporaryThreads";
 import { limitShare } from "./rateLimits";
 
 /**
@@ -45,8 +46,9 @@ const DELETE_BATCH_SIZE = 100;
  * shows the old version, or nothing on a first share, until it's done.
  * Returns the link's public ID.
  *
- * Throws if the thread has no finished turns, or the user hit their share
- * limit. Does nothing while a copy is running, or when the link already
+ * Throws if the thread is temporary or has no finished turns, or the user
+ * hit their share limit. Does nothing while a copy is running, or when the
+ * link already
  * has the thread's finished turns.
  */
 export const share = mutation({
@@ -54,6 +56,7 @@ export const share = mutation({
   returns: v.string(),
   handler: async (ctx, { threadId }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
+    await refuseTemporaryThread(ctx, threadId, "share");
     const snapshot = await findSnapshot(ctx, threadId);
     if (snapshot?.copying) return snapshot.publicId;
 

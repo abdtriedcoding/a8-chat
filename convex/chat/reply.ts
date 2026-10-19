@@ -158,6 +158,14 @@ export const streamReply = internalAction({
       await result.consumeStream();
       endedNormally = !aborted;
     } catch (error) {
+      // Deleting the thread mid-reply deletes the reply under the runner,
+      // and the Agent's next save throws. There's nothing left to fail or
+      // pause then.
+      if (
+        !(await ctx.runQuery(internal.chat.reply.threadExists, { threadId }))
+      ) {
+        return;
+      }
       // The Agent fails the reply it saved when the model call fails. If
       // the error came before it saved one, the client would wait 60
       // seconds for a reply that isn't coming. We rethrow the error so it
@@ -262,6 +270,18 @@ export const getReplyStart = internalQuery({
       connections,
       threadDefersTools: deferredToolThread !== null,
     };
+  },
+});
+
+/** False once the thread is deleted. */
+export const threadExists = internalQuery({
+  args: { threadId: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, { threadId }) => {
+    const thread = await getThreadMetadata(ctx, components.agent, {
+      threadId,
+    }).catch(() => null);
+    return thread !== null;
   },
 });
 
