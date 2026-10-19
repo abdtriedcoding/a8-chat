@@ -162,15 +162,17 @@ export function useComposerDictation({
     finish: async (): Promise<string | null> => {
       if (finishingRef.current) return null;
       finishingRef.current = true;
+      const draft = draftRef.current;
       try {
         await dictation.stop();
       } finally {
         finishingRef.current = false;
       }
-      const draft = draftRef.current;
+      // Typing while it waited dropped the draft, and a tap while it waited
+      // started a new one. Either way the box has the text.
+      if (!draft || draftRef.current !== draft) return latestTextRef.current;
       draftRef.current = null;
-      // Typing while it waited dropped the draft, and the box has the text.
-      return draft ? composeDraft(draft).text : latestTextRef.current;
+      return composeDraft(draft).text;
     },
   };
 }

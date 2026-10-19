@@ -279,7 +279,8 @@ function wait(ms: number) {
  * Dictation into any text box. start() asks for the system default mic and
  * streams it to Deepgram. Words come back through the callbacks. stop() asks
  * Deepgram for the last words and resolves once they arrive, or after
- * FINAL_WORDS_TIMEOUT_MS.
+ * FINAL_WORDS_TIMEOUT_MS. A socket still connecting gets until
+ * CONNECT_TIMEOUT_MS to open first, so the audio held for it isn't lost.
  * cancel() drops the dictation at once, with no more callbacks.
  *
  * prewarm() opens a socket and loads the audio worklet ahead of start(), so
@@ -363,11 +364,12 @@ export function useDictation(callbacks: DictationCallbacks) {
 
   async function finishSession(session: Session) {
     // Stop the audio. Frames held while connecting still go once the socket
-    // opens.
+    // opens, so a socket still connecting gets as long as it would have to
+    // open while listening.
     stopAudio(session);
     const opened = await Promise.race([
       session.ready,
-      wait(FINAL_WORDS_TIMEOUT_MS).then(() => false),
+      wait(CONNECT_TIMEOUT_MS).then(() => false),
     ]);
     if (!opened) {
       fail(session, "Dictation couldn't connect, so it stopped.");
