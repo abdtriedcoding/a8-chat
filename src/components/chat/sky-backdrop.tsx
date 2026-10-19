@@ -18,6 +18,9 @@ const IN_CLEARING =
  * The sky behind a new chat. Dark mode shows the same photo graded to
  * night, with stars where the sky is clear. The clearing hides the photo's
  * stars too, so sky-stars.png puts the same stars back in the middle.
+ *
+ * The images load lazily, which skips the ones the theme hides, so each
+ * theme fetches only its own sky.
  */
 export function SkyBackdrop({ className }: { className?: string }) {
   return (
@@ -29,7 +32,7 @@ export function SkyBackdrop({ className }: { className?: string }) {
         src={sky}
         alt=""
         fill
-        preload
+        fetchPriority="high"
         placeholder="blur"
         sizes="100vw"
         style={{ maskImage: CLEARING }}
@@ -39,7 +42,7 @@ export function SkyBackdrop({ className }: { className?: string }) {
         src={skyNight}
         alt=""
         fill
-        loading="eager"
+        fetchPriority="high"
         placeholder="blur"
         sizes="100vw"
         style={{ maskImage: CLEARING }}
@@ -49,7 +52,6 @@ export function SkyBackdrop({ className }: { className?: string }) {
         src={skyStars}
         alt=""
         fill
-        loading="eager"
         sizes="100vw"
         style={{ maskImage: IN_CLEARING }}
         className="hidden object-cover dark:block"
