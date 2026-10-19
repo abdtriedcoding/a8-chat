@@ -17,12 +17,17 @@ import {
   listQueuedPrompts,
 } from "./chat/queue";
 import { isThreadBusy, sendPrompt } from "./chat/send";
+import { getStoppedReply } from "./chat/stop";
 import { getLastTurn } from "./chat/turns";
 import { appError, ERROR_CODES, type AppErrorData } from "./lib/errors";
 import { optionalUser, requireUser } from "./lib/guards";
 import { buildPromptMessage, checkPrompt, checkTitle } from "./lib/prompt";
 import { MAX_QUEUED_PROMPTS } from "./lib/queue";
-import { cancelScheduledRun } from "./lib/scheduledPrompts";
+import {
+  cancelScheduledRun,
+  findThreadScheduledPrompt,
+  vRunEnding,
+} from "./lib/scheduledPrompts";
 import {
   findNextRun,
   scheduleProblem,
@@ -31,7 +36,7 @@ import {
 } from "./lib/schedule";
 import { resolveTimeZone } from "./lib/timeZone";
 import { limitSend } from "./rateLimits";
-import { vScheduledPromptStatus } from "./schema";
+import { vLastRun, vScheduledPromptStatus } from "./schema";
 import { setThreadStatus } from "./threads";
 
 // A scheduled prompt sends itself into its own thread, once or on a
@@ -40,6 +45,10 @@ import { setThreadStatus } from "./threads";
 
 /** How many active scheduled prompts a user can have. */
 const MAX_ACTIVE_SCHEDULED_PROMPTS = 10;
+
+/** Failed runs in a row that pause a scheduled prompt. */
+const MAX_FAILED_RUNS = 3;
+
 
 const vScheduledPromptView = v.object({
   _id: v.id("scheduledPrompts"),
@@ -52,6 +61,10 @@ const vScheduledPromptView = v.object({
   email: v.boolean(),
   status: vScheduledPromptStatus,
   nextRunAt: v.optional(v.number()),
+  lastRun: v.optional(vLastRun),
+  // How many failed runs in a row paused it, when it paused itself rather
+  // than the user pausing it.
+  pausedAfterFailures: v.optional(v.number()),
 });
 
 /** The user's scheduled prompts, newest first. Empty when signed out. */
@@ -66,8 +79,8 @@ export const list = query({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .order("desc")
       .collect();
-    return rows.map((row) =>
-      pick(row, [
+    return rows.map((row) => ({
+      ...pick(row, [
         "_id",
         "_creationTime",
         "threadId",
@@ -78,8 +91,13 @@ export const list = query({
         "email",
         "status",
         "nextRunAt",
+        "lastRun",
       ]),
-    );
+      pausedAfterFailures:
+        row.status === "paused" && row.consecutiveFailures >= MAX_FAILED_RUNS
+          ? row.consecutiveFailures
+          : undefined,
+    }));
   },
 });
 
@@ -272,6 +290,9 @@ export const runNow = mutation({
  * (sendRun). While the last run hasn't finished (isRunWaiting), it records
  * a skipped run instead, so at most one run waits.
  *
+ * When the queue is full or the send limit refuses, the run fails with that
+ * reason and sends nothing (recordFailedRun).
+ *
  * Does nothing when the row is gone or isn't active, as when the job fired
  * just as the user paused.
  */
@@ -288,7 +309,94 @@ export const run = internalMutation({
       });
       return null;
     }
-    await sendRun(ctx, row);
+    const result = await sendRun(ctx, row);
+    if ("code" in result) {
+      // scheduleNextRun changed the row's next run.
+      const current = await ctx.db.get("scheduledPrompts", row._id);
+      if (current) await recordFailedRun(ctx, current, result.message);
+    }
+    return null;
+  },
+});
+
+/**
+ * Records how a reply ended on the thread's scheduled prompt, if the reply
+ * answers its waiting run. streamReply calls this when the reply ends.
+ *
+ * A reply the user stopped is recorded as stopped, and changes the failure
+ * count neither way. A finished reply resets the count, and a failed one
+ * adds to it (recordFailedRun). A reply can also end on an action card.
+ * The run then waits until the reply continues and ends, and that end
+ * records the run's outcome again. A reply that never started records
+ * nothing, unless the user stopped it.
+ *
+ * A prompt the user sends while the run's cards wait cancels them, and the
+ * run's reply never continues. When that prompt's reply ends, the run is
+ * recorded as finished.
+ */
+export const recordRunOutcome = internalMutation({
+  args: {
+    threadId: v.string(),
+    // As streamReply got them.
+    promptMessageId: v.string(),
+    order: v.number(),
+    continuing: v.boolean(),
+    ending: vRunEnding,
+  },
+  returns: v.null(),
+  handler: async (
+    ctx,
+    { threadId, promptMessageId, order, continuing, ending },
+  ) => {
+    const row = await findThreadScheduledPrompt(ctx, threadId);
+    const waiting = row?.waitingRun;
+    if (!row || !waiting || !("promptMessageId" in waiting)) return null;
+    let answersRun = waiting.promptMessageId === promptMessageId;
+    if (continuing) {
+      // promptMessageId is the user's decisions on the cards. A regenerate
+      // or an edit deletes them with the turn, and the run's new prompt
+      // has the same order.
+      const [prompt, decisions] = await ctx.runQuery(
+        components.agent.messages.getMessagesByIds,
+        { messageIds: [waiting.promptMessageId, promptMessageId] },
+      );
+      answersRun = decisions !== null && prompt?.order === order;
+    }
+    if (!answersRun) {
+      if (
+        row.lastRun?.outcome === "actionWaiting" &&
+        !(await isRunWaiting(ctx, row))
+      ) {
+        await ctx.db.patch("scheduledPrompts", row._id, {
+          lastRun: { at: row.lastRun.at, outcome: "finished" },
+          consecutiveFailures: 0,
+        });
+      }
+      return null;
+    }
+
+    const at = Date.now();
+    if (await getStoppedReply(ctx, threadId, order)) {
+      await ctx.db.patch("scheduledPrompts", row._id, {
+        lastRun: { at, outcome: "stopped" },
+      });
+      return null;
+    }
+    if (ending === "notStarted") return null;
+    const turn = await getLastTurn(ctx, threadId);
+    const latest = turn[0]?.order === order ? turn[0] : undefined;
+    if (ending === "failed" || latest?.status === "failed") {
+      await recordFailedRun(ctx, row);
+    } else if (latest && waitingApprovalIds(turn).length > 0) {
+      await ctx.db.patch("scheduledPrompts", row._id, {
+        lastRun: { at, outcome: "actionWaiting" },
+      });
+    } else {
+      await ctx.db.patch("scheduledPrompts", row._id, {
+        lastRun: { at, outcome: "finished" },
+        consecutiveFailures: 0,
+      });
+    }
     return null;
   },
 });
@@ -418,6 +526,42 @@ async function isRunWaiting(ctx: MutationCtx, row: Doc<"scheduledPrompts">) {
     (await isThreadBusy(ctx, threadId, turn)) ||
     waitingApprovalIds(turn).length > 0
   );
+}
+
+/**
+ * Records a failed run, with `message` saying why if it sent nothing. An
+ * active scheduled prompt adds it to the failure count, and at
+ * MAX_FAILED_RUNS in a row pauses itself and cancels its next run. A
+ * paused or done one, run with Run now, keeps its count, so the page can
+ * tell a scheduled prompt that paused itself from one the user paused.
+ * Resume clears the count.
+ */
+async function recordFailedRun(
+  ctx: MutationCtx,
+  row: Doc<"scheduledPrompts">,
+  message?: string,
+) {
+  const lastRun = { at: Date.now(), outcome: "failed" as const, message };
+  if (row.status !== "active") {
+    await ctx.db.patch("scheduledPrompts", row._id, { lastRun });
+    return;
+  }
+  const consecutiveFailures = row.consecutiveFailures + 1;
+  if (consecutiveFailures < MAX_FAILED_RUNS) {
+    await ctx.db.patch("scheduledPrompts", row._id, {
+      consecutiveFailures,
+      lastRun,
+    });
+    return;
+  }
+  await cancelScheduledRun(ctx, row);
+  await ctx.db.patch("scheduledPrompts", row._id, {
+    consecutiveFailures,
+    lastRun,
+    status: "paused",
+    nextRunAt: undefined,
+    scheduledJobId: undefined,
+  });
 }
 
 /**

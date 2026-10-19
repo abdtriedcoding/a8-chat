@@ -41,7 +41,7 @@ export const vScheduledPromptStatus = v.union(
 );
 
 /** When a scheduled prompt last ran, and how that run went. */
-const vLastRun = v.object({
+export const vLastRun = v.object({
   at: v.number(),
   outcome: v.union(
     v.literal("finished"),
