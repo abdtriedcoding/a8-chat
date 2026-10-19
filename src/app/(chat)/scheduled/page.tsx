@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { ChatHeader } from "@/components/chat/chat-header";
-import { ScheduledPromptForm } from "@/components/scheduled/scheduled-prompt-form";
 import { ScheduledPromptList } from "@/components/scheduled/scheduled-prompt-list";
 import { requireSignedIn } from "@/lib/auth-server";
 
@@ -19,7 +18,6 @@ export default async function ScheduledPage() {
             A scheduled task sends its prompt for you, once or on a repeating
             schedule. Each one has its own chat, and every run goes there.
           </p>
-          <ScheduledPromptForm />
           <ScheduledPromptList />
         </div>
       </div>

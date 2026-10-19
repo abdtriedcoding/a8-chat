@@ -1,20 +1,18 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "convex/react";
+import { CircleAlertIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import * as z from "zod";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -24,11 +22,19 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useInBrowser } from "@/hooks/use-in-browser";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import { MAX_RENAME_LENGTH } from "../../../convex/lib/prompt";
@@ -48,6 +54,39 @@ const KINDS: { kind: Kind; label: string }[] = [
 
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => i + 1);
 
+const formSchema = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .min(1, "Type a title first.")
+      .max(
+        MAX_RENAME_LENGTH,
+        `Titles can be at most ${MAX_RENAME_LENGTH} characters.`,
+      ),
+    prompt: z.string().trim().min(1, "Type a prompt first."),
+    kind: z.enum(["once", "daily", "weekdays", "weekly", "monthly"]),
+    date: z.string(),
+    time: z.string().min(1, "Pick a time."),
+    days: z.array(z.string()),
+    dayOfMonth: z.string(),
+    timeZone: z.string().min(1, "Pick a time zone."),
+  })
+  .superRefine((values, ctx) => {
+    if (values.kind === "once" && !values.date) {
+      ctx.addIssue({ code: "custom", path: ["date"], message: "Pick a date." });
+    }
+    if (values.kind === "weekly" && values.days.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["days"],
+        message: "Pick at least one day.",
+      });
+    }
+  });
+
+type FormValues = z.infer<typeof formSchema>;
+
 /**
  * The browser's time zones, with its own zone and UTC in the list even when
  * the browser leaves them out.
@@ -64,208 +103,328 @@ function today(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(Date.now());
 }
 
-/**
- * The form that makes a scheduled prompt. It fills the time zone and date
- * from the browser, so it renders only once it's in one.
- */
-export function ScheduledPromptForm() {
-  if (!useInBrowser()) return <Skeleton className="h-96 w-full" />;
-  return <CreateForm />;
+function toSchedule(values: FormValues): Schedule {
+  const { kind, date, time } = values;
+  switch (kind) {
+    case "once":
+      return { kind, date, time };
+    case "weekly":
+      return { kind, days: values.days.map(Number), time };
+    case "monthly":
+      return { kind, day: Number(values.dayOfMonth), time };
+    default:
+      return { kind, time };
+  }
 }
 
-function CreateForm() {
+/**
+ * The "New task" button, and the sheet it opens with the form that makes a
+ * scheduled prompt. The sheet closes once the task is made.
+ */
+export function NewScheduledPromptSheet() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button>
+          <PlusIcon data-icon="inline-start" />
+          New task
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="gap-0 sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>New scheduled task</SheetTitle>
+          <SheetDescription>
+            It runs in a chat of its own, named after its title.
+          </SheetDescription>
+        </SheetHeader>
+        {/* The sheet's content mounts only when open, in the browser, so the
+            form can read the browser's time zone as it renders. */}
+        <CreateForm onCreated={() => setOpen(false)} />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CreateForm({ onCreated }: { onCreated: () => void }) {
   const create = useMutation(api.scheduledPrompts.create);
   const router = useRouter();
   const [ownTimeZone] = useState(browserTimeZone);
   const [timeZones] = useState(() => timeZoneOptions(ownTimeZone));
-  const [title, setTitle] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [kind, setKind] = useState<Kind>("daily");
-  const [date, setDate] = useState(() => today(ownTimeZone));
-  const [time, setTime] = useState("09:00");
-  const [days, setDays] = useState<string[]>(["1"]);
-  const [dayOfMonth, setDayOfMonth] = useState("1");
-  const [timeZone, setTimeZone] = useState(ownTimeZone);
-  const [error, setError] = useState<string>();
-  const [saving, setSaving] = useState(false);
 
-  function schedule(): Schedule {
-    switch (kind) {
-      case "once":
-        return { kind, date, time };
-      case "weekly":
-        return { kind, days: days.map(Number), time };
-      case "monthly":
-        return { kind, day: Number(dayOfMonth), time };
-      default:
-        return { kind, time };
-    }
-  }
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: "",
+      prompt: "",
+      kind: "daily",
+      date: today(ownTimeZone),
+      time: "09:00",
+      days: ["1"],
+      dayOfMonth: "1",
+      timeZone: ownTimeZone,
+    },
+  });
 
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-    setSaving(true);
+  const pending = form.formState.isSubmitting;
+  const kind = useWatch({ control: form.control, name: "kind" });
+  const dayOfMonth = useWatch({ control: form.control, name: "dayOfMonth" });
+
+  async function onSubmit(values: FormValues) {
     try {
       const { threadId } = await create({
-        title,
-        prompt,
-        schedule: schedule(),
-        timeZone,
+        title: values.title,
+        prompt: values.prompt,
+        schedule: toSchedule(values),
+        timeZone: values.timeZone,
       });
-      setTitle("");
-      setPrompt("");
       toast.success("Scheduled task created.", {
         action: {
           label: "Open chat",
           onClick: () => router.push(`/c/${threadId}`),
         },
       });
+      onCreated();
     } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setSaving(false);
+      form.setError("root", { message: errorMessage(caught) });
     }
   }
 
   return (
-    <Card>
-      <form onSubmit={(event) => void save(event)} noValidate>
-        <CardHeader>
-          <CardTitle>New scheduled task</CardTitle>
-          <CardDescription>
-            It runs in a chat of its own, named after its title.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="py-4">
-          <FieldGroup className="gap-5">
-            <Field>
-              <FieldLabel htmlFor="scheduled-title">Title</FieldLabel>
-              <Input
-                id="scheduled-title"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Morning email digest"
-                maxLength={MAX_RENAME_LENGTH}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="scheduled-prompt">Prompt</FieldLabel>
-              <Textarea
-                id="scheduled-prompt"
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Summarize my unread email from yesterday."
-                className="max-h-60"
-              />
-            </Field>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="scheduled-kind">Repeats</FieldLabel>
-                <NativeSelect
-                  id="scheduled-kind"
-                  className="w-full"
-                  value={kind}
-                  onChange={(event) => setKind(event.target.value as Kind)}
-                >
-                  {KINDS.map((option) => (
-                    <NativeSelectOption key={option.kind} value={option.kind}>
-                      {option.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+    <form
+      noValidate
+      onSubmit={form.handleSubmit(onSubmit)}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+        <FieldGroup className="gap-5">
+          {form.formState.errors.root && (
+            <Alert variant="destructive">
+              <CircleAlertIcon />
+              <AlertDescription>
+                {form.formState.errors.root.message}
+              </AlertDescription>
+            </Alert>
+          )}
+          <Controller
+            name="title"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid} data-disabled={pending}>
+                <FieldLabel htmlFor="scheduled-title">Title</FieldLabel>
+                <Input
+                  {...field}
+                  id="scheduled-title"
+                  aria-invalid={fieldState.invalid}
+                  disabled={pending}
+                  placeholder="Morning email digest"
+                  maxLength={MAX_RENAME_LENGTH}
+                />
+                {fieldState.invalid && (
+                  <FieldError errors={[fieldState.error]} />
+                )}
               </Field>
-              {kind === "once" && (
-                <Field>
-                  <FieldLabel htmlFor="scheduled-date">Date</FieldLabel>
-                  <Input
-                    id="scheduled-date"
-                    type="date"
-                    value={date}
-                    onChange={(event) => setDate(event.target.value)}
-                  />
-                </Field>
-              )}
-              {kind === "monthly" && (
-                <Field>
-                  <FieldLabel htmlFor="scheduled-day">Day of the month</FieldLabel>
+            )}
+          />
+          <Controller
+            name="prompt"
+            control={form.control}
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid} data-disabled={pending}>
+                <FieldLabel htmlFor="scheduled-prompt">Prompt</FieldLabel>
+                <Textarea
+                  {...field}
+                  id="scheduled-prompt"
+                  aria-invalid={fieldState.invalid}
+                  disabled={pending}
+                  placeholder="Summarize my unread email from yesterday."
+                  className="max-h-60"
+                />
+                {fieldState.invalid && (
+                  <FieldError errors={[fieldState.error]} />
+                )}
+              </Field>
+            )}
+          />
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Controller
+              name="kind"
+              control={form.control}
+              render={({ field }) => (
+                <Field data-disabled={pending}>
+                  <FieldLabel htmlFor="scheduled-kind">Repeats</FieldLabel>
                   <NativeSelect
-                    id="scheduled-day"
+                    {...field}
+                    id="scheduled-kind"
                     className="w-full"
-                    value={dayOfMonth}
-                    onChange={(event) => setDayOfMonth(event.target.value)}
+                    disabled={pending}
                   >
-                    {DAYS_OF_MONTH.map((day) => (
-                      <NativeSelectOption key={day} value={day}>
-                        {day}
+                    {KINDS.map((option) => (
+                      <NativeSelectOption key={option.kind} value={option.kind}>
+                        {option.label}
                       </NativeSelectOption>
                     ))}
                   </NativeSelect>
                 </Field>
               )}
-              <Field>
-                <FieldLabel htmlFor="scheduled-time">Time</FieldLabel>
-                <Input
-                  id="scheduled-time"
-                  type="time"
-                  value={time}
-                  onChange={(event) => setTime(event.target.value)}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="scheduled-time-zone">Time zone</FieldLabel>
-                <NativeSelect
-                  id="scheduled-time-zone"
-                  className="w-full"
-                  value={timeZone}
-                  onChange={(event) => setTimeZone(event.target.value)}
-                >
-                  {timeZones.map((zone) => (
-                    <NativeSelectOption key={zone} value={zone}>
-                      {zone}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </Field>
-            </div>
-            {kind === "weekly" && (
-              <Field>
-                <FieldLabel id="scheduled-days">Days</FieldLabel>
-                <ToggleGroup
-                  type="multiple"
-                  variant="outline"
-                  aria-labelledby="scheduled-days"
-                  className="flex-wrap"
-                  value={days}
-                  onValueChange={setDays}
-                >
-                  {WEEKDAYS.map(({ day, name, short }) => (
-                    <ToggleGroupItem
-                      key={day}
-                      value={String(day)}
-                      aria-label={name}
+            />
+            {kind === "once" && (
+              <Controller
+                name="date"
+                control={form.control}
+                render={({ field, fieldState }) => (
+                  <Field
+                    data-invalid={fieldState.invalid}
+                    data-disabled={pending}
+                  >
+                    <FieldLabel htmlFor="scheduled-date">Date</FieldLabel>
+                    <Input
+                      {...field}
+                      id="scheduled-date"
+                      type="date"
+                      aria-invalid={fieldState.invalid}
+                      disabled={pending}
+                    />
+                    {fieldState.invalid && (
+                      <FieldError errors={[fieldState.error]} />
+                    )}
+                  </Field>
+                )}
+              />
+            )}
+            {kind === "monthly" && (
+              <Controller
+                name="dayOfMonth"
+                control={form.control}
+                render={({ field }) => (
+                  <Field data-disabled={pending}>
+                    <FieldLabel htmlFor="scheduled-day">
+                      Day of the month
+                    </FieldLabel>
+                    <NativeSelect
+                      {...field}
+                      id="scheduled-day"
+                      className="w-full"
+                      disabled={pending}
                     >
-                      {short}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </Field>
+                      {DAYS_OF_MONTH.map((day) => (
+                        <NativeSelectOption key={day} value={day}>
+                          {day}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                )}
+              />
             )}
-            {kind === "monthly" && Number(dayOfMonth) > 28 && (
-              <p className="text-sm text-muted-foreground">
-                In shorter months it runs on the last day.
-              </p>
-            )}
-          </FieldGroup>
-        </CardContent>
-        <CardFooter className="flex-col items-start gap-3">
-          {error && <FieldError>{error}</FieldError>}
-          <Button type="submit" disabled={saving}>
-            {saving && <Spinner data-icon="inline-start" />}
-            Schedule
+            <Controller
+              name="time"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field
+                  data-invalid={fieldState.invalid}
+                  data-disabled={pending}
+                >
+                  <FieldLabel htmlFor="scheduled-time">Time</FieldLabel>
+                  <Input
+                    {...field}
+                    id="scheduled-time"
+                    type="time"
+                    aria-invalid={fieldState.invalid}
+                    disabled={pending}
+                  />
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
+                </Field>
+              )}
+            />
+            <Controller
+              name="timeZone"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field
+                  data-invalid={fieldState.invalid}
+                  data-disabled={pending}
+                >
+                  <FieldLabel htmlFor="scheduled-time-zone">
+                    Time zone
+                  </FieldLabel>
+                  <NativeSelect
+                    {...field}
+                    id="scheduled-time-zone"
+                    className="w-full"
+                    aria-invalid={fieldState.invalid}
+                    disabled={pending}
+                  >
+                    {timeZones.map((zone) => (
+                      <NativeSelectOption key={zone} value={zone}>
+                        {zone}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
+                </Field>
+              )}
+            />
+          </div>
+          {kind === "weekly" && (
+            <Controller
+              name="days"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field
+                  data-invalid={fieldState.invalid}
+                  data-disabled={pending}
+                >
+                  <FieldLabel id="scheduled-days">Days</FieldLabel>
+                  <ToggleGroup
+                    type="multiple"
+                    variant="outline"
+                    aria-labelledby="scheduled-days"
+                    aria-invalid={fieldState.invalid}
+                    className="flex-wrap"
+                    disabled={pending}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    {WEEKDAYS.map(({ day, name, short }) => (
+                      <ToggleGroupItem
+                        key={day}
+                        value={String(day)}
+                        aria-label={name}
+                      >
+                        {short}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
+                </Field>
+              )}
+            />
+          )}
+          {kind === "monthly" && Number(dayOfMonth) > 28 && (
+            <FieldDescription>
+              In shorter months it runs on the last day.
+            </FieldDescription>
+          )}
+        </FieldGroup>
+      </div>
+      <SheetFooter className="flex-row justify-end border-t">
+        <SheetClose asChild>
+          <Button type="button" variant="outline" disabled={pending}>
+            Cancel
           </Button>
-        </CardFooter>
-      </form>
-    </Card>
+        </SheetClose>
+        <Button type="submit" disabled={pending}>
+          {pending && <Spinner data-icon="inline-start" />}
+          Schedule
+        </Button>
+      </SheetFooter>
+    </form>
   );
 }
