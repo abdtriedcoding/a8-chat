@@ -86,22 +86,25 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Each user's shares and link updates. Each one copies a thread, so a
   // script can't fill the deployment with copies.
   userShares: { kind: "fixed window", rate: 30, period: HOUR },
-  // Each user's dictation starts. a8 can't see how long a dictation runs
-  // (ADR 0012), so these cap how often one starts. A start isn't a Send.
-  userDictationStarts: { kind: "fixed window", rate: 30, period: HOUR },
+  // Each user's dictation sockets: one for each tap on the mic, and one for
+  // each warm-up before a tap (ADR 0012). a8 can't see how long a dictation
+  // runs, so these cap how often a socket opens. Warm-ups make this several
+  // times the number of dictations. A start isn't a Send.
+  userDictationStarts: { kind: "fixed window", rate: 120, period: HOUR },
   // Windows open at 00:00 UTC, like dailySends.
   userDailyDictationStarts: {
     kind: "fixed window",
-    rate: 200,
+    rate: 600,
     period: DAY,
     start: 0,
   },
-  // Everyone's dictation starts together, a ceiling on the day's speech
-  // spend. A dictation runs 5 minutes at most, so this is 2,500 minutes a
-  // day at worst. Windows open at 00:00 UTC, like dailySends.
+  // Everyone's dictation sockets together, a ceiling on the day's speech
+  // spend. A warm-up that's never used costs nothing (ADR 0012). A
+  // dictation runs 5 minutes at most, so this is 5,000 minutes a day at
+  // worst. Windows open at 00:00 UTC, like dailySends.
   dailyDictationStarts: {
     kind: "fixed window",
-    rate: 500,
+    rate: 1000,
     period: DAY,
     start: 0,
   },
@@ -332,12 +335,12 @@ export async function limitShare(
 }
 
 /**
- * Counts one dictation start against the user's limits and the daily limit.
- * Returns why it can't, or null if the dictation can start. Like limitSend,
- * it checks every limit before counting against any.
+ * Why a dictation start would be refused, or null if it fits under the
+ * user's limits and the daily limit. Counts nothing. It checks the user's
+ * limits first, so their messages win when both are hit.
  */
-export async function limitDictationStart(
-  ctx: MutationCtx,
+export async function checkDictationStart(
+  ctx: RunMutationCtx,
   userId: string,
 ): Promise<RateLimited | null> {
   const key = { key: userId };
@@ -367,6 +370,21 @@ export async function limitDictationStart(
       daily.retryAfter,
     );
   }
+  return null;
+}
+
+/**
+ * Counts one dictation start against the user's limits and the daily limit.
+ * Returns why it can't, or null if the dictation can start. Like limitSend,
+ * it checks every limit before counting against any.
+ */
+export async function limitDictationStart(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<RateLimited | null> {
+  const refused = await checkDictationStart(ctx, userId);
+  if (refused) return refused;
+  const key = { key: userId };
   // Every check passed in this transaction, so none of these can fail.
   await rateLimiter.limit(ctx, "userDictationStarts", {
     ...key,

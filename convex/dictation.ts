@@ -10,6 +10,7 @@ import { action, env, internalMutation, query } from "./_generated/server";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { requireIdentity } from "./lib/guards";
 import {
+  checkDictationStart,
   limitDictationStart,
   vRateLimited,
   type RateLimited,
@@ -34,7 +35,8 @@ export const available = query({
 /**
  * A token that opens one Deepgram socket, for the signed-in user. Counts a
  * dictation start against the rate limits, and returns the refusal instead
- * of throwing when one is hit, like the Send mutations.
+ * of throwing when one is hit, like the Send mutations. It counts only once
+ * Deepgram grants the token, so a failed grant doesn't use up a start.
  */
 export const token = action({
   args: {},
@@ -48,10 +50,10 @@ export const token = action({
         "Dictation isn't set up on this deployment.",
       );
     }
-    const refused = await ctx.runMutation(internal.dictation.countStart, {
-      userId,
-    });
-    if (refused) return refused;
+    // Refuses before calling Deepgram, so a user over the limit can't make
+    // a8 call it. countStart checks again in one transaction with the count.
+    const overLimit = await checkDictationStart(ctx, userId);
+    if (overLimit) return overLimit;
 
     const response = await fetch(DEEPGRAM_GRANT_URL, {
       method: "POST",
@@ -73,7 +75,10 @@ export const token = action({
       throw new Error(`Deepgram didn't grant a token: ${response.status}`);
     }
     const { access_token } = grantResponse.parse(await response.json());
-    return { token: access_token };
+    const refused = await ctx.runMutation(internal.dictation.countStart, {
+      userId,
+    });
+    return refused ?? { token: access_token };
   },
 });
 
