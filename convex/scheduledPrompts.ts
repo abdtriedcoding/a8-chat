@@ -335,8 +335,9 @@ export const nextRun = internalQuery({
  * It never interrupts a reply or cancels a card. While a reply is running
  * or a card waits, the prompt joins the queue instead. It also joins when
  * the queue has prompts or is paused. Like a Send, it moves an archived
- * thread back to the sidebar. Returns whether it sent or queued the prompt, or why it sent
- * nothing: the queue is full, or the send limit refused.
+ * thread back to the sidebar. Returns whether it sent or queued the
+ * prompt, or why it sent nothing: the queue is full, or the send limit
+ * refused.
  */
 async function sendRun(
   ctx: MutationCtx,
