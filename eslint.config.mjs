@@ -11,6 +11,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "errors",
   "prompt",
   "queue",
+  "scheduleText",
   "timeZone",
 ];
 

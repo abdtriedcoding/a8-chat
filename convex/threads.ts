@@ -26,6 +26,7 @@ import {
 } from "./lib/guards";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { checkTitle } from "./lib/prompt";
+import { deleteThreadScheduledPrompt } from "./lib/scheduledPrompts";
 import {
   findTemporaryThread,
   listTemporaryThreadIds,
@@ -336,9 +337,9 @@ export async function setThreadStatus(
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
  * the background. This deletes its stoppedReplies, deferredToolThreads,
- * threadPins and temporaryThreads rows, its queue and its shared snapshot
- * right away. Its
- * attachments, queued ones included, are left unreferenced, and
+ * threadPins and temporaryThreads rows, its queue, its shared snapshot and
+ * its scheduled prompt right away, and cancels the scheduled prompt's next
+ * run. Its attachments, queued ones included, are left unreferenced, and
  * cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
@@ -374,6 +375,7 @@ export async function deleteThread(ctx: MutationCtx, threadId: string) {
   if (temporary) await ctx.db.delete("temporaryThreads", temporary._id);
   await deleteThreadQueue(ctx, threadId);
   await deleteThreadSnapshot(ctx, threadId);
+  await deleteThreadScheduledPrompt(ctx, threadId);
 }
 
 /** How many of a user's threads one account cleanup transaction deletes. */

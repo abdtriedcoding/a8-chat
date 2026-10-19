@@ -483,14 +483,15 @@ export async function isThreadBusy(
 
 /**
  * Saves a prompt and schedules the reply to it (streamReply). startThread,
- * sendMessage, startNextQueuedPrompt and redoLastTurn all send through
- * here. It leaves the last turn's actions as they are. sendMessage and
- * startNextQueuedPrompt close them first (closeUnrunActions).
+ * sendMessage, startNextQueuedPrompt, redoLastTurn and a scheduled run
+ * (convex/scheduledPrompts.ts) all send through here. It leaves the last
+ * turn's actions as they are. sendMessage and startNextQueuedPrompt close
+ * them first (closeUnrunActions).
  *
  * `attachmentFileIds` are the files the prompt attaches. Saving them with
  * the prompt keeps the Agent from counting them as unused.
  */
-async function sendPrompt(
+export async function sendPrompt(
   ctx: MutationCtx,
   {
     threadId,

@@ -54,6 +54,22 @@ _Avoid_: backlog, outbox
 A queue that waits for the user to resume it, after a Stop or a failed reply. A send while the queue is paused skips ahead of it.
 _Avoid_: stopped queue, held queue
 
+**Scheduled prompt**:
+A prompt the user sets to send itself later, once at a set time or again and again on a repeating schedule. It gets a thread of its own when it's made, and every run goes there. Deleting that thread deletes the scheduled prompt; archiving it doesn't, and the next run moves it back to the sidebar. Times follow the wall clock in the scheduled prompt's time zone. It can't be made from a temporary thread, and it holds text only, no attachments. UI copy says "scheduled task".
+_Avoid_: task (on its own), reminder, job, cron, automation
+
+**Paused scheduled prompt**:
+A scheduled prompt that won't run until the user resumes it. The user can pause one, and it pauses itself after three failed runs in a row.
+_Avoid_: disabled task, stopped schedule
+
+**Scheduled run**:
+One time a scheduled prompt sends itself. It counts as a send, joins the queue like a queued prompt when the thread is busy, and its reply waits for the user's decision on any action card like any other reply. The model sees earlier runs in the thread. "Run now" starts one by hand.
+_Avoid_: execution, occurrence, trigger
+
+**Skipped run**:
+A scheduled run that never happens because the scheduled prompt's last run is still waiting, on an action card or in the queue. A scheduled prompt has at most one run waiting.
+_Avoid_: missed run, dropped run
+
 **Turn**:
 One prompt together with its reply.
 _Avoid_: exchange, round
@@ -121,11 +137,11 @@ A tool call that only fetches from an app, like searching email, and that the ca
 _Avoid_: query, lookup
 
 **Action**:
-A tool call that writes to or deletes from an app, like sending an email. Every tool that isn't a read is an action. Runs only after the user approves it. Not to be confused with a send, which asks the model for a reply.
+A tool call that writes to or deletes from an app, like sending an email, or that creates, changes or deletes one of the user's scheduled prompts. Every tool that isn't a read is an action. Runs only after the user approves it. Not to be confused with a send, which asks the model for a reply.
 _Avoid_: write, operation, mutation
 
 **Action card**:
-The preview of an action waiting in a reply, showing the app, the target and the content, where the user approves or cancels it. A new prompt sent while a card is waiting cancels that action, unless the queue is holding for the card. Then the prompt joins the queue.
+The preview of an action waiting in a reply, showing the app (or a8, for a scheduled prompt), the target and the content, where the user approves or cancels it. A new prompt sent while a card is waiting cancels that action, unless the queue is holding for the card. Then the prompt joins the queue. A scheduled run never cancels a card: it joins the queue.
 _Avoid_: approval request, pending action (in UI copy), confirmation
 
 **Decision**:

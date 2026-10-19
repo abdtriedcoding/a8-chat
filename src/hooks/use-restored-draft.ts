@@ -1,5 +1,6 @@
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
+import { useInBrowser } from "@/hooks/use-in-browser";
 import { forgetConnectReturn, savedDraftFor } from "@/lib/connect-return";
 
 /**
@@ -14,11 +15,7 @@ import { forgetConnectReturn, savedDraftFor } from "@/lib/connect-return";
  */
 export function useRestoredDraft(setText: (text: string) => void) {
   const pathname = usePathname();
-  const inBrowser = useSyncExternalStore(
-    subscribeToNothing,
-    () => true,
-    () => false,
-  );
+  const inBrowser = useInBrowser();
   const [draftCheckedFor, setDraftCheckedFor] = useState<string>();
   if (inBrowser && draftCheckedFor === undefined) {
     setDraftCheckedFor(pathname);
@@ -28,9 +25,4 @@ export function useRestoredDraft(setText: (text: string) => void) {
   useEffect(() => {
     if (draftCheckedFor !== undefined) forgetConnectReturn(draftCheckedFor);
   }, [draftCheckedFor]);
-}
-
-/** For useSyncExternalStore, to tell the browser from the server render. */
-function subscribeToNothing() {
-  return () => {};
 }

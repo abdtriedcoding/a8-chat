@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { vSchedule } from "./lib/schedule";
 import { vSharedMessage } from "./lib/sharedMessages";
 
 /** A connection's state. A connection that stops working needs reconnecting. */
@@ -31,6 +32,32 @@ export const vOAuthClientRegistration = v.object({
   ),
   tokenEndpoint: v.optional(vAuthorizationServer.fields.tokenEndpoint),
 });
+
+/** A paused one waits for the user. A done one is a one-off that ran. */
+export const vScheduledPromptStatus = v.union(
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("done"),
+);
+
+/** When a scheduled prompt last ran, and how that run went. */
+const vLastRun = v.object({
+  at: v.number(),
+  outcome: v.union(
+    v.literal("finished"),
+    v.literal("actionWaiting"),
+    v.literal("failed"),
+    v.literal("stopped"),
+    v.literal("skipped"),
+  ),
+  // Why a failed run failed, such as the send limit's message.
+  message: v.optional(v.string()),
+});
+
+const vWaitingRun = v.union(
+  v.object({ queuedPromptId: v.id("queuedPrompts") }),
+  v.object({ promptMessageId: v.string() }),
+);
 
 export default defineSchema({
   // One row for each reply the user stopped (stopReply in convex/chat/stop.ts).
@@ -87,6 +114,40 @@ export default defineSchema({
   })
     .index("by_queuedPromptId", ["queuedPromptId"])
     .index("by_fileId", ["fileId"]),
+  // One row per scheduled prompt (convex/scheduledPrompts.ts, ADR 0013).
+  // create adds it with its thread, and each run rewrites its next run.
+  // Deleting the thread deletes the row (deleteThread in convex/threads.ts).
+  scheduledPrompts: defineTable({
+    userId: v.string(),
+    // The thread every run sends into.
+    threadId: v.string(),
+    title: v.string(),
+    // Text only. A scheduled prompt has no attachments.
+    prompt: v.string(),
+    schedule: vSchedule,
+    // IANA name, such as "Europe/Berlin". Schedule times are local to it.
+    timeZone: v.string(),
+    // Whether each run sends the user an email.
+    email: v.boolean(),
+    status: vScheduledPromptStatus,
+    // When the next run is due. Unset when none is scheduled: paused, or a
+    // one-off that's done.
+    nextRunAt: v.optional(v.number()),
+    // The pending run in _scheduled_functions, so a change can cancel it.
+    scheduledJobId: v.optional(v.id("_scheduled_functions")),
+    // Failed runs in a row. Three pause the scheduled prompt.
+    consecutiveFailures: v.number(),
+    // Runs whose reply the user hasn't opened the thread to see.
+    unreadRuns: v.number(),
+    lastRun: v.optional(vLastRun),
+    // The last run while it hasn't finished: its queued prompt, or its
+    // prompt message once it starts. A run that comes due meanwhile is
+    // skipped.
+    waitingRun: v.optional(vWaitingRun),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_threadId", ["threadId"])
+    .index("by_userId_and_status", ["userId", "status"]),
   // One row per shared snapshot (convex/sharedSnapshots.ts, ADR 0011). Its
   // public link opens `version` of its copied messages. Sharing again copies
   // the next version and switches to it once the copy is done. Unsharing or
