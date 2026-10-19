@@ -1,10 +1,30 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
-import { CalendarClockIcon, SearchIcon } from "lucide-react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import {
+  CalendarClockIcon,
+  MoreHorizontalIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  SearchIcon,
+  SendIcon,
+  Trash2Icon,
+} from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
@@ -18,9 +38,15 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/hooks/use-confirm";
+import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import { describeSchedule } from "../../../convex/lib/scheduleText";
-import { NewScheduledPromptSheet } from "./scheduled-prompt-form";
+import {
+  EditScheduledPromptSheet,
+  NewScheduledPromptSheet,
+  type ScheduledPrompt,
+} from "./scheduled-prompt-form";
 
 /** The next run's date and time, on the wall clock of the row's time zone. */
 function formatNextRun(at: number, timeZone: string) {
@@ -32,9 +58,10 @@ function formatNextRun(at: number, timeZone: string) {
 }
 
 /**
- * The user's scheduled prompts, each with its schedule and next run, under
- * a search box that filters them by title or prompt and the button that
- * makes a new one.
+ * The user's scheduled prompts, each with its schedule, next run and a menu
+ * to run it now, edit, pause or resume, and delete it. Above them, a search
+ * box that filters them by title or prompt and the button that makes a new
+ * one.
  */
 export function ScheduledPromptList() {
   const { isAuthenticated } = useConvexAuth();
@@ -43,6 +70,14 @@ export function ScheduledPromptList() {
     isAuthenticated ? {} : "skip",
   );
   const [search, setSearch] = useState("");
+  const pause = useMutation(api.scheduledPrompts.pause);
+  const resume = useMutation(api.scheduledPrompts.resume);
+  const runNow = useMutation(api.scheduledPrompts.runNow);
+  const remove = useMutation(api.scheduledPrompts.remove);
+  const router = useRouter();
+  const [confirmDialog, confirm] = useConfirm();
+  const [editing, setEditing] = useState<ScheduledPrompt | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const query = search.trim().toLowerCase();
   const matches = scheduledPrompts?.filter(
@@ -50,6 +85,47 @@ export function ScheduledPromptList() {
       title.toLowerCase().includes(query) ||
       prompt.toLowerCase().includes(query),
   );
+
+  function edit(row: ScheduledPrompt) {
+    setEditing(row);
+    setEditOpen(true);
+  }
+
+  function setPaused(row: ScheduledPrompt, paused: boolean) {
+    const id = { scheduledPromptId: row._id };
+    (paused ? pause(id) : resume(id)).then(
+      () => toast.success(paused ? "Paused." : "Resumed."),
+      (error: unknown) => toast.error(errorMessage(error)),
+    );
+  }
+
+  function run(row: ScheduledPrompt) {
+    runNow({ scheduledPromptId: row._id }).then(
+      () =>
+        toast.success("Running now.", {
+          action: {
+            label: "Open chat",
+            onClick: () => router.push(`/c/${row.threadId}`),
+          },
+        }),
+      (error: unknown) => toast.error(errorMessage(error)),
+    );
+  }
+
+  async function deleteScheduledPrompt(row: ScheduledPrompt) {
+    await confirm({
+      title: "Delete this scheduled task?",
+      description: (
+        <>
+          &ldquo;{row.title}&rdquo; won&apos;t run again. Its chat stays, with
+          every run so far.
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+      onConfirm: () => remove({ scheduledPromptId: row._id }),
+    });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,32 +168,91 @@ export function ScheduledPromptList() {
       ) : (
         <ul className="flex flex-col divide-y rounded-lg border">
           {matches.map((row) => (
-            <li key={row._id} className="flex flex-col gap-1 px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <Link
-                  href={`/c/${row.threadId}`}
-                  className="truncate text-sm font-medium underline-offset-4 hover:underline"
-                >
-                  {row.title}
-                </Link>
-                {row.status !== "active" && (
-                  <Badge variant="secondary" className="shrink-0">
-                    {row.status === "done" ? "Done" : "Paused"}
-                  </Badge>
+            <li
+              key={row._id}
+              className="flex items-start justify-between gap-3 px-4 py-3"
+            >
+              <div className="flex min-w-0 flex-col gap-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Link
+                    href={`/c/${row.threadId}`}
+                    className="truncate text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {row.title}
+                  </Link>
+                  {row.status !== "active" && (
+                    <Badge variant="secondary" className="shrink-0">
+                      {row.status === "done" ? "Done" : "Paused"}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {describeSchedule(row.schedule)} · {row.timeZone}
+                </p>
+                {row.nextRunAt !== undefined && (
+                  <p className="text-xs text-muted-foreground">
+                    Next run {formatNextRun(row.nextRunAt, row.timeZone)}
+                  </p>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">
-                {describeSchedule(row.schedule)} · {row.timeZone}
-              </p>
-              {row.nextRunAt !== undefined && (
-                <p className="text-xs text-muted-foreground">
-                  Next run {formatNextRun(row.nextRunAt, row.timeZone)}
-                </p>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="shrink-0"
+                  >
+                    <MoreHorizontalIcon />
+                    <span className="sr-only">
+                      More options for {row.title}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onSelect={() => run(row)}>
+                      <SendIcon />
+                      Run now
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => edit(row)}>
+                      <PencilIcon />
+                      Edit
+                    </DropdownMenuItem>
+                    {row.status === "active" && (
+                      <DropdownMenuItem onSelect={() => setPaused(row, true)}>
+                        <PauseIcon />
+                        Pause
+                      </DropdownMenuItem>
+                    )}
+                    {row.status === "paused" && (
+                      <DropdownMenuItem onSelect={() => setPaused(row, false)}>
+                        <PlayIcon />
+                        Resume
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => void deleteScheduledPrompt(row)}
+                    >
+                      <Trash2Icon />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </li>
           ))}
         </ul>
       )}
+      <EditScheduledPromptSheet
+        row={editing}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+      {confirmDialog}
     </div>
   );
 }
