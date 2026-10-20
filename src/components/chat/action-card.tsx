@@ -39,7 +39,11 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
   const [deciding, setDeciding] = useState<"approve" | "cancel">();
   const input = isRecord(call.input) ? call.input : {};
   const summary = summarizeAction(call.toolName, input, use(KnownItemsContext));
-  const [showDetails, setShowDetails] = useState(false);
+  // A destructive card that can't name its target opens on the arguments,
+  // so the user sees what it deletes before approving.
+  const [showDetails, setShowDetails] = useState(
+    summary?.destructive === true && summary.title === undefined,
+  );
   // A second click before the call ends does nothing.
   async function decide(approve: boolean) {
     if (deciding || !call.approval || !decideAction) return;
@@ -127,8 +131,9 @@ function SummaryBody({ summary }: { summary: ActionSummary }) {
       {title && <p className="text-base font-semibold break-words">{title}</p>}
       {fields.length > 0 && (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
-          {fields.map(({ label, value }) => (
-            <div key={label} className="contents">
+          {/* Labels can repeat, like two tasks due "today". */}
+          {fields.map(({ label, value }, i) => (
+            <div key={i} className="contents">
               <dt className="text-muted-foreground">{label}</dt>
               <dd className="break-words">{value}</dd>
             </div>

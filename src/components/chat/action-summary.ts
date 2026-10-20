@@ -156,16 +156,18 @@ const SUMMARIES: Record<string, Summarize> = {
   },
   googlecalendar__delete_event: (input, known) => {
     const event = known(input.eventId);
-    const emailed =
-      (event?.guests ?? 0) > 0 && input.notificationLevel !== "NONE";
+    const level = input.notificationLevel;
+    const emailed = (event?.guests ?? 0) > 0 && level !== "NONE";
     return {
       headline: "Delete a Google Calendar event",
       verb: "Delete event",
       title: event?.name,
       fields: compact([["When", event?.when]]),
-      note: emailed
-        ? `This can't be undone. ${guestCount(event?.guests)} get a cancellation email.`
-        : "This can't be undone.",
+      note: !emailed
+        ? "This can't be undone."
+        : level === "EXTERNAL_ONLY"
+          ? "This can't be undone. Only guests outside your organization get a cancellation email."
+          : `This can't be undone. ${guestCount(event?.guests)} get a cancellation email.`,
       destructive: true,
     };
   },
@@ -254,7 +256,9 @@ export function knownItems(outputs: unknown[]): KnownItems {
     }
     for (const child of Object.values(value)) visit(child, depth + 1);
   };
-  for (const output of outputs) visit(parseResult(output), 0);
+  // Newest first, so a later result's name and time win. Within one
+  // result, the first record wins, so a parent beats its children.
+  for (const output of [...outputs].reverse()) visit(parseResult(output), 0);
   return items;
 }
 
@@ -398,8 +402,13 @@ function eventTime(input: Record<string, unknown>): string | undefined {
   const timeZone = validTimeZone(input.timeZone);
   const from = moment(input.startTime, timeZone);
   if (!from) return undefined;
-  const to = moment(input.endTime, timeZone);
+  let to = moment(input.endTime, timeZone);
   const allDay = input.allDay === true || from.dateOnly;
+  // An all-day event's end is exclusive: a one-day event on Oct 21 ends on
+  // Oct 22.
+  if (allDay && to && to.date > from.date) {
+    to = { ...to, date: new Date(to.date.getTime() - 86_400_000) };
+  }
   const start = format(from, { day: true, time: !allDay });
   let range = start;
   if (to) {
