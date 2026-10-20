@@ -13,7 +13,7 @@ export default async function MarketingLayout({
   return (
     <>
       <SiteHeader signedIn={signedIn} />
-      <main className="flex flex-1 flex-col bg-muted">{children}</main>
+      <main className="flex flex-1 flex-col bg-muted dark:bg-background">{children}</main>
       <SiteFooter />
     </>
   );

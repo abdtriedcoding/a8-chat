@@ -3,7 +3,7 @@ import { Highlight, Mention } from "@/components/landing/highlight";
 
 export function AuthShowcase() {
   return (
-    <aside className="hidden flex-col justify-center border-l bg-muted bg-dots px-12 py-16 lg:flex xl:px-20">
+    <aside className="hidden flex-col justify-center border-l bg-muted bg-dots dark:bg-background px-12 py-16 lg:flex xl:px-20">
       <div className="mx-auto flex w-full max-w-lg flex-col">
         <p className="text-3xl font-bold tracking-tight text-balance">
           Nothing gets sent until <Highlight>you say so.</Highlight>

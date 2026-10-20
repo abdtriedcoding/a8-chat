@@ -43,6 +43,9 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-edge: var(--primary-edge);
+  --color-link: var(--link);
+  --color-bubble: var(--bubble);
+  --color-bubble-foreground: var(--bubble-foreground);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
@@ -58,28 +61,35 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* A blue theme: white surfaces, slate grays, and a saturated blue accent. */
+/* A blue theme: white surfaces, slate grays, and a saturated blue accent.
+   Text is dark slate, not near-black, so long replies read softer (12.7:1). */
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.1371 0.036 258.5258);
+  --foreground: oklch(0.32 0.03 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.1371 0.036 258.5258);
+  --card-foreground: oklch(0.32 0.03 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.1371 0.036 258.5258);
+  --popover-foreground: oklch(0.32 0.03 260);
   --primary: oklch(0.546 0.2153 262.8719);
   --primary-foreground: oklch(0.9838 0.0035 247.8583);
   /* The darker bottom edge of solid buttons. */
   --primary-edge: oklch(0.4878 0.217 264.3876);
+  /* Link text. The dark theme keeps it lighter than its primary. */
+  --link: oklch(0.546 0.2153 262.8719);
+  /* The user's chat messages. Softer than primary for reading at length. */
+  --bubble: oklch(0.9 0.05 252);
+  --bubble-foreground: oklch(0.32 0.03 260);
   --secondary: oklch(0.9684 0.0068 247.8951);
-  --secondary-foreground: oklch(0.2079 0.0399 265.7275);
+  --secondary-foreground: oklch(0.32 0.03 260);
   --muted: oklch(0.9684 0.0068 247.8951);
   --muted-foreground: oklch(0.5547 0.0407 257.4404);
   --accent: oklch(0.9684 0.0068 247.8951);
-  --accent-foreground: oklch(0.2079 0.0399 265.7275);
+  --accent-foreground: oklch(0.32 0.03 260);
   /* The marker behind highlighted words and @mentions. */
   --highlight: oklch(0.8829 0.0573 251.9139);
   --success: oklch(0.627 0.194 149.214); /* green-600 */
-  --destructive: oklch(0.6368 0.2078 25.3259);
+  /* Errors are red text, so this passes AA on white (5.4:1). */
+  --destructive: oklch(0.55 0.22 27);
   --border: oklch(0.929 0.0126 255.5317);
   --input: oklch(0.929 0.0126 255.5317);
   --ring: oklch(0.546 0.2153 262.8719);
@@ -90,7 +100,7 @@
   --chart-5: oklch(0.8829 0.0573 251.9139);
   --radius: 0.625rem;
   --sidebar: oklch(0.9838 0.0035 247.8583);
-  --sidebar-foreground: oklch(0.2079 0.0399 265.7275);
+  --sidebar-foreground: oklch(0.32 0.03 260);
   --sidebar-primary: oklch(0.546 0.2153 262.8719);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.929 0.0126 255.5317);
@@ -104,42 +114,52 @@
   --sky-horizon: oklch(0.912 0.038 248.2);
 }
 
-/* The same blue on navy. */
+/* The same blue on a dimmed slate-navy. The near-black navy the theme
+   shipped with, under near-white text (19:1), glared on long replies.
+   Body text here is 12.5:1. Cards and popovers sit a step above the page. */
 .dark {
-  --background: oklch(0.1371 0.036 258.5258);
-  --foreground: oklch(0.9838 0.0035 247.8583);
-  --card: oklch(0.1371 0.036 258.5258);
-  --card-foreground: oklch(0.9838 0.0035 247.8583);
-  --popover: oklch(0.1371 0.036 258.5258);
-  --popover-foreground: oklch(0.9838 0.0035 247.8583);
-  --primary: oklch(0.6232 0.1879 259.7964);
-  --primary-foreground: oklch(0.2079 0.0399 265.7275);
+  --background: oklch(0.255 0.03 260);
+  --foreground: oklch(0.92 0.012 255);
+  --card: oklch(0.28 0.03 260);
+  --card-foreground: oklch(0.92 0.012 255);
+  --popover: oklch(0.295 0.03 260);
+  --popover-foreground: oklch(0.92 0.012 255);
+  /* The light theme's blue, so white text on it passes AA (4.9:1). Navy
+     text on the brighter blue the theme shipped with was hard to read. */
+  --primary: oklch(0.546 0.2153 262.8719);
+  --primary-foreground: oklch(0.9838 0.0035 247.8583);
   --primary-edge: oklch(0.4878 0.217 264.3876);
-  --secondary: oklch(0.28 0.0369 259.974);
-  --secondary-foreground: oklch(0.9838 0.0035 247.8583);
-  --muted: oklch(0.28 0.0369 259.974);
-  --muted-foreground: oklch(0.7107 0.0351 256.7877);
-  --accent: oklch(0.28 0.0369 259.974);
-  --accent-foreground: oklch(0.9838 0.0035 247.8583);
+  /* Blue-600 text on this page is only 3:1, so links use a lighter blue
+     (6.3:1). */
+  --link: oklch(0.72 0.15 255);
+  --bubble: oklch(0.46 0.1 258);
+  --bubble-foreground: oklch(0.95 0.01 255);
+  --secondary: oklch(0.34 0.032 260);
+  --secondary-foreground: oklch(0.92 0.012 255);
+  --muted: oklch(0.34 0.032 260);
+  --muted-foreground: oklch(0.76 0.03 257);
+  --accent: oklch(0.34 0.032 260);
+  --accent-foreground: oklch(0.92 0.012 255);
   --highlight: oklch(0.6232 0.1879 259.7964 / 30%);
   --success: oklch(0.723 0.219 149.579); /* green-500 */
-  --destructive: oklch(0.3959 0.1331 25.7205);
-  --border: oklch(0.28 0.0369 259.974);
-  --input: oklch(0.28 0.0369 259.974);
-  --ring: oklch(0.4878 0.217 264.3876);
+  /* A light red, since errors are text: 5.9:1 on the page. */
+  --destructive: oklch(0.72 0.17 22);
+  --border: oklch(0.37 0.03 260);
+  --input: oklch(0.37 0.03 260);
+  --ring: oklch(0.6232 0.1879 259.7964);
   --chart-1: oklch(0.4878 0.217 264.3876);
   --chart-2: oklch(0.5449 0.2154 262.7414);
   --chart-3: oklch(0.6776 0.1481 238.1044);
   --chart-4: oklch(0.3752 0.0394 256.8467);
   --chart-5: oklch(0.4691 0.1926 264.5776);
-  --sidebar: oklch(0.1371 0.036 258.5258);
-  --sidebar-foreground: oklch(0.9838 0.0035 247.8583);
-  --sidebar-primary: oklch(0.6232 0.1879 259.7964);
-  --sidebar-primary-foreground: oklch(0.1371 0.036 258.5258);
-  --sidebar-accent: oklch(0.28 0.0369 259.974);
-  --sidebar-accent-foreground: oklch(0.9838 0.0035 247.8583);
-  --sidebar-border: oklch(0.28 0.0369 259.974);
-  --sidebar-ring: oklch(0.4878 0.217 264.3876);
+  --sidebar: oklch(0.235 0.03 260);
+  --sidebar-foreground: oklch(0.92 0.012 255);
+  --sidebar-primary: oklch(0.546 0.2153 262.8719);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.34 0.032 260);
+  --sidebar-accent-foreground: oklch(0.92 0.012 255);
+  --sidebar-border: oklch(0.37 0.03 260);
+  --sidebar-ring: oklch(0.6232 0.1879 259.7964);
   /* The same blues after the night grade (sky-night.jpg). */
   --sky-top: oklch(0.186 0.06 268.3);
   --sky-middle: oklch(0.234 0.071 265.3);

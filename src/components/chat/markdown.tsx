@@ -66,6 +66,7 @@ export function Markdown({
         // Scaled to the chat's text-sm, which Streamdown's defaults aren't.
         "[&_[data-streamdown=heading-1]]:text-xl [&_[data-streamdown=heading-2]]:text-lg [&_[data-streamdown=heading-3]]:text-base",
         "*:first:mt-0 *:last:mb-0",
+        "[&_[data-streamdown=link]]:text-link",
         // A long block equation scrolls instead of being cut off.
         "[&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden",
       )}
