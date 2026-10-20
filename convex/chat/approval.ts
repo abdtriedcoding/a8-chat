@@ -7,6 +7,7 @@ import {
   type MutationCtx,
 } from "../_generated/server";
 import { chatAgent } from "../agents/chat";
+import { countAutoApproved } from "../lib/autoApprove";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess } from "../lib/guards";
 import { deletePendingActions, setPendingActions } from "../lib/pendingActions";
@@ -84,6 +85,8 @@ export const decideAction = mutation({
       // Each step saves one message from the model.
       stepsTaken: turn.filter((message) => message.message?.role === "assistant")
         .length,
+      // The auto-approve cap counts across the whole reply.
+      autoApprovedCount: countAutoApproved(turn),
     });
     return null;
   },
@@ -204,7 +207,11 @@ export const recordPendingActions = internalMutation({
   },
 });
 
-/** Whether any of the turn's actions showed an action card. */
+/**
+ * Whether any of the turn's actions showed an action card or ran under
+ * auto-approve. An auto-approved action the user stopped before it ran
+ * needs a result too.
+ */
 function hasActionCards(turn: MessageDoc[]): boolean {
   return turn.some(
     ({ message }) =>
@@ -213,7 +220,11 @@ function hasActionCards(turn: MessageDoc[]): boolean {
   );
 }
 
-/** The approval IDs of the turn's actions that are still waiting on a card. */
+/**
+ * The approval IDs of the turn's actions that are still waiting on a card.
+ * An auto-approved action never waits, since the AI SDK saves its approval
+ * in the same step as the request.
+ */
 export function waitingApprovalIds(turn: MessageDoc[]): string[] {
   const requested: string[] = [];
   const decided = new Set<string>();

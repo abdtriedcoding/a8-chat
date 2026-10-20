@@ -12,11 +12,12 @@ import {
 } from "@/components/ui/message";
 import { replyText } from "@/lib/reply-text";
 import type { ThreadMessage } from "@/lib/stopped-turns";
-import { ActionCard } from "./action-card";
+import { ActionCard, AutoApprovedRecord } from "./action-card";
 import {
   ConnectorToolRow,
   connectorToolCalls,
   failedNeedingReconnect,
+  isAutoApproved,
   isRunning,
   replyWaitingActions,
 } from "./connector-tool-call";
@@ -56,7 +57,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   const text = replyText(message);
   const toolCalls = connectorToolCalls(message);
   const waitingActions = replyWaitingActions(toolCalls, stopped);
-  // Every call without a card shows as a row.
+  // Every call without a card shows as a row, or as a record when
+  // auto-approve ran it.
   const toolRows = toolCalls.filter((call) => !waitingActions.includes(call));
   const [visibleText, { isStreaming }] = useSmoothText(text, {
     startStreaming: message.status === "streaming",
@@ -110,13 +112,18 @@ export const AssistantMessage = memo(function AssistantMessage({
       <MessageContent className="pt-1">
         {toolRows.length > 0 && (
           <div className="flex flex-col gap-2">
-            {toolRows.map((call) => (
-              <ConnectorToolRow
-                key={call.id}
-                call={call}
-                running={streaming && isRunning(call)}
-              />
-            ))}
+            {toolRows.map((call) => {
+              const Row = isAutoApproved(call)
+                ? AutoApprovedRecord
+                : ConnectorToolRow;
+              return (
+                <Row
+                  key={call.id}
+                  call={call}
+                  running={streaming && isRunning(call)}
+                />
+              );
+            })}
           </div>
         )}
         {thinking && (

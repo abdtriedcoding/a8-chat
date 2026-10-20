@@ -14,8 +14,12 @@ import {
 } from "../_generated/server";
 import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
+import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
 import { replyInstructions } from "../lib/instructions";
-import type { RunEnding } from "../lib/scheduledPrompts";
+import {
+  findThreadScheduledPrompt,
+  type RunEnding,
+} from "../lib/scheduledPrompts";
 import { findTemporaryThread } from "../lib/temporaryThreads";
 import {
   CACHE_BREAKPOINT,
@@ -57,6 +61,9 @@ export const streamReply = internalAction({
     continuing: v.optional(v.boolean()),
     // The steps the reply took before it paused on action cards.
     stepsTaken: v.optional(v.number()),
+    // The actions the reply ran without a card before it paused on action
+    // cards.
+    autoApprovedCount: v.optional(v.number()),
   },
   handler: async (
     ctx,
@@ -67,6 +74,7 @@ export const streamReply = internalAction({
       timeZone,
       continuing = false,
       stepsTaken = 0,
+      autoApprovedCount = 0,
     },
   ) => {
     const startedAt = Date.now();
@@ -98,6 +106,7 @@ export const streamReply = internalAction({
         ...start,
         timeZone,
         stepsTaken,
+        autoApprovedCount,
       });
       const { log, fitHistory, maxSteps } = replyTools;
       const result = await chatAgent.streamText(
@@ -115,6 +124,7 @@ export const streamReply = internalAction({
               canSearchWeb,
               canSchedule: replyTools.canSchedule,
               connectorText: replyTools.connectorText,
+              autoApprove: replyTools.autoApprove,
             }),
             providerOptions: CACHE_BREAKPOINT,
           },
@@ -255,6 +265,7 @@ const vReplyStart = v.union(
     connections: v.array(schema.doc("connections")),
     threadDefersTools: v.boolean(),
     temporary: v.boolean(),
+    autoApprove: v.boolean(),
   }),
 );
 
@@ -282,6 +293,9 @@ type ReplyStart = Infer<typeof vReplyStart>;
  * - `threadDefersTools`: whether the thread already defers connector tools
  *   (deferThreadTools).
  * - `temporary`: whether the thread is temporary.
+ * - `autoApprove`: whether the thread has auto-approve on. Never in a
+ *   scheduled prompt thread, whose runs always stop on their cards (ADR
+ *   0013). Read at every start, so a change counts from the next one.
  */
 export const getReplyStart = internalQuery({
   args: {
@@ -296,15 +310,21 @@ export const getReplyStart = internalQuery({
       ? await getContinuedTurn(ctx, { threadId, promptMessageId, order })
       : await listTurnUpTo(ctx, { threadId, promptMessageId, order });
     if (!turn) return null;
-    const [stopped, thread, deferredToolThread, temporaryThread] =
-      await Promise.all([
-        getStoppedReply(ctx, threadId, order),
-        getThreadMetadata(ctx, components.agent, { threadId }).catch(
-          () => null,
-        ),
-        findDeferredToolThread(ctx, threadId),
-        findTemporaryThread(ctx, threadId),
-      ]);
+    const [
+      stopped,
+      thread,
+      deferredToolThread,
+      temporaryThread,
+      autoApproveThread,
+      scheduledPrompt,
+    ] = await Promise.all([
+      getStoppedReply(ctx, threadId, order),
+      getThreadMetadata(ctx, components.agent, { threadId }).catch(() => null),
+      findDeferredToolThread(ctx, threadId),
+      findTemporaryThread(ctx, threadId),
+      findAutoApproveThread(ctx, threadId),
+      findThreadScheduledPrompt(ctx, threadId),
+    ]);
     if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
     const userId = thread?.userId;
@@ -314,6 +334,7 @@ export const getReplyStart = internalQuery({
       connections,
       threadDefersTools: deferredToolThread !== null,
       temporary: temporaryThread !== null,
+      autoApprove: isAutoApproveOn(autoApproveThread, scheduledPrompt),
     };
   },
 });

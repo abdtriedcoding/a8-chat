@@ -51,9 +51,10 @@ export type ConnectorToolCall = {
   errorText?: string;
   /**
    * Set on an action (ADR 0002). `approved` is undefined while its card
-   * waits, and set once the user decides.
+   * waits, and set once the user decides. `isAutomatic` is set on an action
+   * the thread's auto-approve ran without a card (ADR 0014).
    */
-  approval?: { id: string; approved?: boolean };
+  approval?: { id: string; approved?: boolean; isAutomatic?: boolean };
 };
 
 /**
@@ -77,7 +78,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
       input?: unknown;
       output?: unknown;
       errorText?: string;
-      approval?: { id: string; approved?: boolean };
+      approval?: { id: string; approved?: boolean; isAutomatic?: boolean };
     };
     return [
       {
@@ -91,6 +92,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
         approval: call.approval && {
           id: call.approval.id,
           approved: call.approval.approved,
+          isAutomatic: call.approval.isAutomatic,
         },
       },
     ];
@@ -109,9 +111,14 @@ export function isRunning(call: ConnectorToolCall): boolean {
   );
 }
 
+/** Whether the thread's auto-approve ran the action without a card. */
+export function isAutoApproved(call: ConnectorToolCall): boolean {
+  return call.approval?.isAutomatic === true;
+}
+
 /** Whether a call is an action whose card is waiting for the user. */
 export function isWaitingForApproval(call: ConnectorToolCall): boolean {
-  return call.state === "approval-requested";
+  return call.state === "approval-requested" && !isAutoApproved(call);
 }
 
 /**
@@ -205,8 +212,7 @@ export function ConnectorToolRow({
 }
 
 function ToolCallDetail({ title, value }: { title: string; value: unknown }) {
-  const text =
-    typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2);
+  const text = detailText(value);
   return (
     <section className="flex min-w-0 flex-col gap-1">
       <h3 className="font-medium text-muted-foreground">{title}</h3>
@@ -215,4 +221,11 @@ function ToolCallDetail({ title, value }: { title: string; value: unknown }) {
       </pre>
     </section>
   );
+}
+
+/** A call's result or error as text, with JSON laid out over lines. */
+export function detailText(value: unknown): string {
+  return typeof value === "string"
+    ? value
+    : JSON.stringify(value ?? {}, null, 2);
 }

@@ -108,6 +108,20 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_threadId", ["threadId"]),
+  // One row per thread with auto-approve on (lib/autoApprove.ts, ADR 0014).
+  // setAutoApprove (convex/autoApprove.ts) adds it and deletes it, and
+  // startThread adds it with the thread. Deleting the thread deletes it.
+  // Archiving, pinning and sharing keep it.
+  autoApproveThreads: defineTable({
+    userId: v.string(),
+    threadId: v.string(),
+  }).index("by_threadId", ["threadId"]),
+  // One row per user who has seen the auto-approve warning, so the dialog
+  // shows once per account (markWarningSeen in convex/autoApprove.ts).
+  // Deleting the account deletes it.
+  autoApproveWarnings: defineTable({
+    userId: v.string(),
+  }).index("by_userId", ["userId"]),
   // A thread's queued prompts (convex/chat/queue.ts), oldest first by
   // creation time. sendMessage adds one while a reply is running or the
   // queue isn't paused, and startNextPrompt (convex/chat/send.ts) removes

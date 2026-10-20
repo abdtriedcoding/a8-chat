@@ -144,8 +144,9 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
  * Deletes everything a8 holds for a deleted user, except what Better Auth
  * deletes itself: threads and their messages, stopped-reply and
  * deferred-tool rows, uploads and their stored files, sign-ins in progress,
- * rate limit counters, and connections (revoked at the vendor first). It
- * takes the user ID because the session is gone by the time it runs.
+ * the auto-approve warning row, rate limit counters, and connections
+ * (revoked at the vendor first). It takes the user ID because the session
+ * is gone by the time it runs.
  * Scheduled by the deleteUser hook in createAuthOptions.
  *
  * The steps with more than a batch of rows schedule their own continuation.
@@ -162,6 +163,7 @@ export const purgeAccount = internalAction({
     await ctx.runMutation(internal.signIns.purgeUserPendingConnects, {
       userId,
     });
+    await ctx.runMutation(internal.autoApprove.purgeUserWarning, { userId });
     await ctx.runMutation(internal.auth.purgeAccountLimits, { userId, email });
     await ctx.runAction(internal.connections.purgeUserConnections, {
       userId,

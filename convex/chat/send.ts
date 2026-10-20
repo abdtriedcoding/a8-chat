@@ -71,6 +71,10 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 // startThread with `temporary` starts a temporary thread (lib/
 // temporaryThreads.ts). A thread can't become temporary later, so no other
 // Send takes the flag.
+//
+// startThread with `autoApprove` turns auto-approve on for the new thread
+// (lib/autoApprove.ts), so its first reply runs actions without a card.
+// After that, setAutoApprove (convex/autoApprove.ts) changes it.
 
 /**
  * Why a Send was refused: the thread's queue already holds
@@ -96,6 +100,7 @@ export const startThread = mutation({
     attachmentFileIds: vAttachmentFileIds,
     timeZone: vTimeZone,
     temporary: v.optional(v.boolean()),
+    autoApprove: v.optional(v.boolean()),
   },
   returns: v.union(
     v.object({ threadId: v.string() }),
@@ -104,7 +109,13 @@ export const startThread = mutation({
   ),
   handler: async (
     ctx,
-    { prompt, attachmentFileIds = [], timeZone, temporary = false },
+    {
+      prompt,
+      attachmentFileIds = [],
+      timeZone,
+      temporary = false,
+      autoApprove = false,
+    },
   ) => {
     const user = await requireUser(ctx);
     const prepared = await prepareSend(
@@ -127,6 +138,9 @@ export const startThread = mutation({
     });
     if (temporary) {
       await ctx.db.insert("temporaryThreads", { userId: user._id, threadId });
+    }
+    if (autoApprove) {
+      await ctx.db.insert("autoApproveThreads", { userId: user._id, threadId });
     }
     await sendPrompt(ctx, {
       threadId,

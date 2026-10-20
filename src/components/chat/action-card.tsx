@@ -1,7 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDownIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  InfoIcon,
+  TriangleAlertIcon,
+  ZapIcon,
+} from "lucide-react";
 import { createContext, use, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
@@ -13,7 +18,7 @@ import {
   type ActionSummary,
   type KnownItems,
 } from "./action-summary";
-import type { ConnectorToolCall } from "./connector-tool-call";
+import { detailText, type ConnectorToolCall } from "./connector-tool-call";
 import { useThreadActionsContext } from "./thread-actions-context";
 
 /**
@@ -119,6 +124,100 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
         </footer>
       )}
     </section>
+  );
+}
+
+/**
+ * The record an action leaves when the thread's auto-approve ran it without
+ * a card (ADR 0014): the app, what it did and an "Auto-approved" marker,
+ * with the arguments and the result under "Show details". A failed one says
+ * so and keeps the error under details, like a failed row. `running` is
+ * true only while the call runs in a streaming reply.
+ */
+export function AutoApprovedRecord({
+  call,
+  running,
+}: {
+  call: ConnectorToolCall;
+  running: boolean;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  const input = isRecord(call.input) ? call.input : {};
+  const summary = summarizeAction(call.toolName, input, use(KnownItemsContext));
+  const headline = summary?.headline ?? call.label;
+  const failed = call.state === "output-error";
+  // Approved, but the user stopped the reply before it ran.
+  const stopped = call.state === "approval-responded" && !running;
+
+  return (
+    <section
+      aria-label={`${headline}, auto-approved`}
+      className="flex w-full flex-col gap-2 rounded-xl bg-card p-3 text-sm shadow-xs ring-1 ring-foreground/10"
+    >
+      <header className="flex items-start gap-2">
+        <ConnectorLogo connector={call.app} size="md" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <h3 className={cn("font-medium break-words", running && "shimmer")}>
+            {headline}
+          </h3>
+          {summary?.title && (
+            <p className="truncate text-muted-foreground">{summary.title}</p>
+          )}
+        </div>
+        <span className="flex shrink-0 items-center gap-1 pt-0.5 text-xs text-muted-foreground">
+          <ZapIcon className="size-3.5" />
+          Auto-approved
+        </span>
+      </header>
+      {(failed || stopped) && (
+        <p
+          className={cn(
+            "flex items-center gap-1.5 text-xs",
+            failed ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {failed && <TriangleAlertIcon className="size-3.5 shrink-0" />}
+          {failed ? "This action failed." : "Stopped before it ran."}
+        </p>
+      )}
+      {showDetails && (
+        <>
+          <ArgumentDetails call={call} input={input} />
+          {failed ? (
+            <ActionDetail title="Error">
+              <ResultText value={call.errorText} />
+            </ActionDetail>
+          ) : (
+            call.state === "output-available" && (
+              <ActionDetail title="Result">
+                <ResultText value={call.output} />
+              </ActionDetail>
+            )
+          )}
+        </>
+      )}
+      <Button
+        variant="ghost"
+        size="xs"
+        className="-ml-1 self-start text-muted-foreground"
+        aria-expanded={showDetails}
+        onClick={() => setShowDetails((open) => !open)}
+      >
+        {showDetails ? "Hide details" : "Show details"}
+        <ChevronDownIcon
+          data-icon="inline-end"
+          className={cn("transition-transform", showDetails && "rotate-180")}
+        />
+      </Button>
+    </section>
+  );
+}
+
+function ResultText({ value }: { value: unknown }) {
+  return (
+    <pre className="font-mono text-xs break-words whitespace-pre-wrap">
+      {detailText(value)}
+    </pre>
   );
 }
 

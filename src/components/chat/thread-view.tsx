@@ -36,6 +36,7 @@ import { useEditPrompt } from "@/hooks/use-edit-prompt";
 import { useQueueActions } from "@/hooks/use-queue-actions";
 import { useRegenerateReply } from "@/hooks/use-regenerate-reply";
 import { useSendPrompt } from "@/hooks/use-send-prompt";
+import { useSetAutoApprove } from "@/hooks/use-set-auto-approve";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { useStableMessages } from "@/hooks/use-stable-messages";
@@ -115,6 +116,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const edit = useEditPrompt(threadId);
   const decide = useDecideAction(threadId);
   const queueActions = useQueueActions(threadId);
+  const setAutoApprove = useSetAutoApprove();
   // A stopped turn counts as done, and so does a reply that timed out.
   const canRedoLastTurn = messages.length > 0 && !replyInProgress;
   const copyableText = lastReplyText(messages, stopped);
@@ -240,6 +242,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onSend={send}
           onStop={replyInProgress ? stop : undefined}
           sendDisabled={queueFull}
+          autoApprove={thread?.autoApprove === true}
+          // Scheduled runs always stop on their cards (ADR 0013).
+          onAutoApproveChange={
+            thread && !thread.scheduledPromptId
+              ? (on) => setAutoApprove({ threadId, on })
+              : undefined
+          }
           autoFocus
           textareaRef={composerRef}
           className="mx-auto max-w-3xl"

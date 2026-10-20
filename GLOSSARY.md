@@ -101,7 +101,7 @@ One app a8 can work in, with a name, a handle, a logo and the tools a8 offers fr
 _Avoid_: plugin, integration, connected app, MCP server (for the connector)
 
 **Custom connector**:
-A connector a user adds themselves from an MCP server's URL, seen only by that user. It has a handle and a connection like any other connector, but a8 can't label its tools, so every call to one of them asks for approval.
+A connector a user adds themselves from an MCP server's URL, seen only by that user. It has a handle and a connection like any other connector, but a8 can't label its tools, so every call to one of them asks for approval unless the thread has auto-approve on.
 _Avoid_: custom MCP, custom server, my connector
 
 **Connection**:
@@ -137,7 +137,7 @@ A tool call that only fetches from an app, like searching email, and that the ca
 _Avoid_: query, lookup
 
 **Action**:
-A tool call that writes to or deletes from an app, like sending an email, or that creates, changes or deletes one of the user's scheduled prompts. Every tool that isn't a read is an action. Runs only after the user approves it. Not to be confused with a send, which asks the model for a reply.
+A tool call that writes to or deletes from an app, like sending an email, or that creates, changes or deletes one of the user's scheduled prompts. Every tool that isn't a read is an action. Runs only after the user approves it, unless the thread has auto-approve on. Not to be confused with a send, which asks the model for a reply.
 _Avoid_: write, operation, mutation
 
 **Action card**:
@@ -147,6 +147,10 @@ _Avoid_: approval request, pending action (in UI copy), confirmation
 **Decision**:
 The user's choice to approve or cancel the action on an action card.
 _Avoid_: approval (for a cancel), approval response
+
+**Auto-approve**:
+A thread setting under which actions run without an action card, each leaving a record in the reply that it ran by itself. After five such actions in one reply, the rest of that reply's actions show cards. It's off for every new thread, only the user can change it, and a change counts from the next reply or continuing reply. Cards already waiting still need a decision, and scheduled prompt threads never have it. UI copy says "Auto-approve actions".
+_Avoid_: YOLO mode, bypass mode, trust mode, auto mode
 
 **Deferred tool**:
 A connector tool the model finds through tool search instead of seeing it up front. Once the user's connector tools pass the tool budget in a thread, that thread defers them from then on, except those of up to three connectors the prompt mentions.
