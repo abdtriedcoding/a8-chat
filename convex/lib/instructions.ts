@@ -43,7 +43,8 @@ const SCHEDULING =
   "request, so it works when nobody is watching.\n" +
   "A new one's times are wall-clock times in the user's time zone, given " +
   "below. A changed one keeps its own time zone, from " +
-  "listScheduledPrompts. If the user doesn't give a time, ask for one.\n" +
+  "listScheduledPrompts. If the user asks for a new one without a time, " +
+  "ask for one.\n" +
   "Creating, changing and deleting are actions. a8 shows the user a card " +
   "and does it only if they approve, so call the tool without asking for " +
   "confirmation in your text first. If the user cancels, don't try again. " +

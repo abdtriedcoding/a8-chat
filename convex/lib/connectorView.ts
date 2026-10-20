@@ -854,13 +854,14 @@ export function findA8Tool(modelName: string): FoundA8Tool | undefined {
 
 /**
  * A scheduled prompt tool's input as its card shows it: the title, a new
- * title, the prompt and the schedule in words. The model writes the input,
+ * title, the prompt, the schedule in words and, for a change, the time
+ * zone it runs in. The model writes the input,
  * so a schedule describeSchedule can't read shows as it came.
  */
 function scheduledPromptCardInput(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
-  const { title, newTitle, prompt, schedule } = input;
+  const { title, newTitle, prompt, schedule, timeZone } = input;
   let scheduleText = schedule;
   try {
     // An unknown kind gives undefined.
@@ -869,8 +870,12 @@ function scheduledPromptCardInput(
     // Shows the schedule as the model wrote it.
   }
   return Object.fromEntries(
-    Object.entries({ title, newTitle, prompt, schedule: scheduleText }).filter(
-      ([, value]) => value !== undefined,
-    ),
+    Object.entries({
+      title,
+      newTitle,
+      prompt,
+      schedule: scheduleText,
+      timeZone,
+    }).filter(([, value]) => value !== undefined),
   );
 }

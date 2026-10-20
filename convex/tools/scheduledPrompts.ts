@@ -129,6 +129,12 @@ export function createScheduledPromptTools(timeZone: string): {
         inputSchema: z.object({
           scheduledPromptId,
           title: currentTitle,
+          // For its action card, which shows the zone its times run in.
+          timeZone: z
+            .string()
+            .describe(
+              "The scheduled task's time zone, exactly as listScheduledPrompts gave it.",
+            ),
           newTitle: title.optional().describe("A new title, to rename it."),
           prompt,
           schedule,

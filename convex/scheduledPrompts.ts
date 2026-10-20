@@ -117,10 +117,10 @@ export const createForUser = internalMutation({
 
 /**
  * Changes the user's scheduled prompt (updateScheduledPrompt), keeping its
- * time zone and email setting, and returns it as `list` would. `title` is
- * the title its action card showed, and `newTitle` renames it. Throws when
- * the row is gone, someone else's or titled otherwise, and wherever
- * updateScheduledPrompt throws.
+ * time zone and email setting, and returns it as `list` would. `title` and
+ * `timeZone` are what its action card showed, and `newTitle` renames it.
+ * Throws when the row is gone, someone else's or doesn't match them, and
+ * wherever updateScheduledPrompt throws.
  */
 export const updateForUser = internalMutation({
   args: {
@@ -128,6 +128,7 @@ export const updateForUser = internalMutation({
     // From the model, so it may not be an ID at all.
     scheduledPromptId: v.string(),
     title: v.string(),
+    timeZone: v.string(),
     newTitle: v.optional(v.string()),
     prompt: v.string(),
     schedule: vSchedule,
@@ -135,10 +136,13 @@ export const updateForUser = internalMutation({
   returns: vScheduledPromptView,
   handler: async (
     ctx,
-    { userId, scheduledPromptId, title, newTitle, prompt, schedule },
+    { userId, scheduledPromptId, title, timeZone, newTitle, prompt, schedule },
   ) => {
     const row = await findOwnScheduledPrompt(ctx, userId, scheduledPromptId);
-    refuseMismatch(row, checkTitle(title) === row.title);
+    refuseMismatch(
+      row,
+      checkTitle(title) === row.title && timeZone === row.timeZone,
+    );
     await updateScheduledPrompt(ctx, userId, row, {
       title: newTitle ?? row.title,
       prompt,
