@@ -3,7 +3,7 @@ import { query } from "./_generated/server";
 import { findOwnThread, optionalUser } from "./lib/guards";
 import { listTemporaryThreadIds } from "./lib/temporaryThreads";
 
-/** The most threads listMine reads. */
+/** The most threads listMine returns. */
 const MAX_PENDING_THREADS = 50;
 
 /** The title for a thread with none, as src/lib/thread-title.ts shows it. */
@@ -29,33 +29,26 @@ export const listMine = query({
     const user = await optionalUser(ctx);
     if (!user) return [];
 
+    const temporary = await listTemporaryThreadIds(ctx, user._id);
     // A row's creation time is its `since`, so the index reads the
-    // longest-waiting rows first.
-    const [rows, temporary] = await Promise.all([
-      ctx.db
-        .query("pendingActions")
-        .withIndex("by_userId", (q) => q.eq("userId", user._id))
-        .take(MAX_PENDING_THREADS),
-      listTemporaryThreadIds(ctx, user._id),
-    ]);
-    const threads = await Promise.all(
-      rows.map((row) => findOwnThread(ctx, user._id, row.threadId)),
-    );
-    return rows
-      .flatMap((row, index) => {
-        const thread = threads[index];
-        if (thread?.status !== "active" || temporary.has(row.threadId)) {
-          return [];
-        }
-        return [
-          {
-            threadId: row.threadId,
-            title: thread.title || UNTITLED,
-            count: row.count,
-            since: row.since,
-          },
-        ];
-      })
-      .sort((a, b) => a.since - b.since);
+    // longest-waiting rows first. The cap counts only threads it returns,
+    // so archived ones can't push an active one out.
+    const rows = ctx.db
+      .query("pendingActions")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id));
+    const waiting = [];
+    for await (const row of rows) {
+      if (temporary.has(row.threadId)) continue;
+      const thread = await findOwnThread(ctx, user._id, row.threadId);
+      if (thread?.status !== "active") continue;
+      waiting.push({
+        threadId: row.threadId,
+        title: thread.title || UNTITLED,
+        count: row.count,
+        since: row.since,
+      });
+      if (waiting.length === MAX_PENDING_THREADS) break;
+    }
+    return waiting;
   },
 });
