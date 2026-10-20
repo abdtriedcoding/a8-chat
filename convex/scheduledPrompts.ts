@@ -9,6 +9,7 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import { closeUnrunActions, waitingApprovalIds } from "./chat/approval";
 import {
@@ -75,30 +76,112 @@ export const list = query({
   handler: async (ctx) => {
     const user = await optionalUser(ctx);
     if (!user) return [];
-    const rows = await ctx.db
-      .query("scheduledPrompts")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .order("desc")
-      .collect();
-    return rows.map((row) => ({
-      ...pick(row, [
-        "_id",
-        "_creationTime",
-        "threadId",
-        "title",
-        "prompt",
-        "schedule",
-        "timeZone",
-        "email",
-        "status",
-        "nextRunAt",
-        "lastRun",
-      ]),
-      pausedAfterFailures:
-        row.status === "paused" && row.consecutiveFailures >= MAX_FAILED_RUNS
-          ? row.consecutiveFailures
-          : undefined,
-    }));
+    return await listViews(ctx, user._id);
+  },
+});
+
+// The model's scheduled prompt tools (convex/tools/scheduledPrompts.ts) call
+// the functions below for the reply's user. A reply runs from the scheduler
+// with no signed-in user, so they take the user's ID.
+
+/** The user's scheduled prompts, newest first, as `list` returns them. */
+export const listForUser = internalQuery({
+  args: { userId: v.string() },
+  returns: v.array(vScheduledPromptView),
+  handler: async (ctx, { userId }) => await listViews(ctx, userId),
+});
+
+/**
+ * Makes the user's scheduled prompt and its thread (createScheduledPrompt),
+ * and returns it as `list` would. Throws wherever createScheduledPrompt
+ * throws.
+ */
+export const createForUser = internalMutation({
+  args: {
+    userId: v.string(),
+    title: v.string(),
+    prompt: v.string(),
+    schedule: vSchedule,
+    timeZone: v.string(),
+  },
+  returns: vScheduledPromptView,
+  handler: async (ctx, { userId, ...fields }) => {
+    const { scheduledPromptId } = await createScheduledPrompt(
+      ctx,
+      userId,
+      fields,
+    );
+    return await getView(ctx, scheduledPromptId);
+  },
+});
+
+/**
+ * Changes the user's scheduled prompt (updateScheduledPrompt), keeping its
+ * time zone and email setting, and returns it as `list` would. `title` and
+ * `timeZone` are what its action card showed, and `newTitle` renames it.
+ * Throws when the row is gone, someone else's or doesn't match them, and
+ * wherever updateScheduledPrompt throws.
+ */
+export const updateForUser = internalMutation({
+  args: {
+    userId: v.string(),
+    // From the model, so it may not be an ID at all.
+    scheduledPromptId: v.string(),
+    title: v.string(),
+    timeZone: v.string(),
+    newTitle: v.optional(v.string()),
+    prompt: v.string(),
+    schedule: vSchedule,
+  },
+  returns: vScheduledPromptView,
+  handler: async (
+    ctx,
+    { userId, scheduledPromptId, title, timeZone, newTitle, prompt, schedule },
+  ) => {
+    const row = await findOwnScheduledPrompt(ctx, userId, scheduledPromptId);
+    refuseMismatch(
+      row,
+      checkTitle(title) === row.title && timeZone === row.timeZone,
+    );
+    await updateScheduledPrompt(ctx, userId, row, {
+      title: newTitle ?? row.title,
+      prompt,
+      schedule,
+      timeZone: row.timeZone,
+      email: row.email,
+    });
+    return await getView(ctx, row._id);
+  },
+});
+
+/**
+ * Deletes the user's scheduled prompt (removeScheduledPrompt). The title,
+ * prompt and schedule are what its action card showed, so a call where one
+ * isn't the row's deletes nothing. Throws then, and when the row is gone or
+ * someone else's.
+ */
+export const removeForUser = internalMutation({
+  args: {
+    userId: v.string(),
+    scheduledPromptId: v.string(),
+    title: v.string(),
+    prompt: v.string(),
+    schedule: vSchedule,
+  },
+  returns: v.null(),
+  handler: async (
+    ctx,
+    { userId, scheduledPromptId, title, prompt, schedule },
+  ) => {
+    const row = await findOwnScheduledPrompt(ctx, userId, scheduledPromptId);
+    refuseMismatch(
+      row,
+      checkTitle(title) === row.title &&
+        checkPrompt(prompt, 0) === row.prompt &&
+        sameSchedule(schedule, row.schedule),
+    );
+    await removeScheduledPrompt(ctx, row);
+    return null;
   },
 });
 
@@ -136,10 +219,8 @@ export const markRead = mutation({
 });
 
 /**
- * Makes a scheduled prompt and its thread, titled with `title`, and
- * schedules its first run. The thread gets no generated title. Throws when
- * signed out, at the active cap, and on a bad title, prompt, schedule or
- * time zone, or a one-off whose time has passed.
+ * Makes a scheduled prompt and its thread (createScheduledPrompt). Throws
+ * when signed out, and wherever createScheduledPrompt throws.
  */
 export const create = mutation({
   args: {
@@ -153,40 +234,16 @@ export const create = mutation({
     scheduledPromptId: v.id("scheduledPrompts"),
     threadId: v.string(),
   }),
-  handler: async (ctx, { schedule, timeZone, ...args }) => {
+  handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    const title = checkTitle(args.title);
-    const prompt = checkPrompt(args.prompt, 0);
-    checkSchedule(schedule, timeZone);
-    const runAt = requireNextRun(schedule, timeZone);
-    await refuseAtActiveCap(ctx, user._id);
-    const threadId = await createThread(ctx, components.agent, {
-      userId: user._id,
-      title,
-    });
-    const scheduledPromptId = await ctx.db.insert("scheduledPrompts", {
-      userId: user._id,
-      threadId,
-      title,
-      prompt,
-      schedule,
-      timeZone,
-      email: false,
-      status: "active",
-      consecutiveFailures: 0,
-      unreadRuns: 0,
-    });
-    await scheduleRun(ctx, scheduledPromptId, runAt);
-    return { scheduledPromptId, threadId };
+    return await createScheduledPrompt(ctx, user._id, args);
   },
 });
 
 /**
- * Changes a scheduled prompt. Edits apply to future runs only. A new
- * schedule or time zone cancels the pending run and schedules the next one
- * from now. That makes a done one-off active again, which the active cap
- * can refuse. A paused one stays paused, and resume schedules it. Throws on
- * a bad field, or a new time that has passed.
+ * Changes a scheduled prompt (updateScheduledPrompt). Throws when signed
+ * out, when the row is gone or someone else's, and wherever
+ * updateScheduledPrompt throws.
  */
 export const update = mutation({
   args: {
@@ -198,34 +255,12 @@ export const update = mutation({
     email: v.boolean(),
   },
   returns: v.null(),
-  handler: async (
-    ctx,
-    { scheduledPromptId, schedule, timeZone, email, ...args },
-  ) => {
+  handler: async (ctx, { scheduledPromptId, ...fields }) => {
     const { user, row } = await requireOwnScheduledPrompt(
       ctx,
       scheduledPromptId,
     );
-    const title = checkTitle(args.title);
-    const prompt = checkPrompt(args.prompt, 0);
-    checkSchedule(schedule, timeZone);
-    await ctx.db.patch("scheduledPrompts", row._id, {
-      title,
-      prompt,
-      schedule,
-      timeZone,
-      email,
-    });
-    const timingChanged =
-      timeZone !== row.timeZone || !sameSchedule(schedule, row.schedule);
-    if (!timingChanged) return null;
-
-    const runAt = requireNextRun(schedule, timeZone);
-    if (row.status === "paused") return null;
-    if (row.status === "done") await refuseAtActiveCap(ctx, user._id);
-    await cancelScheduledRun(ctx, row);
-    await ctx.db.patch("scheduledPrompts", row._id, { status: "active" });
-    await scheduleRun(ctx, row._id, runAt);
+    await updateScheduledPrompt(ctx, user._id, row, fields);
     return null;
   },
 });
@@ -285,8 +320,7 @@ export const remove = mutation({
   returns: v.null(),
   handler: async (ctx, { scheduledPromptId }) => {
     const { row } = await requireOwnScheduledPrompt(ctx, scheduledPromptId);
-    await cancelScheduledRun(ctx, row);
-    await ctx.db.delete("scheduledPrompts", row._id);
+    await removeScheduledPrompt(ctx, row);
     return null;
   },
 });
@@ -643,6 +677,146 @@ async function emailRun(
   });
 }
 
+/** The user's scheduled prompts, newest first, as `list` returns them. */
+async function listViews(ctx: QueryCtx, userId: string) {
+  const rows = await ctx.db
+    .query("scheduledPrompts")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .order("desc")
+    .collect();
+  return rows.map(toView);
+}
+
+/** A scheduled prompt as `list` returns it. Throws when it's gone. */
+async function getView(
+  ctx: QueryCtx,
+  scheduledPromptId: Id<"scheduledPrompts">,
+) {
+  const row = await ctx.db.get("scheduledPrompts", scheduledPromptId);
+  if (!row) throw new Error("The scheduled prompt is gone.");
+  return toView(row);
+}
+
+function toView(row: Doc<"scheduledPrompts">) {
+  return {
+    ...pick(row, [
+      "_id",
+      "_creationTime",
+      "threadId",
+      "title",
+      "prompt",
+      "schedule",
+      "timeZone",
+      "email",
+      "status",
+      "nextRunAt",
+      "lastRun",
+    ]),
+    pausedAfterFailures:
+      row.status === "paused" && row.consecutiveFailures >= MAX_FAILED_RUNS
+        ? row.consecutiveFailures
+        : undefined,
+  };
+}
+
+/**
+ * Makes the user's scheduled prompt and its thread, titled with `title`,
+ * and schedules its first run. The thread gets no generated title. Throws
+ * at the active cap, and on a bad title, prompt, schedule or time zone, or
+ * a one-off whose time has passed.
+ */
+async function createScheduledPrompt(
+  ctx: MutationCtx,
+  userId: string,
+  {
+    schedule,
+    timeZone,
+    ...fields
+  }: { title: string; prompt: string; schedule: Schedule; timeZone: string },
+) {
+  const title = checkTitle(fields.title);
+  const prompt = checkPrompt(fields.prompt, 0);
+  checkSchedule(schedule, timeZone);
+  const runAt = requireNextRun(schedule, timeZone);
+  await refuseAtActiveCap(ctx, userId);
+  const threadId = await createThread(ctx, components.agent, {
+    userId,
+    title,
+  });
+  const scheduledPromptId = await ctx.db.insert("scheduledPrompts", {
+    userId,
+    threadId,
+    title,
+    prompt,
+    schedule,
+    timeZone,
+    email: false,
+    status: "active",
+    consecutiveFailures: 0,
+    unreadRuns: 0,
+  });
+  await scheduleRun(ctx, scheduledPromptId, runAt);
+  return { scheduledPromptId, threadId };
+}
+
+/**
+ * Changes the user's scheduled prompt. Edits apply to future runs only. A
+ * new schedule or time zone cancels the pending run and schedules the next
+ * one from now. That makes a done one-off active again, which the active
+ * cap can refuse. A paused one stays paused, and resume schedules it.
+ * Throws on a bad field, or a new time that has passed.
+ */
+async function updateScheduledPrompt(
+  ctx: MutationCtx,
+  userId: string,
+  row: Doc<"scheduledPrompts">,
+  {
+    schedule,
+    timeZone,
+    email,
+    ...fields
+  }: {
+    title: string;
+    prompt: string;
+    schedule: Schedule;
+    timeZone: string;
+    email: boolean;
+  },
+) {
+  const title = checkTitle(fields.title);
+  const prompt = checkPrompt(fields.prompt, 0);
+  checkSchedule(schedule, timeZone);
+  await ctx.db.patch("scheduledPrompts", row._id, {
+    title,
+    prompt,
+    schedule,
+    timeZone,
+    email,
+  });
+  const timingChanged =
+    timeZone !== row.timeZone || !sameSchedule(schedule, row.schedule);
+  if (!timingChanged) return;
+
+  const runAt = requireNextRun(schedule, timeZone);
+  if (row.status === "paused") return;
+  if (row.status === "done") await refuseAtActiveCap(ctx, userId);
+  await cancelScheduledRun(ctx, row);
+  await ctx.db.patch("scheduledPrompts", row._id, { status: "active" });
+  await scheduleRun(ctx, row._id, runAt);
+}
+
+/**
+ * Deletes a scheduled prompt and cancels its next run. Its thread stays as
+ * a regular thread.
+ */
+async function removeScheduledPrompt(
+  ctx: MutationCtx,
+  row: Doc<"scheduledPrompts">,
+) {
+  await cancelScheduledRun(ctx, row);
+  await ctx.db.delete("scheduledPrompts", row._id);
+}
+
 /**
  * The session user's scheduled prompt. Throws when signed out, and when the
  * row is gone or someone else's.
@@ -652,11 +826,37 @@ async function requireOwnScheduledPrompt(
   scheduledPromptId: Id<"scheduledPrompts">,
 ) {
   const user = await requireUser(ctx);
-  const row = await ctx.db.get("scheduledPrompts", scheduledPromptId);
-  if (!row || row.userId !== user._id) {
+  const row = await findOwnScheduledPrompt(ctx, user._id, scheduledPromptId);
+  return { user, row };
+}
+
+/**
+ * Throws unless `matches`, which says the row is the one the model's action
+ * card showed, so a card can't name one scheduled prompt and change another.
+ */
+function refuseMismatch(row: Doc<"scheduledPrompts">, matches: boolean) {
+  if (matches) return;
+  throw appError(
+    ERROR_CODES.NOT_FOUND,
+    `That doesn't match the scheduled task "${row.title}". List them again and copy it exactly.`,
+  );
+}
+
+/**
+ * The user's scheduled prompt by its ID. Throws when the ID isn't one, and
+ * when the row is gone or someone else's.
+ */
+async function findOwnScheduledPrompt(
+  ctx: MutationCtx,
+  userId: string,
+  scheduledPromptId: string,
+) {
+  const id = ctx.db.normalizeId("scheduledPrompts", scheduledPromptId);
+  const row = id && (await ctx.db.get("scheduledPrompts", id));
+  if (!row || row.userId !== userId) {
     throw appError(ERROR_CODES.NOT_FOUND, "Scheduled task not found.");
   }
-  return { user, row };
+  return row;
 }
 
 /** Throws when the user already has the most active scheduled prompts. */

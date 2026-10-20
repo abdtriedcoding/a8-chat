@@ -1,8 +1,8 @@
 // What the browser knows about each catalog connector: its card, its tools
 // (label, kind and target), mention parsing and the error codes the UI
-// reads. The UI imports this module and never the server catalog
-// (connectors.ts), so nothing here may name an MCP server URL, a pinned
-// origin or a sign-in.
+// reads, and how replies show a8's own scheduled prompt tools. The UI
+// imports this module and never the server catalog (connectors.ts), so
+// nothing here may name an MCP server URL, a pinned origin or a sign-in.
 //
 // Each connector's id, card fields and tools live only here. The server
 // catalog keys its entries by these ids and its MCP servers by these server
@@ -10,6 +10,8 @@
 // typecheck.
 
 import { ERROR_CODES } from "./errors";
+import type { Schedule } from "./schedule";
+import { describeSchedule } from "./scheduleText";
 
 /**
  * One line under a card's description about what the user's own account
@@ -790,4 +792,90 @@ export function findConnectorTool(
     modelName.startsWith(`${entry.id}__`),
   );
   return connector && { connector, label: `Using ${connector.name}` };
+}
+
+/** The app a tool works in, as a reply shows it: a connector, or a8 itself. */
+export type ToolApp = Pick<ConnectorView, "name" | "logo">;
+
+/** a8 itself, as the app of its own scheduled prompt tools. */
+export const A8_APP: ToolApp = { name: "a8", logo: "/icon.svg" };
+
+/**
+ * a8's tools for the user's scheduled prompts (convex/tools/
+ * scheduledPrompts.ts), by their model name. Their actions wait on a card
+ * like a connector's (ADR 0013). Their names are saved in threads, so never
+ * change one.
+ */
+export const A8_TOOLS = {
+  listScheduledPrompts: { kind: "read", label: "Reading scheduled tasks" },
+  createScheduledPrompt: {
+    kind: "action",
+    label: "Creating a scheduled task",
+    target: ["title"],
+  },
+  updateScheduledPrompt: {
+    kind: "action",
+    label: "Changing a scheduled task",
+    target: ["title"],
+  },
+  deleteScheduledPrompt: {
+    kind: "action",
+    label: "Deleting a scheduled task",
+    target: ["title"],
+  },
+} as const satisfies Record<string, ConnectorToolView>;
+
+export type A8ToolName = keyof typeof A8_TOOLS;
+
+/** One of a8's own tools as a reply shows it. */
+export type FoundA8Tool = Omit<ConnectorToolView, "kind"> & {
+  app: ToolApp;
+  /**
+   * The arguments its action card shows, in place of the input: the
+   * schedule in words, and no IDs.
+   */
+  cardInput: (input: Record<string, unknown>) => Record<string, unknown>;
+};
+
+/**
+ * One of a8's own tools that its rows and cards show, with a8 as the app.
+ * Undefined for any other tool, and for webSearch, which has rows of its own.
+ */
+export function findA8Tool(modelName: string): FoundA8Tool | undefined {
+  if (!Object.hasOwn(A8_TOOLS, modelName)) return undefined;
+  const { label, ...tool } = A8_TOOLS[modelName as A8ToolName];
+  return {
+    app: A8_APP,
+    label,
+    ...("target" in tool && { target: tool.target }),
+    cardInput: scheduledPromptCardInput,
+  };
+}
+
+/**
+ * A scheduled prompt tool's input as its card shows it: the title, a new
+ * title, the prompt, the schedule in words and, for a change, the time
+ * zone it runs in. The model writes the input,
+ * so a schedule describeSchedule can't read shows as it came.
+ */
+function scheduledPromptCardInput(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const { title, newTitle, prompt, schedule, timeZone } = input;
+  let scheduleText = schedule;
+  try {
+    // An unknown kind gives undefined.
+    scheduleText = describeSchedule(schedule as Schedule) ?? schedule;
+  } catch {
+    // Shows the schedule as the model wrote it.
+  }
+  return Object.fromEntries(
+    Object.entries({
+      title,
+      newTitle,
+      prompt,
+      schedule: scheduleText,
+      timeZone,
+    }).filter(([, value]) => value !== undefined),
+  );
 }

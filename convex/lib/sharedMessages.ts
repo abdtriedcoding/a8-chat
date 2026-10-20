@@ -4,7 +4,7 @@
 
 import type { UIMessage } from "@convex-dev/agent";
 import { v, type Infer } from "convex/values";
-import { findConnectorTool } from "./connectorView";
+import { findA8Tool, findConnectorTool } from "./connectorView";
 
 const vSharedTextPart = v.object({
   type: v.literal("text"),
@@ -38,9 +38,9 @@ const vSharedWebSearchPart = v.object({
 });
 
 /**
- * A connector tool call or action, by name only. Its arguments, result,
- * error and approval can hold data from the user's apps, so the snapshot
- * keeps none of them.
+ * A connector or scheduled prompt tool call, by name only. Its arguments,
+ * result, error and approval can hold data from the user's apps, so the
+ * snapshot keeps none of them.
  */
 const vSharedToolPart = v.object({
   type: v.string(),
@@ -68,8 +68,9 @@ type SharedPart = SharedMessage["parts"][number];
 /**
  * The message as a shared snapshot keeps it, or null when nothing of it is
  * kept. A prompt keeps its text and attachments. A reply keeps its text,
- * its web searches, and the names of its connector tool calls. It drops
- * every other field, such as IDs, metadata, status and errors.
+ * its web searches, and the names of its connector and scheduled prompt
+ * tool calls. It drops every other field, such as IDs, metadata, status
+ * and errors.
  */
 export function redactMessage(message: UIMessage): SharedMessage | null {
   if (message.role !== "user" && message.role !== "assistant") return null;
@@ -116,7 +117,8 @@ function replyPart(part: Part): SharedPart[] {
     output?: unknown;
   };
   if (call.type === "tool-webSearch") return [webSearchPart(call)];
-  if (findConnectorTool(call.type.slice("tool-".length))) {
+  const toolName = call.type.slice("tool-".length);
+  if (findConnectorTool(toolName) || findA8Tool(toolName)) {
     return [{ type: call.type, toolCallId: call.toolCallId }];
   }
   return [];

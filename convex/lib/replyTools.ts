@@ -14,6 +14,7 @@ import {
   nativeTools,
   toolSearch,
 } from "../agents/chat";
+import { createScheduledPromptTools } from "../tools/scheduledPrompts";
 import { createConnectorTools, type ConnectorTools } from "./connectorTools";
 import { findMentions } from "./connectorView";
 import { connectorInstructions } from "./instructions";
@@ -56,13 +57,18 @@ export function withCacheBreakpoint(
 }
 
 export type ReplyTools = {
-  /** The native tools and the connector tools, arranged by toolLoading.ts. */
+  /**
+   * The native tools, a8's scheduled prompt tools and the connector tools,
+   * arranged by toolLoading.ts.
+   */
   tools: ToolSet;
   /**
-   * The reply's `toolApproval` option. Every connector action waits for the
-   * user to approve it (ADR 0002, ADR 0008). Reads run at once.
+   * The reply's `toolApproval` option. Every action waits for the user to
+   * approve it (ADR 0002, ADR 0008, ADR 0013). Reads run at once.
    */
   toolApproval: Record<string, ToolApprovalStatus>;
+  /** Whether the reply has the scheduled prompt tools, for replyInstructions. */
+  canSchedule: boolean;
   /**
    * The connector part of the instructions, for replyInstructions.
    * Undefined for a user with no connections.
@@ -101,6 +107,9 @@ export type ReplyTools = {
  * @param connections The thread owner's connections, of any status.
  * @param threadDefersTools Whether the thread already defers connector
  *   tools.
+ * @param temporary Whether the thread is temporary. It gets no scheduled
+ *   prompt tools.
+ * @param timeZone The reply's time zone, for the scheduled prompt tools.
  * @param stepsTaken The steps the reply took before it paused on action
  *   cards. 0 for a new reply.
  */
@@ -111,12 +120,16 @@ export async function createReplyTools(
     promptText,
     connections,
     threadDefersTools,
+    temporary,
+    timeZone,
     stepsTaken,
   }: {
     threadId: string;
     promptText: string;
     connections: Doc<"connections">[];
     threadDefersTools: boolean;
+    temporary: boolean;
+    timeZone: string;
     stepsTaken: number;
   },
 ): Promise<ReplyTools> {
@@ -127,8 +140,11 @@ export async function createReplyTools(
     threadDefers: threadDefersTools,
     connectorTools,
   });
+  const scheduledPromptTools = temporary
+    ? undefined
+    : createScheduledPromptTools(timeZone);
   const { tools, loading } = arrangeReplyTools({
-    nativeTools,
+    nativeTools: { ...nativeTools, ...scheduledPromptTools?.tools },
     groups: connectorTools.groups,
     mentioned,
     deferred,
@@ -144,7 +160,11 @@ export async function createReplyTools(
   );
   return {
     tools,
-    toolApproval: connectorTools.toolApproval,
+    toolApproval: {
+      ...connectorTools.toolApproval,
+      ...scheduledPromptTools?.toolApproval,
+    },
+    canSchedule: scheduledPromptTools !== undefined,
     connectorText: connectorInstructions({ connections, mentioned, loading }),
     maxSteps: Math.max(
       1,

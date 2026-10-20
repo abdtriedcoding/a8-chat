@@ -10,10 +10,11 @@ import type { ConnectorToolCall } from "./connector-tool-call";
 import { useThreadActionsContext } from "./thread-actions-context";
 
 /**
- * The card for an action waiting in a reply (ADR 0002): the connector, the
- * target and the content, with Approve and Cancel. a8 sends nothing to the
- * app until the user approves. Once they decide, the reply shows the call as
- * a row instead. It must be inside a ThreadActionsProvider.
+ * The card for an action waiting in a reply (ADR 0002): the app, the target
+ * and the content, with Approve and Cancel. The app is a connector, or a8
+ * for a scheduled prompt (ADR 0013). a8 sends nothing to the app until the
+ * user approves. Once they decide, the reply shows the call as a row
+ * instead. It must be inside a ThreadActionsProvider.
  *
  * The catalog marks which arguments are the action's target. A tool without
  * marked targets shows every argument under Details.
@@ -21,7 +22,8 @@ import { useThreadActionsContext } from "./thread-actions-context";
 export function ActionCard({ call }: { call: ConnectorToolCall }) {
   const { decide: decideAction } = useThreadActionsContext();
   const [deciding, setDeciding] = useState<"approve" | "cancel">();
-  const args = Object.entries(isRecord(call.input) ? call.input : {});
+  const input = isRecord(call.input) ? call.input : {};
+  const args = Object.entries(call.cardInput?.(input) ?? input);
   const isTarget = ([name]: [string, unknown]) =>
     call.target?.includes(name) ?? false;
   const target = args.filter(isTarget);
@@ -46,7 +48,7 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
       className="flex w-full flex-col gap-3 rounded-xl bg-card p-3 text-sm shadow-xs ring-1 ring-foreground/10"
     >
       <header className="flex items-center gap-2">
-        <ConnectorLogo connector={call.connector} size="md" />
+        <ConnectorLogo connector={call.app} size="md" />
         <h3 className="min-w-0 flex-1 truncate font-medium">{call.label}</h3>
         <span className="shrink-0 text-xs text-muted-foreground">
           Needs approval
@@ -58,7 +60,7 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
             {target.length > 0 ? (
               <ArgumentList entries={target} />
             ) : (
-              <p>Default location in {call.connector.name}</p>
+              <p>Default location in {call.app.name}</p>
             )}
           </ActionDetail>
           {content.length > 0 && (

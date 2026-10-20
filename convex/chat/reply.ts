@@ -16,6 +16,7 @@ import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { replyInstructions } from "../lib/instructions";
 import type { RunEnding } from "../lib/scheduledPrompts";
+import { findTemporaryThread } from "../lib/temporaryThreads";
 import {
   CACHE_BREAKPOINT,
   createReplyTools,
@@ -94,6 +95,7 @@ export const streamReply = internalAction({
       replyTools = await createReplyTools(ctx, {
         threadId,
         ...start,
+        timeZone,
         stepsTaken,
       });
       const { log, fitHistory, maxSteps } = replyTools;
@@ -110,6 +112,7 @@ export const streamReply = internalAction({
               timeZone,
               now: new Date(),
               canSearchWeb,
+              canSchedule: replyTools.canSchedule,
               connectorText: replyTools.connectorText,
             }),
             providerOptions: CACHE_BREAKPOINT,
@@ -241,6 +244,7 @@ const vReplyStart = v.union(
     promptText: v.string(),
     connections: v.array(schema.doc("connections")),
     threadDefersTools: v.boolean(),
+    temporary: v.boolean(),
   }),
 );
 
@@ -267,6 +271,7 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   user, so the thread names the user.
  * - `threadDefersTools`: whether the thread already defers connector tools
  *   (deferThreadTools).
+ * - `temporary`: whether the thread is temporary.
  */
 export const getReplyStart = internalQuery({
   args: {
@@ -281,11 +286,15 @@ export const getReplyStart = internalQuery({
       ? await getContinuedTurn(ctx, { threadId, promptMessageId, order })
       : await listTurnUpTo(ctx, { threadId, promptMessageId, order });
     if (!turn) return null;
-    const [stopped, thread, deferredToolThread] = await Promise.all([
-      getStoppedReply(ctx, threadId, order),
-      getThreadMetadata(ctx, components.agent, { threadId }).catch(() => null),
-      findDeferredToolThread(ctx, threadId),
-    ]);
+    const [stopped, thread, deferredToolThread, temporaryThread] =
+      await Promise.all([
+        getStoppedReply(ctx, threadId, order),
+        getThreadMetadata(ctx, components.agent, { threadId }).catch(
+          () => null,
+        ),
+        findDeferredToolThread(ctx, threadId),
+        findTemporaryThread(ctx, threadId),
+      ]);
     if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
     const userId = thread?.userId;
@@ -294,6 +303,7 @@ export const getReplyStart = internalQuery({
       promptText: prompt?.text ?? "",
       connections,
       threadDefersTools: deferredToolThread !== null,
+      temporary: temporaryThread !== null,
     };
   },
 });
