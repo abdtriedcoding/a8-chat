@@ -713,6 +713,34 @@ export function findMentions(text: string): ConnectorView[] {
   return CONNECTOR_VIEWS.filter((connector) => handles.has(connector.handle));
 }
 
+/** A run of a prompt's text, with the connector when the run mentions one. */
+export type MentionSegment = { text: string; connector?: ConnectorView };
+
+/**
+ * A prompt's text cut into runs, each mention (as findMentions reads them)
+ * in a run of its own. The runs join back into the text. An @ word that
+ * isn't a catalog handle stays in the plain text around it.
+ */
+export function splitMentions(text: string): MentionSegment[] {
+  const segments: MentionSegment[] = [];
+  let plainStart = 0;
+  for (const match of text.matchAll(
+    new RegExp(String.raw`${MENTION_START}@([\w-]+)`, "g"),
+  )) {
+    const connector = CONNECTOR_VIEWS.find(
+      ({ handle }) => handle === match[1].toLowerCase(),
+    );
+    if (!connector) continue;
+    if (match.index > plainStart) {
+      segments.push({ text: text.slice(plainStart, match.index) });
+    }
+    segments.push({ text: match[0], connector });
+    plainStart = match.index + match[0].length;
+  }
+  if (plainStart < text.length) segments.push({ text: text.slice(plainStart) });
+  return segments;
+}
+
 /** The longest tool name Anthropic accepts. */
 const MAX_TOOL_NAME_LENGTH = 64;
 

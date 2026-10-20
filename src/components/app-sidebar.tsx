@@ -1,7 +1,12 @@
 "use client";
 
 import { useConvexAuth, useQuery } from "convex/react";
-import { CalendarClockIcon, PlugIcon, SquarePenIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  CalendarClockIcon,
+  PlugIcon,
+  SquarePenIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AppIcon } from "@/components/icons/app-icon";
@@ -81,6 +86,20 @@ export function AppSidebar() {
                   </span>
                 </Badge>
               )}
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            className="justify-start aria-[current=page]:bg-muted"
+            asChild
+          >
+            <Link
+              href="/archived"
+              aria-current={pathname === "/archived" ? "page" : undefined}
+              onClick={closeOnMobile}
+            >
+              <ArchiveIcon data-icon="inline-start" />
+              Archived
             </Link>
           </Button>
         </div>

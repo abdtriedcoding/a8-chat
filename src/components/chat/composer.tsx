@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
 import { useRef, useState, type Ref } from "react";
 import { toast } from "sonner";
+import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import { ReconnectButton } from "@/components/connectors/reconnect-button";
 import {
   InputGroup,
@@ -28,7 +29,14 @@ import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
 import { DictationButton } from "./dictation-button";
 import { FileDropZone } from "./file-drop-zone";
+import { MentionHighlights } from "./mention-highlights";
 import { MentionMenu } from "./mention-menu";
+
+/**
+ * The message box's padding and text size, which MentionHighlights copies
+ * so its lines wrap where the box's do. py-2 is InputGroupTextarea's.
+ */
+const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
 
 /**
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
@@ -85,6 +93,7 @@ export function Composer({
   } = useComposerAttachments();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const highlightsRef = useRef<HTMLDivElement>(null);
   const mentions = useComposerMentions({ text, setText });
   const dictation = useComposerDictation({
     text,
@@ -183,7 +192,8 @@ export function Composer({
                 key={connector.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1.5 font-normal"
               >
-                <span>
+                <ConnectorLogo connector={connector} size="sm" />
+                <span className="min-w-0 flex-1">
                   {connector.status === "needs_reconnect"
                     ? `${connector.name} needs reconnecting before this can be sent.`
                     : connector.setUp
@@ -217,56 +227,70 @@ export function Composer({
             ))}
           </InputGroupAddon>
         )}
-        <InputGroupTextarea
-          ref={textareaRef}
-          data-composer=""
-          data-empty={
-            text === "" && attachments.length === 0 ? "" : undefined
-          }
-          value={text}
-          onChange={(event) => {
-            dictation.stopForTyping();
-            setText(event.target.value);
-            mentions.syncCaret(event.target);
-          }}
-          {...mentions.comboboxProps}
-          {...mentions.caretHandlers}
-          onFocus={(event) => {
-            mentions.caretHandlers.onFocus(event);
-            dictation.prewarm();
-          }}
-          onPaste={(event) => {
-            // A screenshot pastes as a file with no text. Text copied from
-            // some apps, such as spreadsheets, comes with a picture of it
-            // too, so a paste that has text pastes the text.
-            const pastedFiles = Array.from(event.clipboardData.files);
-            if (
-              pastedFiles.length === 0 ||
-              event.clipboardData.getData("text/plain")
-            ) {
-              return;
+        <div className="relative w-full">
+          <MentionHighlights
+            ref={highlightsRef}
+            text={text}
+            blockedIds={mentions.blockedMentions.map(({ id }) => id)}
+            className={TEXT_BOX}
+          />
+          <InputGroupTextarea
+            ref={textareaRef}
+            onScroll={(event) => {
+              if (highlightsRef.current) {
+                highlightsRef.current.scrollTop = event.currentTarget.scrollTop;
+              }
+            }}
+            data-composer=""
+            data-empty={
+              text === "" && attachments.length === 0 ? "" : undefined
             }
-            event.preventDefault();
-            void addFiles(pastedFiles);
-          }}
-          onKeyDown={(event) => {
-            if (mentions.onKeyDown(event)) return;
-            // Skip while an IME is composing: its Enter confirms a word.
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing
-            ) {
+            value={text}
+            onChange={(event) => {
+              dictation.stopForTyping();
+              setText(event.target.value);
+              mentions.syncCaret(event.target);
+            }}
+            {...mentions.comboboxProps}
+            {...mentions.caretHandlers}
+            onFocus={(event) => {
+              mentions.caretHandlers.onFocus(event);
+              dictation.prewarm();
+            }}
+            onPaste={(event) => {
+              // A screenshot pastes as a file with no text. Text copied from
+              // some apps, such as spreadsheets, comes with a picture of it
+              // too, so a paste that has text pastes the text.
+              const pastedFiles = Array.from(event.clipboardData.files);
+              if (
+                pastedFiles.length === 0 ||
+                event.clipboardData.getData("text/plain")
+              ) {
+                return;
+              }
               event.preventDefault();
-              void send();
-            }
-          }}
-          rows={1}
-          autoFocus={autoFocus}
-          placeholder="Ask a8 anything…"
-          aria-label="Message"
-          className="max-h-52 min-h-11 px-3 pt-3"
-        />
+              void addFiles(pastedFiles);
+            }}
+            onKeyDown={(event) => {
+              if (mentions.onKeyDown(event)) return;
+              // Skip while an IME is composing: its Enter confirms a word.
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+            rows={1}
+            autoFocus={autoFocus}
+            placeholder="Ask a8 anything…"
+            aria-label="Message"
+            // relative paints the box over the highlights.
+            className={cn("no-scrollbar relative max-h-52 min-h-11", TEXT_BOX)}
+          />
+        </div>
         <InputGroupAddon align="block-end">
           {acceptedMediaTypes.length > 0 && (
             <Tooltip>

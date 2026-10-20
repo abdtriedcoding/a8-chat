@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { ChevronRightIcon } from "lucide-react";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import {
@@ -14,6 +15,13 @@ import {
   type FoundA8Tool,
   type ToolApp,
 } from "../../../convex/lib/connectorView";
+
+/**
+ * A tool call row's pill: the app's logo and the label, so a reply's calls
+ * to different apps tell apart at a glance.
+ */
+const TOOL_PILL =
+  "flex w-fit max-w-full items-center gap-2 rounded-full bg-card py-1 pr-3 pl-1 text-sm font-medium ring-1 ring-foreground/10 shadow-xs";
 
 /**
  * A reply's call to a connector tool (convex/lib/connectorTools.ts), or to
@@ -144,8 +152,12 @@ export function ConnectorToolRow({
 }) {
   if (call.state === undefined) {
     return (
-      <div className="flex max-w-full items-center gap-2 text-sm text-muted-foreground">
-        <ConnectorLogo connector={call.app} size="sm" />
+      <div className={TOOL_PILL}>
+        <ConnectorLogo
+          connector={call.app}
+          size="md"
+          className="rounded-full"
+        />
         <span className="truncate">{call.label}</span>
       </div>
     );
@@ -156,15 +168,24 @@ export function ConnectorToolRow({
   const stopped = call.state === "approval-responded" && !running;
   return (
     <Collapsible className="w-full">
-      <CollapsibleTrigger className="group/trigger flex max-w-full items-center gap-2 rounded-md text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
-        <ConnectorLogo connector={call.app} size="sm" />
+      <CollapsibleTrigger
+        className={cn(
+          TOOL_PILL,
+          "group/trigger text-left transition-colors outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        )}
+      >
+        <ConnectorLogo
+          connector={call.app}
+          size="md"
+          className="rounded-full"
+        />
         <span className={running ? "shimmer truncate" : "truncate"}>
           {call.label}
           {failed && " failed"}
           {cancelled && " cancelled"}
           {stopped && !cancelled && " stopped"}
         </span>
-        <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+        <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/trigger:rotate-90" />
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-2 flex flex-col gap-2 rounded-md border bg-muted/40 p-3 text-xs">
         <ToolCallDetail title="Arguments" value={call.input} />

@@ -3,7 +3,6 @@
 import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
-  ArchiveIcon,
   ChevronsUpDownIcon,
   KeyboardIcon,
   LogInIcon,
@@ -139,18 +138,15 @@ export function NavUser() {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
-                <Link href="/archived">
-                  <ArchiveIcon />
-                  Archived chats
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
                 <Link href="/settings/account">
                   <UserRoundCogIcon />
                   Account settings
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void signOut()}>
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => void signOut()}
+              >
                 <LogOutIcon />
                 Sign out
               </DropdownMenuItem>

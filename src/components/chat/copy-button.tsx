@@ -13,7 +13,16 @@ import {
 // How long Copy reads "Copied" after a click.
 const COPIED_FOR_MS = 2000;
 
-export function CopyReplyButton({ text }: { text: string }) {
+/** Copies `text`. `label` names what it copies, like "Copy reply". */
+export function CopyButton({
+  text,
+  label: idleLabel,
+  className,
+}: {
+  text: string;
+  label: string;
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
 
@@ -24,15 +33,20 @@ export function CopyReplyButton({ text }: { text: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), COPIED_FOR_MS);
     } catch {
-      toast.error("Couldn't copy the reply.");
+      toast.error("Couldn't copy the text.");
     }
   }
 
-  const label = copied ? "Copied" : "Copy reply";
+  const label = copied ? "Copied" : idleLabel;
   return (
     <Tooltip open={copied || tooltipOpen} onOpenChange={setTooltipOpen}>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" onClick={() => void copy()}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={className}
+          onClick={() => void copy()}
+        >
           {copied ? <CheckIcon className="text-success" /> : <CopyIcon />}
           <span className="sr-only" aria-live="polite">
             {label}

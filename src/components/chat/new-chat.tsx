@@ -1,6 +1,7 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { cn } from "cn";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { GhostIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -19,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
+import { useInBrowser } from "@/hooks/use-in-browser";
 import { throwIfRefused } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import { browserTimeZone } from "../../../convex/lib/timeZone";
@@ -34,6 +36,14 @@ function caretToEnd(textarea: HTMLTextAreaElement | null) {
   textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
 }
 
+/** The greeting for the browser's local hour, like "Good evening". */
+function greetingFor(hour: number) {
+  if (hour < 5) return "Burning the midnight oil";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 export function NewChat({ prompt }: { prompt?: string }) {
   const router = useRouter();
   const startThread = useMutation(api.chat.send.startThread);
@@ -43,6 +53,14 @@ export function NewChat({ prompt }: { prompt?: string }) {
   const [temporary, setTemporary] = useState(false);
   const openTemporaryThread = useOpenTemporaryThread();
   const busy = starting || navigating;
+  const { isAuthenticated } = useConvexAuth();
+  const user = useQuery(api.auth.getCurrentUser, isAuthenticated ? {} : "skip");
+  const firstName = user?.name.trim().split(/\s+/)[0];
+  // The server doesn't know the local hour, and the name loads after the
+  // page, so the greeting stays hidden until both are in.
+  const inBrowser = useInBrowser();
+  const greetingReady = inBrowser && user !== undefined;
+  const greeting = inBrowser ? greetingFor(new Date().getHours()) : "Hello";
 
   async function send(prompt: string, attachments: UploadedAttachment[]) {
     setStarting(true);
@@ -96,13 +114,22 @@ export function NewChat({ prompt }: { prompt?: string }) {
                 <GhostIcon className="size-10" />
               </EmptyMedia>
             )}
-            <EmptyTitle className="text-3xl font-medium tracking-tight sm:text-4xl">
-              {temporary ? "Temporary chat" : "What can I help with?"}
+            <EmptyTitle
+              className={cn(
+                "text-3xl font-medium tracking-tight transition-opacity duration-500 sm:text-4xl",
+                !temporary && !greetingReady && "opacity-0",
+              )}
+            >
+              {temporary
+                ? "Temporary chat"
+                : firstName
+                  ? `${greeting}, ${firstName}.`
+                  : `${greeting}.`}
             </EmptyTitle>
             <EmptyDescription className="text-base font-medium text-gray-900 dark:text-white/90">
               {temporary
                 ? "It won't appear in your history, and it's deleted when you leave."
-                : "Ask a question, or paste something you want to work on."}
+                : "a8 is online and ready. What are we building today?"}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

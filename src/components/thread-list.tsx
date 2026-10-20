@@ -4,6 +4,7 @@ import { useConvexAuth, usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArchiveIcon,
+  ChevronRightIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PinIcon,
@@ -13,10 +14,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { ShareDialog } from "@/components/share-dialog";
 import { ThreadTitleInput } from "@/components/thread-title-input";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +56,34 @@ type Thread = FunctionReturnType<typeof api.threads.list>["page"][number];
 
 const PAGE_SIZE = 30;
 const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
+
+/** A sidebar section whose label shows and hides its threads. */
+function ThreadSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible defaultOpen className="group/section">
+      <SidebarGroup>
+        <SidebarGroupLabel
+          asChild
+          className="cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <CollapsibleTrigger>
+            {label}
+            <ChevronRightIcon className="ml-auto transition-transform group-data-[state=open]/section:rotate-90" />
+          </CollapsibleTrigger>
+        </SidebarGroupLabel>
+        <CollapsibleContent>
+          <SidebarGroupContent>{children}</SidebarGroupContent>
+        </CollapsibleContent>
+      </SidebarGroup>
+    </Collapsible>
+  );
+}
 
 export function ThreadList() {
   const { isAuthenticated } = useConvexAuth();
@@ -194,56 +228,50 @@ export function ThreadList() {
   return (
     <>
       {hasPins && (
-        <SidebarGroup>
-          <SidebarGroupLabel>Pinned</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {pinned.map((thread) => renderThread(thread, true))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <ThreadSection label="Pinned">
+          <SidebarMenu>
+            {pinned.map((thread) => renderThread(thread, true))}
+          </SidebarMenu>
+        </ThreadSection>
       )}
       {/* With every thread pinned, there's nothing to show under Chats. */}
       {!(chatsEmpty && hasPins) && (
-        <SidebarGroup>
-          <SidebarGroupLabel>Chats</SidebarGroupLabel>
-          <SidebarGroupContent>
-            {loading ? (
-              <SidebarMenu aria-hidden="true">
-                {SKELETON_WIDTHS.map((width) => (
-                  <SidebarMenuItem
-                    key={width}
-                    className="flex h-8 items-center px-2"
+        <ThreadSection label="Chats">
+          {loading ? (
+            <SidebarMenu aria-hidden="true">
+              {SKELETON_WIDTHS.map((width) => (
+                <SidebarMenuItem
+                  key={width}
+                  className="flex h-8 items-center px-2"
+                >
+                  <Skeleton className="h-4" style={{ width }} />
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          ) : chatsEmpty ? (
+            <Empty className="p-4">
+              <EmptyDescription>
+                No chats yet. The ones you start show up here.
+              </EmptyDescription>
+            </Empty>
+          ) : (
+            <SidebarMenu>
+              {results.map((thread) => renderThread(thread, false))}
+              {status !== "Exhausted" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    className="text-muted-foreground"
+                    disabled={status === "LoadingMore"}
+                    onClick={() => loadMore(PAGE_SIZE)}
                   >
-                    <Skeleton className="h-4" style={{ width }} />
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            ) : chatsEmpty ? (
-              <Empty className="p-4">
-                <EmptyDescription>
-                  No chats yet. The ones you start show up here.
-                </EmptyDescription>
-              </Empty>
-            ) : (
-              <SidebarMenu>
-                {results.map((thread) => renderThread(thread, false))}
-                {status !== "Exhausted" && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      className="text-muted-foreground"
-                      disabled={status === "LoadingMore"}
-                      onClick={() => loadMore(PAGE_SIZE)}
-                    >
-                      {status === "LoadingMore" && <Spinner />}
-                      <span>Load more</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
-              </SidebarMenu>
-            )}
-          </SidebarGroupContent>
-        </SidebarGroup>
+                    {status === "LoadingMore" && <Spinner />}
+                    <span>Load more</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          )}
+        </ThreadSection>
       )}
       {confirmDialog}
       {sharing && (

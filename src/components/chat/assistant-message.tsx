@@ -20,8 +20,9 @@ import {
   isRunning,
   replyWaitingActions,
 } from "./connector-tool-call";
-import { CopyReplyButton } from "./copy-reply-button";
+import { CopyButton } from "./copy-button";
 import { Markdown } from "./markdown";
+import { ReadAloudButton } from "./read-aloud-button";
 import { ReconnectChip } from "./reconnect-chip";
 import { RegenerateButton } from "./regenerate-button";
 import { useThreadActionsContext } from "./thread-actions-context";
@@ -149,8 +150,10 @@ export const AssistantMessage = memo(function AssistantMessage({
         )}
         {stopped && <TurnMarker kind="stopped" />}
         {!streaming && (text || footerRegenerate) && (
-          <MessageFooter className="-mt-1.5 gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
-            {text && <CopyReplyButton text={text} />}
+          // Stays shown while the reply is read aloud, so Stop is in reach.
+          <MessageFooter className="-mt-1.5 gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 has-data-reading:opacity-100 pointer-coarse:opacity-100">
+            {text && <CopyButton text={text} label="Copy reply" />}
+            {text && <ReadAloudButton id={message.id} text={text} />}
             {footerRegenerate && <RegenerateButton />}
           </MessageFooter>
         )}
