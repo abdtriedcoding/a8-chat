@@ -1,10 +1,15 @@
-import type { MessageDoc } from "@convex-dev/agent";
+import { getThreadMetadata, type MessageDoc } from "@convex-dev/agent";
 import { v } from "convex/values";
-import { internal } from "../_generated/api";
-import { mutation, type MutationCtx } from "../_generated/server";
+import { components, internal } from "../_generated/api";
+import {
+  internalMutation,
+  mutation,
+  type MutationCtx,
+} from "../_generated/server";
 import { chatAgent } from "../agents/chat";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess } from "../lib/guards";
+import { deletePendingActions, setPendingActions } from "../lib/pendingActions";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { getStoppedReply } from "./stop";
 import { getLastTurn } from "./turns";
@@ -41,7 +46,7 @@ export const decideAction = mutation({
   },
   returns: v.null(),
   handler: async (ctx, { threadId, approvalId, approve, timeZone }) => {
-    await authorizeThreadAccess(ctx, threadId);
+    const user = await authorizeThreadAccess(ctx, threadId);
     const turn = await getLastTurn(ctx, threadId);
     const waiting = waitingApprovalIds(turn);
     const order = turn[0]?.order;
@@ -62,6 +67,12 @@ export const decideAction = mutation({
           approvalId,
           reason: ACTION_CANCELLED,
         });
+    // The check above found this card waiting, so one fewer waits now.
+    await setPendingActions(ctx, {
+      userId: user._id,
+      threadId,
+      count: waiting.length - 1,
+    });
     if (waiting.length > 1) return null;
     await ctx.scheduler.runAfter(0, internal.chat.reply.streamReply, {
       threadId,
@@ -82,7 +93,8 @@ export const decideAction = mutation({
  * Ends the last turn's actions that never ran, before a new prompt is saved.
  * A card left waiting is cancelled, so it can't be approved later (ADR
  * 0002). The Agent would only treat it as denied for the next model call.
- * An approved action whose reply the user stopped never runs either.
+ * An approved action whose reply the user stopped never runs either. No card
+ * waits afterwards, so it deletes the thread's pendingActions row.
  *
  * Each one gets an "execution-denied" result next to the user's decision.
  * The AI SDK leaves decisions out of what it sends the model, and Anthropic
@@ -97,6 +109,7 @@ export async function closeUnrunActions(
   threadId: string,
   lastTurn: MessageDoc[],
 ) {
+  await deletePendingActions(ctx, threadId);
   if (!hasActionCards(lastTurn)) return;
   const waiting = waitingApprovalIds(lastTurn);
   for (const approvalId of waiting) {
@@ -152,6 +165,44 @@ export async function closeUnrunActions(
     });
   }
 }
+
+/**
+ * Recounts the cards waiting in the thread's last turn into its
+ * pendingActions row. A turn the user stopped counts none, since the client
+ * hides its cards. A deleted thread keeps no row.
+ */
+export async function syncPendingActions(ctx: MutationCtx, threadId: string) {
+  const turn = await getLastTurn(ctx, threadId);
+  const order = turn[0]?.order;
+  const stopped =
+    order !== undefined && (await getStoppedReply(ctx, threadId, order));
+  const count = stopped ? 0 : waitingApprovalIds(turn).length;
+  const thread =
+    count > 0
+      ? await getThreadMetadata(ctx, components.agent, { threadId }).catch(
+          () => null,
+        )
+      : null;
+  if (!thread?.userId) {
+    await deletePendingActions(ctx, threadId);
+    return;
+  }
+  await setPendingActions(ctx, { userId: thread.userId, threadId, count });
+}
+
+/**
+ * Recounts the thread's waiting cards (syncPendingActions). streamReply
+ * calls it once a reply ends, for a reply the user sent and a scheduled run
+ * alike.
+ */
+export const recordPendingActions = internalMutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await syncPendingActions(ctx, threadId);
+    return null;
+  },
+});
 
 /** Whether any of the turn's actions showed an action card. */
 function hasActionCards(turn: MessageDoc[]): boolean {

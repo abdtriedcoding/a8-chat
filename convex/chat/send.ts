@@ -25,6 +25,7 @@ import {
   replacePromptText,
   titleFromPrompt,
 } from "../lib/prompt";
+import { deletePendingActions } from "../lib/pendingActions";
 import { MAX_QUEUED_PROMPTS, REPLY_START_TIMEOUT_MS } from "../lib/queue";
 import {
   findThreadScheduledPrompt,
@@ -364,6 +365,8 @@ async function redoLastTurn(
   await chatAgent.deleteMessages(ctx, {
     messageIds: turn.map((message) => message._id),
   });
+  // The deleted turn took its waiting cards with it.
+  await deletePendingActions(ctx, threadId);
   // The Agent keeps finished and aborted streams for 5 minutes. This
   // deletes the turn's streams now, for two reasons. listThreadMessages
   // sends aborted streams to the client, and the client shows one in place

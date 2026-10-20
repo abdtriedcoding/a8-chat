@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { ApprovalAlerts } from "@/components/approval-alerts";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
 import { SessionGuard } from "@/components/session-guard";
 import { TemporaryThreadProvider } from "@/components/temporary-thread";
@@ -24,6 +25,7 @@ export default async function ChatLayout({
   return (
     <ConvexClientProvider initialToken={token}>
       <SessionGuard />
+      <ApprovalAlerts />
       <TemporaryThreadProvider>
         <SidebarProvider defaultOpen={defaultOpen} className="h-svh">
           <ThreadSearchProvider>

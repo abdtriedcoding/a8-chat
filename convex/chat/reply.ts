@@ -41,8 +41,9 @@ const REPLY_TIME_LIMIT_MS = 8 * 60 * 1000;
  * Gets the model's reply to a prompt and streams its text into the thread
  * as it arrives. sendPrompt schedules it, and decideAction schedules it
  * again to continue a reply that paused on action cards. Once the reply
- * ends, it records how a scheduled run went, and starts the thread's next
- * queued prompt. Once it fails, it pauses the queue.
+ * ends, it records how a scheduled run went and how many cards wait, and
+ * starts the thread's next queued prompt. Once it fails, it pauses the
+ * queue.
  */
 export const streamReply = internalAction({
   args: {
@@ -214,6 +215,15 @@ export const streamReply = internalAction({
           })
           .catch((recordError: unknown) =>
             console.error("Couldn't record the scheduled run", recordError),
+          );
+        // For the sidebar and the alerts, whether the reply paused on
+        // action cards or not.
+        await ctx
+          .runMutation(internal.chat.approval.recordPendingActions, {
+            threadId,
+          })
+          .catch((recordError: unknown) =>
+            console.error("Couldn't record the waiting cards", recordError),
           );
       }
       if (aborted) {

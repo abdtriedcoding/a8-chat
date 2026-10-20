@@ -8,6 +8,7 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { authorizeThreadAccess } from "../lib/guards";
+import { deletePendingActions } from "../lib/pendingActions";
 import { isAwaitingContinuation } from "./approval";
 import { pauseThreadQueue } from "./queue";
 import { getLastTurn, listTurnUpTo } from "./turns";
@@ -53,6 +54,8 @@ export const stopReply = mutation({
     if (!(await getStoppedReply(ctx, threadId, order))) {
       await ctx.db.insert("stoppedReplies", { threadId, order });
     }
+    // The client hides a stopped turn's cards, so none counts as waiting.
+    await deletePendingActions(ctx, threadId);
     if (!(await abortReply(ctx, threadId, order))) {
       await scheduleStopRetry(ctx, {
         threadId,
