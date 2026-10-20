@@ -51,6 +51,8 @@ export function NewChat({ prompt }: { prompt?: string }) {
   const [navigating, startNavigation] = useTransition();
   // Off on every visit, so a chat is never temporary by accident.
   const [temporary, setTemporary] = useState(false);
+  // Off on every visit too, so a chat never skips cards by accident.
+  const [autoApprove, setAutoApprove] = useState(false);
   const openTemporaryThread = useOpenTemporaryThread();
   const busy = starting || navigating;
   const { isAuthenticated } = useConvexAuth();
@@ -71,6 +73,7 @@ export function NewChat({ prompt }: { prompt?: string }) {
           attachmentFileIds: attachments.map(({ fileId }) => fileId),
           timeZone: browserTimeZone(),
           temporary,
+          autoApprove,
         }),
       );
       if (temporary) openTemporaryThread(threadId);
@@ -139,6 +142,8 @@ export function NewChat({ prompt }: { prompt?: string }) {
           textareaRef={caretToEnd}
           onSend={send}
           disabled={busy}
+          autoApprove={autoApprove}
+          onAutoApproveChange={isAuthenticated ? setAutoApprove : undefined}
           autoFocus
           className="w-full max-w-2xl *:data-[slot=input-group]:rounded-xl *:data-[slot=input-group]:border-white/60 *:data-[slot=input-group]:shadow-[0_12px_40px_-12px_rgb(30_58_138/0.45)] dark:*:data-[slot=input-group]:border-white/15 dark:*:data-[slot=input-group]:bg-card/75 dark:*:data-[slot=input-group]:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.6)] dark:*:data-[slot=input-group]:backdrop-blur-xl"
         />

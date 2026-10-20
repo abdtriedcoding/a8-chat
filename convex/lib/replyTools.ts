@@ -1,8 +1,8 @@
 // Everything a reply needs for its tools, from one call: the tools, which
-// actions wait on a card, the step cap, the connector instructions, a log,
-// and a close. streamReply calls createReplyTools before the model
-// and close once the reply ends. connectorTools.ts builds the tools and
-// calls the vendors, and toolLoading.ts decides how they load.
+// actions wait on a card or run at once, the step cap, the connector
+// instructions, a log, and a close. streamReply calls createReplyTools
+// before the model and close once the reply ends. connectorTools.ts builds
+// the tools and calls the vendors, and toolLoading.ts decides how they load.
 
 import type { ModelMessage, ToolApprovalStatus, ToolSet } from "ai";
 import { internal } from "../_generated/api";
@@ -15,6 +15,11 @@ import {
   toolSearch,
 } from "../agents/chat";
 import { createScheduledPromptTools } from "../tools/scheduledPrompts";
+import {
+  autoApproveActions,
+  MAX_AUTO_APPROVED_ACTIONS,
+  type AutoApproval,
+} from "./autoApprove";
 import { createConnectorTools, type ConnectorTools } from "./connectorTools";
 import { findMentions } from "./connectorView";
 import { connectorInstructions } from "./instructions";
@@ -64,11 +69,19 @@ export type ReplyTools = {
   tools: ToolSet;
   /**
    * The reply's `toolApproval` option. Every action waits for the user to
-   * approve it (ADR 0002, ADR 0008, ADR 0013). Reads run at once.
+   * approve it (ADR 0002, ADR 0008, ADR 0013). With auto-approve on, the
+   * reply's first MAX_AUTO_APPROVED_ACTIONS actions run at once instead
+   * (ADR 0014), and the AI SDK marks their approval `isAutomatic`. Reads
+   * run at once.
    */
-  toolApproval: Record<string, ToolApprovalStatus>;
+  toolApproval: Record<string, ToolApprovalStatus | AutoApproval>;
   /** Whether the reply has the scheduled prompt tools, for replyInstructions. */
   canSchedule: boolean;
+  /**
+   * Whether the reply auto-approves its actions, for replyInstructions.
+   * False when it has no actions, or starts past the cap.
+   */
+  autoApprove: boolean;
   /**
    * The connector part of the instructions, for replyInstructions.
    * Undefined for a user with no connections.
@@ -112,6 +125,9 @@ export type ReplyTools = {
  * @param timeZone The reply's time zone, for the scheduled prompt tools.
  * @param stepsTaken The steps the reply took before it paused on action
  *   cards. 0 for a new reply.
+ * @param autoApprove Whether the thread has auto-approve on.
+ * @param autoApprovedCount The actions the reply ran without a card
+ *   before it paused on action cards. 0 for a new reply.
  */
 export async function createReplyTools(
   ctx: ActionCtx,
@@ -123,6 +139,8 @@ export async function createReplyTools(
     temporary,
     timeZone,
     stepsTaken,
+    autoApprove,
+    autoApprovedCount,
   }: {
     threadId: string;
     promptText: string;
@@ -131,6 +149,8 @@ export async function createReplyTools(
     temporary: boolean;
     timeZone: string;
     stepsTaken: number;
+    autoApprove: boolean;
+    autoApprovedCount: number;
   },
 ): Promise<ReplyTools> {
   const mentioned = findMentions(promptText);
@@ -151,6 +171,10 @@ export async function createReplyTools(
     toolSearch,
   });
   const offered = new Set(Object.keys(tools));
+  const actionApproval = {
+    ...connectorTools.toolApproval,
+    ...scheduledPromptTools?.toolApproval,
+  };
   const log = new ReplyToolLog(
     threadId,
     connections.length,
@@ -160,11 +184,14 @@ export async function createReplyTools(
   );
   return {
     tools,
-    toolApproval: {
-      ...connectorTools.toolApproval,
-      ...scheduledPromptTools?.toolApproval,
-    },
+    toolApproval: autoApprove
+      ? autoApproveActions(actionApproval, autoApprovedCount)
+      : actionApproval,
     canSchedule: scheduledPromptTools !== undefined,
+    autoApprove:
+      autoApprove &&
+      Object.keys(actionApproval).length > 0 &&
+      autoApprovedCount < MAX_AUTO_APPROVED_ACTIONS,
     connectorText: connectorInstructions({ connections, mentioned, loading }),
     maxSteps: Math.max(
       1,

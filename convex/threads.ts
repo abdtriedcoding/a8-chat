@@ -25,6 +25,7 @@ import {
   getOwnThread,
   optionalUser,
 } from "./lib/guards";
+import { findAutoApproveThread, isAutoApproveOn } from "./lib/autoApprove";
 import { appError, ERROR_CODES } from "./lib/errors";
 import {
   deletePendingActions,
@@ -193,15 +194,19 @@ export const get = query({
       scheduledPromptId: v.union(v.id("scheduledPrompts"), v.null()),
       // Whether that scheduled prompt has runs the user hasn't seen.
       unread: v.boolean(),
+      // Whether the thread has auto-approve on. Always false in a
+      // scheduled prompt thread.
+      autoApprove: v.boolean(),
     }),
     v.null(),
   ),
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
     if (!thread) return null;
-    const [temporary, scheduledPrompt] = await Promise.all([
+    const [temporary, scheduledPrompt, autoApprove] = await Promise.all([
       findTemporaryThread(ctx, threadId),
       findThreadScheduledPrompt(ctx, threadId),
+      findAutoApproveThread(ctx, threadId),
     ]);
     return {
       _id: thread._id,
@@ -210,6 +215,7 @@ export const get = query({
       temporary: temporary !== null,
       scheduledPromptId: scheduledPrompt?._id ?? null,
       unread: (scheduledPrompt?.unreadRuns ?? 0) > 0,
+      autoApprove: isAutoApproveOn(autoApprove, scheduledPrompt),
     };
   },
 });
@@ -387,9 +393,9 @@ export async function setThreadStatus(
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
  * the background. This deletes its stoppedReplies, deferredToolThreads,
- * threadPins, temporaryThreads and pendingActions rows, its queue, its
- * shared snapshot and its scheduled prompt right away, and cancels the
- * scheduled prompt's next run. Its attachments, queued ones included, are
+ * threadPins, temporaryThreads, autoApproveThreads and pendingActions rows,
+ * its queue, its shared snapshot and its scheduled prompt right away, and
+ * cancels the scheduled prompt's next run. Its attachments, queued ones included, are
  * left unreferenced, and cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
@@ -423,6 +429,8 @@ export async function deleteThread(ctx: MutationCtx, threadId: string) {
   await unpinThread(ctx, threadId);
   const temporary = await findTemporaryThread(ctx, threadId);
   if (temporary) await ctx.db.delete("temporaryThreads", temporary._id);
+  const autoApprove = await findAutoApproveThread(ctx, threadId);
+  if (autoApprove) await ctx.db.delete("autoApproveThreads", autoApprove._id);
   await deletePendingActions(ctx, threadId);
   await deleteThreadQueue(ctx, threadId);
   await deleteThreadSnapshot(ctx, threadId);

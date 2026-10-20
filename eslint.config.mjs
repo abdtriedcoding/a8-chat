@@ -7,6 +7,7 @@ import nextTs from "eslint-config-next/typescript";
 // connectorView.ts is the client-safe view of the connector catalog (#194).
 const CLIENT_SAFE_CONVEX_LIB = [
   "attachments",
+  "autoApprove",
   "connectorView",
   "errors",
   "prompt",

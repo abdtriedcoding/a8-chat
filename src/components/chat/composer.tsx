@@ -27,6 +27,7 @@ import { useComposerMentions } from "@/hooks/use-composer-mentions";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
+import { AutoApproveChip } from "./auto-approve-chip";
 import { DictationButton } from "./dictation-button";
 import { FileDropZone } from "./file-drop-zone";
 import { MentionHighlights } from "./mention-highlights";
@@ -59,6 +60,9 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * has dictation set up. Typing, Esc or the mic stops it, and a Send while
  * dictating waits for the last words (useDictation's stop).
  *
+ * While `onAutoApproveChange` is set, the toolbar has the auto-approve chip
+ * (AutoApproveChip), on while `autoApprove` is.
+ *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
  */
@@ -70,6 +74,8 @@ export function Composer({
   sendDisabled = false,
   autoFocus = false,
   textareaRef,
+  autoApprove = false,
+  onAutoApproveChange,
   className,
 }: {
   initialText?: string;
@@ -79,6 +85,8 @@ export function Composer({
   sendDisabled?: boolean;
   autoFocus?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
+  autoApprove?: boolean;
+  onAutoApproveChange?: (on: boolean) => Promise<unknown> | void;
   className?: string;
 }) {
   const [text, setText] = useState(initialText);
@@ -307,6 +315,13 @@ export function Composer({
               </TooltipTrigger>
               <TooltipContent>Attach files</TooltipContent>
             </Tooltip>
+          )}
+          {onAutoApproveChange && (
+            <AutoApproveChip
+              on={autoApprove}
+              onChange={onAutoApproveChange}
+              disabled={disabled}
+            />
           )}
           <div className="ml-auto flex items-center gap-2">
             {dictation.available && (
