@@ -7,18 +7,29 @@ import {
 } from "@/components/ui/collapsible";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import {
+  findA8Tool,
   findConnectorTool,
   isReconnectError,
   type ConnectorView,
+  type FoundA8Tool,
+  type ToolApp,
 } from "../../../convex/lib/connectorView";
 
-/** A reply's call to a connector tool (convex/lib/connectorTools.ts). */
+/**
+ * A reply's call to a connector tool (convex/lib/connectorTools.ts), or to
+ * one of a8's scheduled prompt tools (convex/tools/scheduledPrompts.ts).
+ */
 export type ConnectorToolCall = {
   id: string;
-  connector: ConnectorView;
+  /** The connector, or a8 for a scheduled prompt tool. */
+  app: ToolApp;
+  /** The connector, unset for a scheduled prompt tool. */
+  connector?: ConnectorView;
   label: string;
   /** The tool's target arguments from the catalog, if it marks any. */
   target?: readonly string[];
+  /** Set for a scheduled prompt tool (FoundA8Tool). */
+  cardInput?: FoundA8Tool["cardInput"];
   /**
    * Unset on a call in a shared snapshot, which keeps only the tool's name
    * (convex/lib/sharedMessages.ts).
@@ -35,13 +46,19 @@ export type ConnectorToolCall = {
   approval?: { id: string; approved?: boolean };
 };
 
-/** The reply's connector tool calls, in the order the model made them. */
+/**
+ * The reply's connector and scheduled prompt tool calls, in the order the
+ * model made them.
+ */
 export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] {
   return message.parts.flatMap((part) => {
     if (!part.type.startsWith("tool-")) return [];
-    const found = findConnectorTool(part.type.slice("tool-".length));
+    const name = part.type.slice("tool-".length);
+    const connectorTool = findConnectorTool(name);
+    const found = connectorTool
+      ? { app: connectorTool.connector, ...connectorTool }
+      : findA8Tool(name);
     if (!found) return [];
-    const { connector, label, target } = found;
     // The UI message doesn't know the tool's types, so this reads the
     // fields every tool part has.
     const call = part as unknown as {
@@ -55,9 +72,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
     return [
       {
         id: call.toolCallId,
-        connector,
-        label,
-        target,
+        ...found,
         state: call.state,
         input: call.input,
         output: call.output,
@@ -113,10 +128,10 @@ function isCancelled(call: ConnectorToolCall): boolean {
 }
 
 /**
- * One connector tool call in a reply: the connector's logo and a label like
- * "Searching Notion". Opening it shows the arguments and the result. A
- * call in a shared snapshot shows only its label, since the snapshot keeps
- * nothing else.
+ * One connector or scheduled prompt tool call in a reply: the app's logo
+ * and a label like "Searching Notion". Opening it shows the arguments and
+ * the result. A call in a shared snapshot shows only its label, since the
+ * snapshot keeps nothing else.
  *
  * `running` is false for a call a stopped reply left unfinished.
  */
@@ -130,7 +145,7 @@ export function ConnectorToolRow({
   if (call.state === undefined) {
     return (
       <div className="flex max-w-full items-center gap-2 text-sm text-muted-foreground">
-        <ConnectorLogo connector={call.connector} size="sm" />
+        <ConnectorLogo connector={call.app} size="sm" />
         <span className="truncate">{call.label}</span>
       </div>
     );
@@ -142,7 +157,7 @@ export function ConnectorToolRow({
   return (
     <Collapsible className="w-full">
       <CollapsibleTrigger className="group/trigger flex max-w-full items-center gap-2 rounded-md text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
-        <ConnectorLogo connector={call.connector} size="sm" />
+        <ConnectorLogo connector={call.app} size="sm" />
         <span className={running ? "shimmer truncate" : "truncate"}>
           {call.label}
           {failed && " failed"}

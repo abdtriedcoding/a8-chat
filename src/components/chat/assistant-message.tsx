@@ -83,7 +83,9 @@ export const AssistantMessage = memo(function AssistantMessage({
   const sources = searchSources(searches);
   const reconnects = [
     ...new Set(
-      toolCalls.filter(failedNeedingReconnect).map((call) => call.connector),
+      toolCalls
+        .filter(failedNeedingReconnect)
+        .flatMap(({ connector }) => (connector ? [connector] : [])),
     ),
   ];
   // Between a tool call's result and the next text, the reply is thinking.

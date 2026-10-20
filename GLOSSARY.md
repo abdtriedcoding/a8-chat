@@ -23,7 +23,7 @@ A thread kept out of the user's history. It never shows in the sidebar, search o
 _Avoid_: incognito thread, ephemeral thread, private chat
 
 **Shared snapshot**:
-A read-only copy of a thread's finished turns that anyone with its link can open, signed in or not. It shows prompts, attachments, replies and web searches, but only the names of connector tool calls and action cards. A thread has at most one: sharing again updates it to the thread's latest finished turns. Unsharing or deleting the thread removes it, and archiving doesn't. UI copy says "shared link".
+A read-only copy of a thread's finished turns that anyone with its link can open, signed in or not. It shows prompts, attachments, replies and web searches, but only the names of connector and scheduled prompt tool calls and action cards. A thread has at most one: sharing again updates it to the thread's latest finished turns. Unsharing or deleting the thread removes it, and archiving doesn't. UI copy says "shared link".
 _Avoid_: shared thread, public chat, share link (outside UI copy)
 
 **Prompt**:
