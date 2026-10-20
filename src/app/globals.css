@@ -58,47 +58,45 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Sky blue on cool grays, to match the sky behind a new chat. The values are
-   Tailwind's sky and gray scales, so raw utilities and tokens line up. */
+/* A blue theme: white surfaces, slate grays, and a saturated blue accent. */
 :root {
-  --background: oklch(0.985 0.002 247.839); /* gray-50 */
-  --foreground: oklch(0.21 0.034 264.665); /* gray-900 */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.1371 0.036 258.5258);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.034 264.665);
+  --card-foreground: oklch(0.1371 0.036 258.5258);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.034 264.665);
-  --primary: oklch(0.5 0.134 242.749); /* sky-700, so white text passes AA */
-  --primary-foreground: oklch(1 0 0);
+  --popover-foreground: oklch(0.1371 0.036 258.5258);
+  --primary: oklch(0.546 0.2153 262.8719);
+  --primary-foreground: oklch(0.9838 0.0035 247.8583);
   /* The darker bottom edge of solid buttons. */
-  --primary-edge: oklch(0.391 0.09 240.876); /* sky-900 */
-  --secondary: oklch(0.967 0.003 264.542); /* gray-100 */
-  --secondary-foreground: oklch(0.21 0.034 264.665);
-  --muted: oklch(0.967 0.003 264.542);
-  /* Between gray-500 and gray-600, so body copy passes AA on gray-100. */
-  --muted-foreground: oklch(0.525 0.028 262);
-  --accent: oklch(0.967 0.003 264.542);
-  --accent-foreground: oklch(0.21 0.034 264.665);
+  --primary-edge: oklch(0.4878 0.217 264.3876);
+  --secondary: oklch(0.9684 0.0068 247.8951);
+  --secondary-foreground: oklch(0.2079 0.0399 265.7275);
+  --muted: oklch(0.9684 0.0068 247.8951);
+  --muted-foreground: oklch(0.5547 0.0407 257.4404);
+  --accent: oklch(0.9684 0.0068 247.8951);
+  --accent-foreground: oklch(0.2079 0.0399 265.7275);
   /* The marker behind highlighted words and @mentions. */
-  --highlight: oklch(0.951 0.026 236.824); /* sky-100 */
+  --highlight: oklch(0.8829 0.0573 251.9139);
   --success: oklch(0.627 0.194 149.214); /* green-600 */
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.928 0.006 264.531); /* gray-200 */
-  --input: oklch(0.872 0.01 258.338); /* gray-300 */
-  --ring: oklch(0.685 0.169 237.323); /* sky-500 */
-  --chart-1: oklch(0.828 0.111 230.318);
-  --chart-2: oklch(0.746 0.16 232.661);
-  --chart-3: oklch(0.685 0.169 237.323);
-  --chart-4: oklch(0.588 0.158 241.966);
-  --chart-5: oklch(0.443 0.11 240.79);
+  --destructive: oklch(0.6368 0.2078 25.3259);
+  --border: oklch(0.929 0.0126 255.5317);
+  --input: oklch(0.929 0.0126 255.5317);
+  --ring: oklch(0.546 0.2153 262.8719);
+  --chart-1: oklch(0.546 0.2153 262.8719);
+  --chart-2: oklch(0.7211 0.1415 253.1015);
+  --chart-3: oklch(0.6325 0.1843 258.636);
+  --chart-4: oklch(0.8117 0.097 249.0979);
+  --chart-5: oklch(0.8829 0.0573 251.9139);
   --radius: 0.625rem;
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.21 0.034 264.665);
-  --sidebar-primary: oklch(0.5 0.134 242.749);
+  --sidebar: oklch(0.9838 0.0035 247.8583);
+  --sidebar-foreground: oklch(0.2079 0.0399 265.7275);
+  --sidebar-primary: oklch(0.546 0.2153 262.8719);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.967 0.003 264.542);
-  --sidebar-accent-foreground: oklch(0.21 0.034 264.665);
-  --sidebar-border: oklch(0.928 0.006 264.531);
-  --sidebar-ring: oklch(0.685 0.169 237.323);
+  --sidebar-accent: oklch(0.929 0.0126 255.5317);
+  --sidebar-accent-foreground: oklch(0.546 0.2153 262.8719);
+  --sidebar-border: oklch(0.929 0.0126 255.5317);
+  --sidebar-ring: oklch(0.546 0.2153 262.8719);
   /* The day sky behind a new chat, taken from the sky photo's blues. It
      shows in the clearing the photo leaves for the heading. */
   --sky-top: oklch(0.579 0.183 253.7);
@@ -106,43 +104,42 @@
   --sky-horizon: oklch(0.912 0.038 248.2);
 }
 
-/* Notion's dark mode: neutral grays with no tint, soft off-white text, and
-   borders and hovers as faint white overlays. Sky blue stays the accent. */
+/* The same blue on navy. */
 .dark {
-  --background: oklch(0.213 0 0); /* #191919 */
-  --foreground: oklch(0.87 0 0); /* #d4d4d4 */
-  --card: oklch(0.244 0 0); /* #202020 */
-  --card-foreground: oklch(0.87 0 0);
-  --popover: oklch(0.264 0 0); /* #252525 */
-  --popover-foreground: oklch(0.87 0 0);
-  --primary: oklch(0.5 0.134 242.749); /* sky-700 */
-  --primary-foreground: oklch(1 0 0);
-  --primary-edge: oklch(0.391 0.09 240.876); /* sky-900 */
-  --secondary: oklch(0.285 0 0); /* #2a2a2a */
-  --secondary-foreground: oklch(0.87 0 0);
-  --muted: oklch(0.285 0 0);
-  --muted-foreground: oklch(0.689 0 0); /* #9b9b9b */
-  --accent: oklch(0.305 0 0); /* #2f2f2f */
-  --accent-foreground: oklch(0.94 0 0);
-  --highlight: oklch(0.685 0.169 237.323 / 25%);
+  --background: oklch(0.1371 0.036 258.5258);
+  --foreground: oklch(0.9838 0.0035 247.8583);
+  --card: oklch(0.1371 0.036 258.5258);
+  --card-foreground: oklch(0.9838 0.0035 247.8583);
+  --popover: oklch(0.1371 0.036 258.5258);
+  --popover-foreground: oklch(0.9838 0.0035 247.8583);
+  --primary: oklch(0.6232 0.1879 259.7964);
+  --primary-foreground: oklch(0.2079 0.0399 265.7275);
+  --primary-edge: oklch(0.4878 0.217 264.3876);
+  --secondary: oklch(0.28 0.0369 259.974);
+  --secondary-foreground: oklch(0.9838 0.0035 247.8583);
+  --muted: oklch(0.28 0.0369 259.974);
+  --muted-foreground: oklch(0.7107 0.0351 256.7877);
+  --accent: oklch(0.28 0.0369 259.974);
+  --accent-foreground: oklch(0.9838 0.0035 247.8583);
+  --highlight: oklch(0.6232 0.1879 259.7964 / 30%);
   --success: oklch(0.723 0.219 149.579); /* green-500 */
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.746 0.16 232.661); /* sky-400 */
-  --chart-1: oklch(0.828 0.111 230.318);
-  --chart-2: oklch(0.746 0.16 232.661);
-  --chart-3: oklch(0.685 0.169 237.323);
-  --chart-4: oklch(0.588 0.158 241.966);
-  --chart-5: oklch(0.443 0.11 240.79);
-  --sidebar: oklch(0.244 0 0); /* #202020 */
-  --sidebar-foreground: oklch(0.87 0 0);
-  --sidebar-primary: oklch(0.5 0.134 242.749);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.305 0 0);
-  --sidebar-accent-foreground: oklch(0.94 0 0);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.746 0.16 232.661);
+  --destructive: oklch(0.3959 0.1331 25.7205);
+  --border: oklch(0.28 0.0369 259.974);
+  --input: oklch(0.28 0.0369 259.974);
+  --ring: oklch(0.4878 0.217 264.3876);
+  --chart-1: oklch(0.4878 0.217 264.3876);
+  --chart-2: oklch(0.5449 0.2154 262.7414);
+  --chart-3: oklch(0.6776 0.1481 238.1044);
+  --chart-4: oklch(0.3752 0.0394 256.8467);
+  --chart-5: oklch(0.4691 0.1926 264.5776);
+  --sidebar: oklch(0.1371 0.036 258.5258);
+  --sidebar-foreground: oklch(0.9838 0.0035 247.8583);
+  --sidebar-primary: oklch(0.6232 0.1879 259.7964);
+  --sidebar-primary-foreground: oklch(0.1371 0.036 258.5258);
+  --sidebar-accent: oklch(0.28 0.0369 259.974);
+  --sidebar-accent-foreground: oklch(0.9838 0.0035 247.8583);
+  --sidebar-border: oklch(0.28 0.0369 259.974);
+  --sidebar-ring: oklch(0.4878 0.217 264.3876);
   /* The same blues after the night grade (sky-night.jpg). */
   --sky-top: oklch(0.186 0.06 268.3);
   --sky-middle: oklch(0.234 0.071 265.3);
