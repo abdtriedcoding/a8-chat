@@ -141,7 +141,7 @@ A tool call that writes to or deletes from an app, like sending an email, or tha
 _Avoid_: write, operation, mutation
 
 **Action card**:
-The preview of an action waiting in a reply, showing the app (or a8, for a scheduled prompt), the target and the content, where the user approves or cancels it. A new prompt sent while a card is waiting cancels that action, unless the queue is holding for the card. Then the prompt joins the queue. A scheduled run never cancels a card: it joins the queue.
+The preview of an action waiting in a reply, where the user approves or cancels it. It shows the app (or a8, for a scheduled prompt). For a tool with a summary, it says what happens in plain words, names the item, and keeps the raw arguments behind "Show details". For any other tool, it shows the target and the content. A new prompt sent while a card is waiting cancels that action, unless the queue is holding for the card. Then the prompt joins the queue. A scheduled run never cancels a card: it joins the queue.
 _Avoid_: approval request, pending action (in UI copy), confirmation
 
 **Decision**:

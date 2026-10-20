@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { cn } from "cn";
+import { ChevronDownIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
+import { createContext, use, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/errors";
+import {
+  summarizeAction,
+  type ActionSummary,
+  type KnownItems,
+} from "./action-summary";
 import type { ConnectorToolCall } from "./connector-tool-call";
 import { useThreadActionsContext } from "./thread-actions-context";
 
@@ -16,19 +23,23 @@ import { useThreadActionsContext } from "./thread-actions-context";
  * user approves. Once they decide, the reply shows the call as a row
  * instead. It must be inside a ThreadActionsProvider.
  *
- * The catalog marks which arguments are the action's target. A tool without
- * marked targets shows every argument under Details.
+ * A tool with a summary (action-summary.ts) leads with what happens in
+ * plain words and keeps the arguments under "Show details". Any other tool
+ * shows its arguments: the target the catalog marks, then the content, or
+ * every argument under Details when it marks no target.
  */
+/**
+ * The items the thread's tool results named, by ID (knownItems), so a card
+ * can name its target instead of showing an ID. The message list sets it.
+ */
+export const KnownItemsContext = createContext<KnownItems>(new Map());
+
 export function ActionCard({ call }: { call: ConnectorToolCall }) {
   const { decide: decideAction } = useThreadActionsContext();
   const [deciding, setDeciding] = useState<"approve" | "cancel">();
   const input = isRecord(call.input) ? call.input : {};
-  const args = Object.entries(call.cardInput?.(input) ?? input);
-  const isTarget = ([name]: [string, unknown]) =>
-    call.target?.includes(name) ?? false;
-  const target = args.filter(isTarget);
-  const content = args.filter((arg) => !isTarget(arg));
-
+  const summary = summarizeAction(call.toolName, input, use(KnownItemsContext));
+  const [showDetails, setShowDetails] = useState(false);
   // A second click before the call ends does nothing.
   async function decide(approve: boolean) {
     if (deciding || !call.approval || !decideAction) return;
@@ -44,40 +55,47 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
 
   return (
     <section
-      aria-label={`${call.label}, waiting for approval`}
+      aria-label={`${summary?.headline ?? call.label}, waiting for approval`}
       className="flex w-full flex-col gap-3 rounded-xl bg-card p-3 text-sm shadow-xs ring-1 ring-foreground/10"
     >
       <header className="flex items-center gap-2">
         <ConnectorLogo connector={call.app} size="md" />
-        <h3 className="min-w-0 flex-1 truncate font-medium">{call.label}</h3>
+        <h3 className="min-w-0 flex-1 font-medium">
+          {summary?.headline ?? call.label}
+        </h3>
         <span className="shrink-0 text-xs text-muted-foreground">
           Needs approval
         </span>
       </header>
-      {call.target ? (
+      {summary ? (
         <>
-          <ActionDetail title="Target">
-            {target.length > 0 ? (
-              <ArgumentList entries={target} />
-            ) : (
-              <p>Default location in {call.app.name}</p>
-            )}
-          </ActionDetail>
-          {content.length > 0 && (
-            <ActionDetail title="Content">
-              <ArgumentList entries={content} />
-            </ActionDetail>
-          )}
+          <SummaryBody summary={summary} />
+          {showDetails && <ArgumentDetails call={call} input={input} />}
         </>
       ) : (
-        args.length > 0 && (
-          <ActionDetail title="Details">
-            <ArgumentList entries={args} />
-          </ActionDetail>
-        )
+        <ArgumentDetails call={call} input={input} />
       )}
       {decideAction && (
-        <footer className="flex justify-end gap-2">
+        <footer className="flex items-center gap-2">
+          {summary && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              aria-expanded={showDetails}
+              onClick={() => setShowDetails((open) => !open)}
+            >
+              {showDetails ? "Hide details" : "Show details"}
+              <ChevronDownIcon
+                data-icon="inline-end"
+                className={cn(
+                  "transition-transform",
+                  showDetails && "rotate-180",
+                )}
+              />
+            </Button>
+          )}
+          <div className="flex-1" />
           <Button
             variant="outline"
             size="sm"
@@ -86,13 +104,100 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
             {deciding === "cancel" && <Spinner data-icon="inline-start" />}
             Cancel
           </Button>
-          <Button size="sm" onClick={() => void decide(true)}>
+          <Button
+            size="sm"
+            variant={summary?.destructive ? "destructive" : "default"}
+            onClick={() => void decide(true)}
+          >
             {deciding === "approve" && <Spinner data-icon="inline-start" />}
-            Approve
+            {summary?.verb ?? "Approve"}
           </Button>
         </footer>
       )}
     </section>
+  );
+}
+
+/** What happens, in plain words: the item's name, short fields and a preview. */
+function SummaryBody({ summary }: { summary: ActionSummary }) {
+  const { title, fields, preview, note, destructive } = summary;
+  const NoteIcon = destructive ? TriangleAlertIcon : InfoIcon;
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      {title && <p className="text-base font-semibold break-words">{title}</p>}
+      {fields.length > 0 && (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
+          {fields.map(({ label, value }) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="break-words">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {preview && (
+        <div className="rounded-md border bg-muted/40 p-2.5 text-muted-foreground">
+          <p className="line-clamp-4 break-words whitespace-pre-wrap">
+            {preview}
+          </p>
+        </div>
+      )}
+      {note && (
+        <p
+          className={cn(
+            "flex items-center gap-1.5 text-xs",
+            destructive ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          <NoteIcon className="size-3.5 shrink-0" />
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The call's arguments as they go to the app. The catalog marks which are
+ * the target. A tool without marked targets shows every argument under
+ * Details.
+ */
+function ArgumentDetails({
+  call,
+  input,
+}: {
+  call: ConnectorToolCall;
+  input: Record<string, unknown>;
+}) {
+  const args = Object.entries(call.cardInput?.(input) ?? input);
+  const isTarget = ([name]: [string, unknown]) =>
+    call.target?.includes(name) ?? false;
+  const target = args.filter(isTarget);
+  const content = args.filter((arg) => !isTarget(arg));
+  if (!call.target) {
+    return (
+      args.length > 0 && (
+        <ActionDetail title="Details">
+          <ArgumentList entries={args} />
+        </ActionDetail>
+      )
+    );
+  }
+  return (
+    <>
+      <ActionDetail title="Target">
+        {target.length > 0 ? (
+          <ArgumentList entries={target} />
+        ) : (
+          <p>Default location in {call.app.name}</p>
+        )}
+      </ActionDetail>
+      {content.length > 0 && (
+        <ActionDetail title="Content">
+          <ArgumentList entries={content} />
+        </ActionDetail>
+      )}
+    </>
   );
 }
 
@@ -103,9 +208,20 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
  * live region's text but not a region that's just been added.
  */
 export function ActionCardAnnouncer({ calls }: { calls: ConnectorToolCall[] }) {
+  const known = use(KnownItemsContext);
   return (
     <div role="status" className="sr-only">
-      {calls.map((call) => `${call.label}, waiting for approval.`).join(" ")}
+      {calls
+        .map((call) => {
+          const input = isRecord(call.input) ? call.input : {};
+          const headline = summarizeAction(
+            call.toolName,
+            input,
+            known,
+          )?.headline;
+          return `${headline ?? call.label}, waiting for approval.`;
+        })
+        .join(" ")}
     </div>
   );
 }

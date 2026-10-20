@@ -29,6 +29,8 @@ const TOOL_PILL =
  */
 export type ConnectorToolCall = {
   id: string;
+  /** The tool's model name, like `gmail__create_draft`. */
+  toolName?: string;
   /** The connector, or a8 for a scheduled prompt tool. */
   app: ToolApp;
   /** The connector, unset for a scheduled prompt tool. */
@@ -80,6 +82,7 @@ export function connectorToolCalls(message: ThreadMessage): ConnectorToolCall[] 
     return [
       {
         id: call.toolCallId,
+        toolName: name,
         ...found,
         state: call.state,
         input: call.input,
