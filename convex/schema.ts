@@ -83,6 +83,22 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_threadId", ["threadId"]),
+  // One row per thread with action cards waiting in its last turn
+  // (lib/pendingActions.ts), for the sidebar and the alerts. The thread's
+  // messages hold the cards (ADR 0002), and this row only counts them. A
+  // reply that pauses on cards adds it. A decision, a new prompt, a
+  // regenerate, an edit, a Stop and deleting the thread update or delete
+  // it. Archiving keeps it, and the lists skip archived threads.
+  pendingActions: defineTable({
+    userId: v.string(),
+    threadId: v.string(),
+    // How many cards are waiting.
+    count: v.number(),
+    // When the thread started waiting on the user.
+    since: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_threadId", ["threadId"]),
   // One row per temporary thread (lib/temporaryThreads.ts). startThread
   // adds it with the thread, and deleting the thread deletes it. Its
   // creation time is when the thread started.

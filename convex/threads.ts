@@ -17,6 +17,7 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import {
   authorizeThreadAccess,
@@ -25,6 +26,10 @@ import {
   optionalUser,
 } from "./lib/guards";
 import { appError, ERROR_CODES } from "./lib/errors";
+import {
+  deletePendingActions,
+  listPendingActionThreadIds,
+} from "./lib/pendingActions";
 import { checkTitle } from "./lib/prompt";
 import {
   deleteThreadScheduledPrompt,
@@ -44,18 +49,39 @@ const vThreadSummary = v.object({
   title: v.optional(v.string()),
   // Whether its scheduled prompt has runs the user hasn't opened it to see.
   unread: v.boolean(),
+  // Whether an action card waits in its last turn.
+  needsApproval: v.boolean(),
 });
+
+/** The user's thread IDs that toSummary marks. */
+type SummaryMarks = {
+  unreadThreadIds: Set<string>;
+  pendingThreadIds: Set<string>;
+};
 
 function toSummary(
   thread: ThreadDoc,
-  unreadThreadIds: Set<string>,
+  { unreadThreadIds, pendingThreadIds }: SummaryMarks,
 ): Infer<typeof vThreadSummary> {
   return {
     _id: thread._id,
     _creationTime: thread._creationTime,
     title: thread.title,
     unread: unreadThreadIds.has(thread._id),
+    needsApproval: pendingThreadIds.has(thread._id),
   };
+}
+
+/** The user's thread IDs that toSummary marks, read once per list. */
+async function listSummaryMarks(
+  ctx: QueryCtx,
+  userId: string,
+): Promise<SummaryMarks> {
+  const [unreadThreadIds, pendingThreadIds] = await Promise.all([
+    listUnreadThreadIds(ctx, userId),
+    listPendingActionThreadIds(ctx, userId),
+  ]);
+  return { unreadThreadIds, pendingThreadIds };
 }
 
 /** The most Agent thread pages one call to `list` reads. */
@@ -88,9 +114,9 @@ export const list = query({
         .withIndex("by_userId", (q) => q.eq("userId", user._id));
       for await (const pin of pins) pinned.add(pin.threadId);
     }
-    const [temporary, unreadThreadIds] = await Promise.all([
+    const [temporary, marks] = await Promise.all([
       listTemporaryThreadIds(ctx, user._id),
-      listUnreadThreadIds(ctx, user._id),
+      listSummaryMarks(ctx, user._id),
     ]);
     const page: Infer<typeof vThreadSummary>[] = [];
     let cursor = paginationOpts.cursor;
@@ -110,7 +136,7 @@ export const list = query({
         ) {
           continue;
         }
-        page.push(toSummary(thread, unreadThreadIds));
+        page.push(toSummary(thread, marks));
       }
       cursor = result.continueCursor;
       isDone = result.isDone;
@@ -138,18 +164,18 @@ export const listPinned = query({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .order("desc")
       .collect();
-    const [threads, temporary, unreadThreadIds] = await Promise.all([
+    const [threads, temporary, marks] = await Promise.all([
       Promise.all(
         pins.map((pin) => findOwnThread(ctx, user._id, pin.threadId)),
       ),
       listTemporaryThreadIds(ctx, user._id),
-      listUnreadThreadIds(ctx, user._id),
+      listSummaryMarks(ctx, user._id),
     ]);
     // Archiving and deleting unpin, and a temporary thread can't be pinned,
     // so this guard shouldn't skip any.
     return threads.flatMap((thread) =>
       thread?.status === "active" && !temporary.has(thread._id)
-        ? [toSummary(thread, unreadThreadIds)]
+        ? [toSummary(thread, marks)]
         : [],
     );
   },
@@ -361,10 +387,10 @@ export async function setThreadStatus(
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
  * the background. This deletes its stoppedReplies, deferredToolThreads,
- * threadPins and temporaryThreads rows, its queue, its shared snapshot and
- * its scheduled prompt right away, and cancels the scheduled prompt's next
- * run. Its attachments, queued ones included, are left unreferenced, and
- * cleanUpUnsentUploads deletes them.
+ * threadPins, temporaryThreads and pendingActions rows, its queue, its
+ * shared snapshot and its scheduled prompt right away, and cancels the
+ * scheduled prompt's next run. Its attachments, queued ones included, are
+ * left unreferenced, and cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
   args: { threadId: v.string() },
@@ -397,6 +423,7 @@ export async function deleteThread(ctx: MutationCtx, threadId: string) {
   await unpinThread(ctx, threadId);
   const temporary = await findTemporaryThread(ctx, threadId);
   if (temporary) await ctx.db.delete("temporaryThreads", temporary._id);
+  await deletePendingActions(ctx, threadId);
   await deleteThreadQueue(ctx, threadId);
   await deleteThreadSnapshot(ctx, threadId);
   await deleteThreadScheduledPrompt(ctx, threadId);

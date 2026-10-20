@@ -16,6 +16,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import {
+  ApprovalsWaiting,
+  NeedsApprovalMarker,
+} from "@/components/approvals-waiting";
 import { ShareDialog } from "@/components/share-dialog";
 import { ThreadTitleInput } from "@/components/thread-title-input";
 import {
@@ -172,11 +176,15 @@ export function ThreadList() {
             onClick={closeOnMobile}
           >
             <span className="truncate">{threadTitle(thread)}</span>
-            {/* A scheduled run the user hasn't opened the thread to see. */}
-            {thread.unread && (
-              <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
-                <span className="sr-only">Unread</span>
-              </span>
+            {/* A waiting action card outranks the dot for an unread scheduled run. */}
+            {thread.needsApproval ? (
+              <NeedsApprovalMarker />
+            ) : (
+              thread.unread && (
+                <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
+                  <span className="sr-only">Unread</span>
+                </span>
+              )
             )}
           </Link>
         </SidebarMenuButton>
@@ -227,6 +235,7 @@ export function ThreadList() {
 
   return (
     <>
+      <ApprovalsWaiting />
       {hasPins && (
         <ThreadSection label="Pinned">
           <SidebarMenu>
