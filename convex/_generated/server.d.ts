@@ -32,6 +32,7 @@ type Env = {
   readonly CONVEX_SITE_URL: string;
   readonly ANTHROPIC_API_KEY: string;
   readonly BETTER_AUTH_SECRET: string;
+  readonly BILLING_ENABLED: string | undefined;
   readonly CONNECTION_ENCRYPTION_KEY: string;
   readonly DEEPGRAM_API_KEY: string | undefined;
   readonly EMAIL_FROM: string;
@@ -39,6 +40,11 @@ type Env = {
   readonly GOOGLE_CLIENT_SECRET: string;
   readonly GOOGLE_MCP_CLIENT_ID: string | undefined;
   readonly GOOGLE_MCP_CLIENT_SECRET: string | undefined;
+  readonly POLAR_ORGANIZATION_TOKEN: string | undefined;
+  readonly POLAR_PRO_MONTHLY_PRODUCT_ID: string | undefined;
+  readonly POLAR_PRO_YEARLY_PRODUCT_ID: string | undefined;
+  readonly POLAR_SERVER: string | undefined;
+  readonly POLAR_WEBHOOK_SECRET: string | undefined;
   readonly RESEND_API_KEY: string;
   readonly RESEND_TEST_MODE: string | undefined;
   readonly SITE_URL: string;

@@ -4,6 +4,7 @@ import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import {
   ChevronsUpDownIcon,
+  CreditCardIcon,
   KeyboardIcon,
   LogInIcon,
   LogOutIcon,
@@ -49,6 +50,7 @@ type CurrentUser = NonNullable<
 export function NavUser() {
   const { isAuthenticated } = useConvexAuth();
   const user = useQuery(api.auth.getCurrentUser, isAuthenticated ? {} : "skip");
+  const billingEnabled = useQuery(api.billing.enabled);
   const { isMobile } = useSidebar();
   const openShortcutsHelp = useOpenShortcutsHelp();
   const leaveTemporaryThread = useLeaveTemporaryThread();
@@ -143,6 +145,14 @@ export function NavUser() {
                   Account settings
                 </Link>
               </DropdownMenuItem>
+              {billingEnabled && (
+                <DropdownMenuItem asChild>
+                  <Link href="/settings/billing">
+                    <CreditCardIcon />
+                    Billing
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => void signOut()}

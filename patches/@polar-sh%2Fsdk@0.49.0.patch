@@ -1,0 +1,51 @@
+diff --git a/dist/commonjs/webhooks.js b/dist/commonjs/webhooks.js
+index a2b3f717b426b5011979275fe1bb92bb82448704..6b54d7a2c942114867658d16becf51e588529a14 100644
+--- a/dist/commonjs/webhooks.js
++++ b/dist/commonjs/webhooks.js
+@@ -127,7 +127,11 @@ const parseEvent = (parsed) => {
+     }
+ };
+ const validateEvent = (body, headers, secret) => {
+-    const base64Secret = Buffer.from(secret, "utf-8").toString("base64");
++    // Patched by a8: Polar now issues standard "whsec_" secrets, which
++    // standardwebhooks decodes itself. Only older secrets need encoding.
++    const base64Secret = secret.startsWith("whsec_")
++        ? secret
++        : Buffer.from(secret, "utf-8").toString("base64");
+     const webhook = new standardwebhooks_1.Webhook(base64Secret);
+     try {
+         const parsed = webhook.verify(body, headers);
+diff --git a/dist/esm/webhooks.js b/dist/esm/webhooks.js
+index ca8d17d4a9fd4e6c727b6fc0b1854a8528a3258b..6037f5c83aeed122bed148a74d7b3762b9c09e8c 100644
+--- a/dist/esm/webhooks.js
++++ b/dist/esm/webhooks.js
+@@ -123,7 +123,11 @@ const parseEvent = (parsed) => {
+     }
+ };
+ const validateEvent = (body, headers, secret) => {
+-    const base64Secret = Buffer.from(secret, "utf-8").toString("base64");
++    // Patched by a8: Polar now issues standard "whsec_" secrets, which
++    // standardwebhooks decodes itself. Only older secrets need encoding.
++    const base64Secret = secret.startsWith("whsec_")
++        ? secret
++        : Buffer.from(secret, "utf-8").toString("base64");
+     const webhook = new Webhook(base64Secret);
+     try {
+         const parsed = webhook.verify(body, headers);
+diff --git a/src/webhooks.ts b/src/webhooks.ts
+index 3b6cac7c1102b5807d7bc23c04e0f8fbacc101f3..b4c53468d79b21bc2969bd6fb779ce79ecdde78e 100644
+--- a/src/webhooks.ts
++++ b/src/webhooks.ts
+@@ -137,7 +137,11 @@ const validateEvent = (
+   headers: Record<string, string>,
+   secret: string,
+ ) => {
+-  const base64Secret = Buffer.from(secret, "utf-8").toString("base64");
++  // Patched by a8: Polar now issues standard "whsec_" secrets, which
++    // standardwebhooks decodes itself. Only older secrets need encoding.
++    const base64Secret = secret.startsWith("whsec_")
++        ? secret
++        : Buffer.from(secret, "utf-8").toString("base64");
+   const webhook = new Webhook(base64Secret);
+   try {
+     const parsed = webhook.verify(body, headers);
