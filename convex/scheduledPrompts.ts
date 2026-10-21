@@ -359,7 +359,8 @@ export const runNow = mutation({
  * a skipped run instead, so at most one run waits.
  *
  * When the queue is full or the send limit refuses, the run fails with that
- * reason and sends nothing (recordFailedRun).
+ * reason and sends nothing (recordFailedRun). On the hosted a8 that
+ * includes no credits left and the daily spend ceiling (limitSend).
  *
  * Does nothing when the row is gone or isn't active, as when the job fired
  * just as the user paused.
@@ -383,6 +384,23 @@ export const run = internalMutation({
       const current = await ctx.db.get("scheduledPrompts", row._id);
       if (current) await recordFailedRun(ctx, current, result.message);
     }
+    return null;
+  },
+});
+
+/**
+ * Records a failed run for a queued run that checkSpend refused. When
+ * checkSpend refuses the queue's next prompt, startNextQueuedPrompt
+ * (convex/chat/send.ts) takes the thread's queued run off the queue and
+ * calls this. Like a run refused when it ran, it counts toward the failed
+ * runs that pause the scheduled prompt.
+ */
+export const recordRefusedRun = internalMutation({
+  args: { scheduledPromptId: v.id("scheduledPrompts"), message: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { scheduledPromptId, message }) => {
+    const row = await ctx.db.get("scheduledPrompts", scheduledPromptId);
+    if (row) await recordFailedRun(ctx, row, message);
     return null;
   },
 });

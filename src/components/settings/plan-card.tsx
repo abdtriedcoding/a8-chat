@@ -1,8 +1,7 @@
 "use client";
 
-import { useAction, useQuery } from "convex/react";
-import type { FunctionReturnType } from "convex/server";
-import { useEffect, useState } from "react";
+import { useAction } from "convex/react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +15,9 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { useCredits, type PlanTerms } from "@/hooks/use-credits";
 import { usePageRestored } from "@/hooks/use-page-restored";
+import { formatCredits, formatDate } from "@/lib/credits";
 import { errorMessage } from "@/lib/errors";
 import {
   BILLING_INTERVALS,
@@ -26,15 +27,8 @@ import {
 import { api } from "../../../convex/_generated/api";
 import {
   creditsLeft,
-  resolveCreditPeriod,
+  type CreditPeriod,
 } from "../../../convex/lib/creditPeriod";
-import { monthlyPeriod } from "../../../convex/lib/monthlyPeriod";
-
-type PlanTerms = NonNullable<FunctionReturnType<typeof api.billing.plan>>;
-
-type LatestCredits = FunctionReturnType<typeof api.billing.latestCredits>;
-
-const MINUTE_MS = 60_000;
 
 /**
  * The user's plan and when its credits reset. Free users upgrade from here,
@@ -42,8 +36,8 @@ const MINUTE_MS = 60_000;
  * pages, and Polar sends them back here.
  */
 export function PlanCard() {
-  const plan = useQuery(api.billing.plan);
-  const latestCredits = useQuery(api.billing.latestCredits);
+  const credits = useCredits();
+  const plan = credits?.plan;
   const checkout = useAction(api.billing.checkout);
   const portal = useAction(api.billing.portal);
   // What's opening: a checkout interval or the portal.
@@ -74,8 +68,8 @@ export function PlanCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="py-4">
-        {plan && latestCredits !== undefined ? (
-          <PlanSummary plan={plan} latestCredits={latestCredits} />
+        {credits ? (
+          <PlanSummary plan={credits.plan} period={credits.period} />
         ) : (
           <Skeleton className="h-16 w-full" />
         )}
@@ -116,24 +110,11 @@ export function PlanCard() {
 
 function PlanSummary({
   plan,
-  latestCredits,
+  period,
 }: {
   plan: PlanTerms;
-  latestCredits: LatestCredits;
+  period: CreditPeriod;
 }) {
-  // The clock moves on each minute, so a page left open past the reset
-  // shows the new period, even before a reply opens its row.
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), MINUTE_MS);
-    return () => window.clearInterval(timer);
-  }, []);
-  const resolved = resolveCreditPeriod(
-    latestCredits,
-    { ...plan, ...monthlyPeriod(plan.periodAnchor, now) },
-    now,
-  );
-  const period = "keeps" in resolved ? resolved.keeps : resolved.opens;
   return (
     <div className="flex flex-col gap-1">
       <span className="flex items-center gap-2 text-sm font-medium">
@@ -159,18 +140,4 @@ function PlanSummary({
       )}
     </div>
   );
-}
-
-/**
- * Credits to two decimal places, rounded down, so a balance just under a
- * whole credit doesn't show as the whole credit.
- */
-function formatCredits(credits: number): string {
-  return (Math.floor(credits * 100) / 100).toLocaleString(undefined, {
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" });
 }

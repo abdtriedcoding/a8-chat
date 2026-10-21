@@ -18,6 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useErrorToast } from "@/hooks/use-error-toast";
 import { errorMessage } from "@/lib/errors";
 import { isOptimisticQueuedPrompt } from "@/lib/optimistic-prompt";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -51,6 +52,7 @@ export function QueueStack({
   className?: string;
 }) {
   const [resuming, setResuming] = useState(false);
+  const showError = useErrorToast();
 
   async function resume() {
     if (resuming || !onResume) return;
@@ -58,7 +60,7 @@ export function QueueStack({
     try {
       await onResume();
     } catch (error) {
-      toast.error(errorMessage(error));
+      showError(error);
     } finally {
       setResuming(false);
     }

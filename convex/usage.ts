@@ -2,14 +2,12 @@
 // searches and sends them here. Only the hosted a8 records costs.
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation, type MutationCtx } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { authComponent } from "./auth";
 import { billingEnabled, getPlan } from "./lib/billing";
 import { CREDITS_PER_USD, currentCreditRow } from "./lib/credits";
+import { addDailySpend } from "./lib/dailySpend";
 import { vTokenCounts, vUsageKind } from "./schema";
-
-/** How many dailySpend rows each day's spend is spread over. */
-const DAILY_SPEND_SHARDS = 8;
 
 const PURGE_BATCH_SIZE = 100;
 
@@ -56,6 +54,24 @@ export const record = internalMutation({
 });
 
 /**
+ * Sets the credits used in the user's current period, opening it if it's
+ * new. For seeding a balance from the dashboard, such as to check what the
+ * user sees with no credits left.
+ */
+export const setCreditsUsed = internalMutation({
+  args: { userId: v.string(), creditsUsed: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { userId, creditsUsed }) => {
+    const now = Date.now();
+    const plan = await getPlan(ctx, userId, now);
+    if (!plan) throw new Error("Billing is off.");
+    const row = await currentCreditRow(ctx, userId, plan, now);
+    await ctx.db.patch("creditLedger", row._id, { creditsUsed });
+    return null;
+  },
+});
+
+/**
  * Deletes a deleted user's ledger rows and usage events, a batch at a time.
  * Called by purgeAccount.
  */
@@ -81,18 +97,3 @@ export const purgeUserUsage = internalMutation({
     return null;
   },
 });
-
-/** Adds `usd` to the UTC day's spend, in one of its shards. */
-async function addDailySpend(ctx: MutationCtx, now: number, usd: number) {
-  const day = new Date(now).toISOString().slice(0, 10);
-  const shard = Math.floor(Math.random() * DAILY_SPEND_SHARDS);
-  const row = await ctx.db
-    .query("dailySpend")
-    .withIndex("by_day_and_shard", (q) => q.eq("day", day).eq("shard", shard))
-    .unique();
-  if (row) {
-    await ctx.db.patch("dailySpend", row._id, { usd: row.usd + usd });
-  } else {
-    await ctx.db.insert("dailySpend", { day, shard, usd });
-  }
-}

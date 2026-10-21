@@ -1,4 +1,5 @@
 import { useMutation } from "convex/react";
+import { throwIfRefused } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -16,7 +17,7 @@ export function useQueueActions(threadId: string) {
       await deleteQueuedPrompt({ queuedPromptId });
     },
     resume: async () => {
-      await resumeQueue({ threadId });
+      throwIfRefused(await resumeQueue({ threadId }));
     },
   };
 }

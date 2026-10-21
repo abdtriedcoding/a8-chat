@@ -3,6 +3,10 @@ import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import { v, type Infer } from "convex/values";
 import { BYTES_PER_MB, MAX_ATTACHMENT_SIZE_IN_BYTES } from "./lib/attachments";
+import { billingEnabled, dailySpendCeilingUsd, getPlan } from "./lib/billing";
+import { creditPeriodAt, creditsLeft } from "./lib/creditPeriod";
+import { latestCreditRow } from "./lib/credits";
+import { getDailySpend } from "./lib/dailySpend";
 import { ERROR_CODES } from "./lib/errors";
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
@@ -27,12 +31,15 @@ type RunMutationCtx = ActionCtx | MutationCtx;
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Each user's Sends, so a script or a stuck key can't run up the bill.
   userSends: { kind: "token bucket", rate: 10, period: MINUTE, capacity: 10 },
-  // Everyone's Sends together, a ceiling on the day's model spend. Windows
-  // count from `start`, and 0 is midnight UTC, so each day's window opens at
-  // 00:00 UTC. Without `start`, the component picks a random time of day.
+  // Everyone's Sends together, a ceiling on the day's model spend.
+  // Self-hosted only: the hosted a8 caps spend with credits and the daily
+  // spend ceiling instead. Windows count from `start`, and 0 is midnight UTC,
+  // so each day's window opens at 00:00 UTC. Without `start`, the component
+  // picks a random time of day.
   dailySends: { kind: "fixed window", rate: 500, period: DAY, start: 0 },
   // One user's share of dailySends, a fifth of it. Five users can use up the
-  // day's cap, but one can't. Windows open at 00:00 UTC, like dailySends.
+  // day's cap, but one can't. Self-hosted only, like dailySends. Windows
+  // open at 00:00 UTC, like dailySends.
   userDailySends: { kind: "fixed window", rate: 100, period: DAY, start: 0 },
   // Everyone's web searches together. 30 a day stays inside Tavily's free
   // tier of 1,000 a month. Windows open at 00:00 UTC, like dailySends.
@@ -110,7 +117,7 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   },
 });
 
-/** Why a Send was refused. The Send mutations return it instead of throwing. */
+/** Why a rate limit refused a Send or a dictation start. */
 export const vRateLimited = v.object({
   code: v.literal(ERROR_CODES.RATE_LIMITED),
   message: v.string(),
@@ -121,22 +128,51 @@ export const vRateLimited = v.object({
 export type RateLimited = Infer<typeof vRateLimited>;
 
 /**
- * Counts one Send against the user's limits and the daily limit. Returns why
- * it can't, or null if the Send can go ahead. Call it before the Send saves
- * anything.
+ * Why limitSend refused a Send: a rate limit, or on the hosted a8, no
+ * credits left or the daily spend ceiling (checkSpend). The Send mutations
+ * return it instead of throwing.
+ */
+export const vSendLimited = v.object({
+  code: v.union(
+    v.literal(ERROR_CODES.RATE_LIMITED),
+    v.literal(ERROR_CODES.OUT_OF_CREDITS),
+    v.literal(ERROR_CODES.DAILY_SPEND_CEILING),
+  ),
+  message: v.string(),
+  // Milliseconds until a Send would go through.
+  retryAfter: v.number(),
+});
+
+export type SendLimited = Infer<typeof vSendLimited>;
+
+/**
+ * Counts one Send against the user's limits and the daily limits. Returns
+ * why it can't, or null if the Send can go ahead. Call it before the Send
+ * saves anything.
+ *
+ * The hosted a8 has no daily Send caps. It checks the user's credits and
+ * the daily spend ceiling instead (checkSpend), and counts nothing against
+ * them. Self-hosted a8 has no credits, so it keeps the daily Send caps.
  *
  * It checks every limit before counting against any, so a refused Send
- * isn't counted. The user's limits are checked before the daily one, so
+ * isn't counted. The user's limits are checked before the daily ones, so
  * their messages win when both are hit.
  */
 export async function limitSend(
   ctx: MutationCtx,
   userId: string,
-): Promise<RateLimited | null> {
+): Promise<SendLimited | null> {
   const user = await rateLimiter.check(ctx, "userSends", { key: userId });
   if (!user.ok) {
     const seconds = Math.ceil(user.retryAfter / 1000);
     return rateLimited(`Slow down: try again in ${seconds}s.`, user.retryAfter);
+  }
+  if (billingEnabled) {
+    const refused = await checkSpend(ctx, userId);
+    if (refused) return refused;
+    // The check passed in this transaction, so this can't fail.
+    await rateLimiter.limit(ctx, "userSends", { key: userId, throws: true });
+    return null;
   }
   const userDaily = await rateLimiter.check(ctx, "userDailySends", {
     key: userId,
@@ -161,6 +197,47 @@ export async function limitSend(
     throws: true,
   });
   await rateLimiter.limit(ctx, "dailySends", { throws: true });
+  return null;
+}
+
+/**
+ * Why the hosted a8 would refuse the user's Send for spend, or null if it
+ * can go ahead: the user has no credits left, or a8's spend today reached
+ * the daily ceiling. Null when billing is off.
+ *
+ * It reserves nothing. A reply that starts always finishes, even if its
+ * cost takes the balance below zero. limitSend calls this, and so does a
+ * queued prompt when it starts, since queueing it counted it already.
+ */
+export async function checkSpend(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<SendLimited | null> {
+  const now = Date.now();
+  const plan = await getPlan(ctx, userId, now);
+  if (!plan) return null;
+  const period = creditPeriodAt(
+    await latestCreditRow(ctx, userId),
+    plan,
+    now,
+  );
+  if (creditsLeft(period) <= 0) {
+    return {
+      code: ERROR_CODES.OUT_OF_CREDITS,
+      message:
+        plan.name === "free"
+          ? "You're out of credits. Upgrade to Pro, or wait for them to reset."
+          : "You're out of credits until they reset.",
+      retryAfter: period.periodEnd - now,
+    };
+  }
+  if ((await getDailySpend(ctx, now)) >= dailySpendCeilingUsd) {
+    return {
+      code: ERROR_CODES.DAILY_SPEND_CEILING,
+      message: "a8 is at capacity for today. It resets at 00:00 UTC.",
+      retryAfter: DAY - (now % DAY),
+    };
+  }
   return null;
 }
 

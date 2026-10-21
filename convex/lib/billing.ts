@@ -36,6 +36,31 @@ if (billingEnabled) {
   }
 }
 
+/** The daily spend ceiling when DAILY_SPEND_CEILING_USD is unset. */
+const DEFAULT_DAILY_SPEND_CEILING_USD = 20;
+
+/**
+ * The most a8 spends on models across all users in a UTC day, in dollars.
+ * checkSpend refuses Sends once the day's spend reaches it. Self-hosted a8 records
+ * no spend, so it has no ceiling.
+ */
+export const dailySpendCeilingUsd = billingEnabled
+  ? parseCeiling(env.DAILY_SPEND_CEILING_USD)
+  : Infinity;
+
+// Like a missing Polar variable, a ceiling that isn't a number fails the
+// deploy, since reading it as 0 would refuse every Send.
+function parseCeiling(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") {
+    return DEFAULT_DAILY_SPEND_CEILING_USD;
+  }
+  const usd = Number(value);
+  if (!Number.isFinite(usd) || usd <= 0) {
+    throw new Error("DAILY_SPEND_CEILING_USD must be a number of dollars above 0.");
+  }
+  return usd;
+}
+
 export const PRO_PRODUCTS: Record<BillingInterval, string> = {
   month: env.POLAR_PRO_MONTHLY_PRODUCT_ID ?? "",
   year: env.POLAR_PRO_YEARLY_PRODUCT_ID ?? "",

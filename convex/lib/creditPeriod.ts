@@ -51,6 +51,20 @@ export function resolveCreditPeriod<Row extends CreditPeriod>(
   return { opens: freshPeriod(periodStart, plan), closesLatestAt: null };
 }
 
+/**
+ * The credit period that covers `now`: the latest row, or the one that
+ * would open (resolveCreditPeriod). For reading the balance without
+ * opening a row.
+ */
+export function creditPeriodAt(
+  latest: CreditPeriod | null,
+  plan: PlanMonth,
+  now: number,
+): CreditPeriod {
+  const resolved = resolveCreditPeriod(latest, plan, now);
+  return "keeps" in resolved ? resolved.keeps : resolved.opens;
+}
+
 /** The credits left in a period. Below zero once a reply overspent it. */
 export function creditsLeft(period: CreditPeriod): number {
   return period.creditsGranted - period.creditsUsed;

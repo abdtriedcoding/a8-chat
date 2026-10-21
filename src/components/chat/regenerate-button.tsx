@@ -2,7 +2,6 @@
 
 import { RefreshCwIcon } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -10,7 +9,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { errorMessage } from "@/lib/errors";
+import { useErrorToast } from "@/hooks/use-error-toast";
 import { useThreadActionsContext } from "./thread-actions-context";
 
 /**
@@ -23,6 +22,7 @@ import { useThreadActionsContext } from "./thread-actions-context";
 export function RegenerateButton({ labelled = false }: { labelled?: boolean }) {
   const { regenerate: regenerateReply } = useThreadActionsContext();
   const [regenerating, setRegenerating] = useState(false);
+  const showError = useErrorToast();
 
   // The button stays enabled while the call runs. A disabled button would
   // lose keyboard focus, and the row under a reply fades out when focus
@@ -33,7 +33,7 @@ export function RegenerateButton({ labelled = false }: { labelled?: boolean }) {
     try {
       await regenerateReply();
     } catch (error) {
-      toast.error(errorMessage(error));
+      showError(error);
     } finally {
       setRegenerating(false);
     }

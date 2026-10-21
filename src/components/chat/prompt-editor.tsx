@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import {
   InputGroup,
   InputGroupAddon,
@@ -9,7 +8,7 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
-import { errorMessage } from "@/lib/errors";
+import { useErrorToast } from "@/hooks/use-error-toast";
 import { checkPrompt } from "../../../convex/lib/prompt";
 
 /**
@@ -30,6 +29,7 @@ export function PromptEditor({
 }) {
   const [draft, setDraft] = useState(text);
   const [saving, setSaving] = useState(false);
+  const showError = useErrorToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Opens with the cursor after the text.
@@ -51,7 +51,7 @@ export function PromptEditor({
       if (prompt === text) onCancel();
       else await onSave(prompt);
     } catch (error) {
-      toast.error(errorMessage(error));
+      showError(error);
     } finally {
       setSaving(false);
     }

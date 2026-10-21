@@ -2,6 +2,9 @@ import type { BillingInterval } from "../../convex/lib/billing";
 
 export type { BillingInterval };
 
+/** The Billing page, where the user sees their credits and upgrades. */
+export const BILLING_PATH = "/settings/billing";
+
 /** Pro's prices, shown on the pricing and Billing pages. Polar charges them. */
 export const PRO_PRICES: Record<
   BillingInterval,

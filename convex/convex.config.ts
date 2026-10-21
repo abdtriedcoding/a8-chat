@@ -51,6 +51,12 @@ const app = defineApp({
     // The Polar product IDs of Pro monthly and Pro yearly.
     POLAR_PRO_MONTHLY_PRODUCT_ID: v.optional(v.string()),
     POLAR_PRO_YEARLY_PRODUCT_ID: v.optional(v.string()),
+    // Optional. The most a8 spends on models across all users in a UTC day,
+    // in dollars, such as "50". Once the day's spend reaches it, a8 refuses
+    // every Send until 00:00 UTC. a8 reads it only when BILLING_ENABLED is
+    // "true". Unset, it's DEFAULT_DAILY_SPEND_CEILING_USD (convex/lib/
+    // billing.ts).
+    DAILY_SPEND_CEILING_USD: v.optional(v.string()),
   },
 });
 

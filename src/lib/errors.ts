@@ -1,8 +1,8 @@
 import { ConvexError } from "convex/values";
-import { ERROR_CODES } from "../../convex/lib/errors";
+import { ERROR_CODES, type ErrorCode } from "../../convex/lib/errors";
 import type { AttachmentNotFound } from "../../convex/attachments/load";
 import type { QueueFull } from "../../convex/chat/send";
-import type { RateLimited } from "../../convex/rateLimits";
+import type { SendLimited } from "../../convex/rateLimits";
 
 const GENERIC_MESSAGE = "Something went wrong. Please try again.";
 
@@ -32,21 +32,33 @@ export function errorMessage(error: unknown): string {
  * to 15 minutes, so this error can arrive before the client sees the sign-out.
  */
 export function isUnauthenticated(error: unknown): boolean {
+  return hasErrorCode(error, ERROR_CODES.UNAUTHENTICATED);
+}
+
+/**
+ * Whether the backend refused a Send because the user has no credits left.
+ * The toast then links to the Billing page (useErrorToast).
+ */
+export function isOutOfCredits(error: unknown): boolean {
+  return hasErrorCode(error, ERROR_CODES.OUT_OF_CREDITS);
+}
+
+function hasErrorCode(error: unknown, code: ErrorCode): boolean {
   if (!(error instanceof ConvexError)) return false;
   const data: unknown = error.data;
   return (
     typeof data === "object" &&
     data !== null &&
     "code" in data &&
-    data.code === ERROR_CODES.UNAUTHENTICATED
+    data.code === code
   );
 }
 
 /**
- * Why a Send was refused: a rate limit, an attachment that's gone, or a
- * full queue.
+ * Why a Send was refused: a rate limit, no credits left, the daily spend
+ * ceiling, an attachment that's gone, or a full queue.
  */
-type SendRefused = RateLimited | AttachmentNotFound | QueueFull;
+type SendRefused = SendLimited | AttachmentNotFound | QueueFull;
 
 /**
  * Returns a Send's result, or throws a ConvexError if the Send was refused.
@@ -65,6 +77,8 @@ function isSendRefused(value: unknown): value is SendRefused {
     value !== null &&
     "code" in value &&
     (value.code === ERROR_CODES.RATE_LIMITED ||
+      value.code === ERROR_CODES.OUT_OF_CREDITS ||
+      value.code === ERROR_CODES.DAILY_SPEND_CEILING ||
       value.code === ERROR_CODES.NOT_FOUND ||
       value.code === ERROR_CODES.QUEUE_FULL)
   );
