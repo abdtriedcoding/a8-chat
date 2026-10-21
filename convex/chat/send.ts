@@ -31,6 +31,13 @@ import {
   findThreadScheduledPrompt,
   moveWaitingRun,
 } from "../lib/scheduledPrompts";
+import type { Model } from "../lib/models";
+import {
+  getDefaultModel,
+  getThreadModel,
+  requireModel,
+  setThreadModelRow,
+} from "../lib/threadModels";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { checkSpend, limitSend, vSendLimited } from "../rateLimits";
 import { setThreadStatus } from "../threads";
@@ -77,6 +84,12 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 // startThread with `autoApprove` turns auto-approve on for the new thread
 // (lib/autoApprove.ts), so its first reply runs actions without a card.
 // After that, setAutoApprove (convex/autoApprove.ts) changes it.
+//
+// startThread and sendMessage take the model picked in the composer
+// (`modelId`) and make it the thread's model (lib/threadModels.ts). A new
+// thread without one starts on the user's default model. Every reply uses
+// the thread's model at the moment it starts, so a queued prompt, a
+// regenerate and an edit use it too.
 
 /**
  * Why a Send was refused: the thread's queue already holds
@@ -103,6 +116,7 @@ export const startThread = mutation({
     timeZone: vTimeZone,
     temporary: v.optional(v.boolean()),
     autoApprove: v.optional(v.boolean()),
+    modelId: v.optional(v.string()),
   },
   returns: v.union(
     v.object({ threadId: v.string() }),
@@ -117,14 +131,19 @@ export const startThread = mutation({
       timeZone,
       temporary = false,
       autoApprove = false,
+      modelId,
     },
   ) => {
     const user = await requireUser(ctx);
+    const model = modelId
+      ? requireModel(modelId)
+      : await getDefaultModel(ctx, user._id);
     const prepared = await prepareSend(
       ctx,
       user._id,
       prompt,
       attachmentFileIds,
+      model,
     );
     if ("code" in prepared) return prepared;
     const { text, message, attachments } = prepared;
@@ -144,6 +163,11 @@ export const startThread = mutation({
     if (autoApprove) {
       await ctx.db.insert("autoApproveThreads", { userId: user._id, threadId });
     }
+    await setThreadModelRow(ctx, {
+      threadId,
+      userId: user._id,
+      modelId: model.id,
+    });
     await sendPrompt(ctx, {
       threadId,
       message,
@@ -168,6 +192,7 @@ export const sendMessage = mutation({
     attachmentFileIds: vAttachmentFileIds,
     threadId: v.string(),
     timeZone: vTimeZone,
+    modelId: v.optional(v.string()),
   },
   returns: v.union(
     v.object({ status: v.union(v.literal("sent"), v.literal("queued")) }),
@@ -177,9 +202,12 @@ export const sendMessage = mutation({
   ),
   handler: async (
     ctx,
-    { prompt, attachmentFileIds = [], threadId, timeZone },
+    { prompt, attachmentFileIds = [], threadId, timeZone, modelId },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
+    const model = modelId
+      ? requireModel(modelId)
+      : await getThreadModel(ctx, { threadId, userId: user._id });
     const [lastTurn, queue, paused] = await Promise.all([
       getLastTurn(ctx, threadId),
       listQueuedPrompts(ctx, threadId),
@@ -200,10 +228,16 @@ export const sendMessage = mutation({
       user._id,
       prompt,
       attachmentFileIds,
+      model,
     );
     if ("code" in prepared) return prepared;
     const { text, message, attachments } = prepared;
     await setThreadStatus(ctx, threadId, "active");
+    await setThreadModelRow(ctx, {
+      threadId,
+      userId: user._id,
+      modelId: model.id,
+    });
     if (shouldQueue) {
       // Leaves the last turn's actions as they are. startNextPrompt starts
       // nothing while a card waits.
@@ -316,21 +350,23 @@ export const editPrompt = mutation({
 
 /**
  * Runs the steps startThread and sendMessage share before they save the
- * prompt. Checks the prompt, loads its attachments and counts the Send
- * (limitSend). Returns the checked text, the prompt's message and the
- * attachments, or the refusal to return.
+ * prompt. Checks the prompt, loads its attachments for `model`, the
+ * reply's model, and counts the Send (limitSend). Returns the checked
+ * text, the prompt's message and the attachments, or the refusal to return.
  */
 async function prepareSend(
   ctx: MutationCtx,
   userId: string,
   prompt: string,
   attachmentFileIds: string[],
+  model: Model,
 ) {
   const text = checkPrompt(prompt, attachmentFileIds.length);
   const attachments = await loadPromptAttachments(
     ctx,
     userId,
     attachmentFileIds,
+    model,
   );
   if ("code" in attachments) return attachments;
   const refused = await limitSend(ctx, userId);
@@ -477,6 +513,7 @@ async function startNextQueuedPrompt(
     ctx,
     next.userId,
     next.attachmentFileIds,
+    await getThreadModel(ctx, { threadId, userId: next.userId }),
   );
   if ("code" in attachments) {
     await pauseThreadQueue(ctx, threadId);

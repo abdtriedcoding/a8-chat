@@ -27,6 +27,7 @@ import { getStoppedReply, isReplyInProgress } from "./chat/stop";
 import { hasPendingReply, MAX_TURN_MESSAGES } from "./chat/turns";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { authorizeThreadAccess, getOwnThread } from "./lib/guards";
+import { replyModelIds } from "./lib/models";
 import { redactMessage, vSharedMessage } from "./lib/sharedMessages";
 import { refuseTemporaryThread } from "./lib/temporaryThreads";
 import { limitShare } from "./rateLimits";
@@ -198,8 +199,9 @@ async function copyMessages(
     ? page.filter((message) => message.order !== oldestOrder)
     : page;
 
+  const modelIds = replyModelIds(batch);
   for (const message of toUIMessages(batch)) {
-    const shared = redactMessage(message);
+    const shared = redactMessage(message, modelIds.get(message.order));
     if (!shared) continue;
     await ctx.db.insert("sharedSnapshotMessages", {
       snapshotId,

@@ -28,7 +28,7 @@ You need [Bun](https://bun.sh) and a [Convex](https://convex.dev) account.
    bunx convex env set SITE_URL http://localhost:3000
    bunx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
    bunx convex env set CONNECTION_ENCRYPTION_KEY "$(openssl rand -base64 32)"
-   bunx convex env set ANTHROPIC_API_KEY <key>
+   bunx convex env set AI_GATEWAY_API_KEY <key>
    bunx convex env set GOOGLE_CLIENT_ID <client id>
    bunx convex env set GOOGLE_CLIENT_SECRET <client secret>
    bunx convex env set RESEND_API_KEY <key>
@@ -58,7 +58,7 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 
 | Variable | Required | What it's for |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Yes | The Anthropic API key for replies and thread titles. |
+| `AI_GATEWAY_API_KEY` | Yes | A [Vercel AI Gateway](https://vercel.com/ai-gateway) API key. Every model goes through the gateway, Claude included, for replies and thread titles. To pay Anthropic directly, add your Anthropic key to the gateway as BYOK. |
 | `TAVILY_API_KEY` | No | A [Tavily](https://tavily.com) API key. Set it to turn on web search. |
 | `DEEPGRAM_API_KEY` | No | A [Deepgram](https://deepgram.com) API key with the Member role or higher. Set it to turn on dictation. |
 | `CONNECTION_ENCRYPTION_KEY` | Yes | A base64-encoded 32-byte key that encrypts connection tokens and OAuth client secrets. Generate one with `openssl rand -base64 32`. Don't change it once connections exist, because a8 can't rewrite stored secrets under a new key yet. See [the encryption key](docs/connectors/README.md#the-encryption-key). |
@@ -106,7 +106,7 @@ Only the hosted a8 sets these up. In the Polar organization (use [sandbox.polar.
 | `MCP_TOKEN` | `bun run probe` | An access token for the vendor's MCP server, so the probe can list its tools. |
 | `E2E_EMAIL`, `E2E_PASSWORD_HASH` | `scripts/worktree-setup.ts` | A test login that the setup script creates in each git worktree's dev deployment, so browser checks can sign in. Optional. |
 
-`scripts/worktree-setup.ts` gives each linked git worktree its own dev deployment, port and `.env.local`. It copies `.env.local` from the main checkout, and it needs `ANTHROPIC_API_KEY`, `BETTER_AUTH_SECRET` and `CONNECTION_ENCRYPTION_KEY` set as the project's dev env defaults with `bunx convex env default set --type dev NAME value`.
+`scripts/worktree-setup.ts` gives each linked git worktree its own dev deployment, port and `.env.local`. It copies `.env.local` from the main checkout, and it needs `AI_GATEWAY_API_KEY`, `BETTER_AUTH_SECRET` and `CONNECTION_ENCRYPTION_KEY` set as the project's dev env defaults with `bunx convex env default set --type dev NAME value`.
 
 ## Scripts
 

@@ -7,10 +7,8 @@ import {
   action,
   internalMutation,
   mutation,
-  query,
   type ActionCtx,
 } from "../_generated/server";
-import { chatModel } from "../agents/chat";
 import { requireIdentity, requireUser } from "../lib/guards";
 import {
   checkUploadBytes,
@@ -21,10 +19,10 @@ import {
 } from "../rateLimits";
 import {
   cleanFilename,
-  getAcceptedMediaTypes,
   getAttachmentRejectionReason,
   getOversizeReason,
   readMediaType,
+  UPLOAD_MEDIA_TYPES,
 } from "../lib/attachments";
 
 // Attaching a file takes three steps. The browser gets an upload URL
@@ -53,18 +51,6 @@ type RegisteredUpload = Infer<typeof vRegisteredUpload>;
 type UploadRejected = Infer<typeof vUploadRejected>;
 type UploadUrlRejected = Infer<typeof vUploadUrlRejected>;
 type ClaimedUpload = Infer<typeof vClaimedUpload>;
-
-/**
- * The media types the current model accepts as attachments. The composer
- * hides its attach button when the list is empty.
- */
-export const capabilities = query({
-  args: {},
-  returns: v.object({ acceptedMediaTypes: v.array(v.string()) }),
-  handler: async () => {
-    return { acceptedMediaTypes: getAcceptedMediaTypes(chatModel.provider) };
-  },
-});
 
 /** How long an upload grant can wait before registerUpload can't spend it. */
 export const UPLOAD_GRANT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -209,12 +195,11 @@ export const registerUpload = action({
     );
     if ("code" in claimedUpload) return claimedUpload;
     const safeFilename = cleanFilename(filename);
-    const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
 
     // registerUpload refuses a file too big for every type before reading it.
     const oversizeReason = getOversizeReason(
       { name: safeFilename, size: claimedUpload.size },
-      acceptedMediaTypes,
+      UPLOAD_MEDIA_TYPES,
     );
     if (oversizeReason) {
       return await rejectUpload(ctx, storageId, oversizeReason);
@@ -225,7 +210,7 @@ export const registerUpload = action({
     const mediaType = storedFile ? await readMediaType(storedFile) : "";
     const rejectionReason = getAttachmentRejectionReason(
       { name: safeFilename, type: mediaType, size: claimedUpload.size },
-      acceptedMediaTypes,
+      UPLOAD_MEDIA_TYPES,
     );
     if (rejectionReason) {
       return await rejectUpload(ctx, storageId, rejectionReason);

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/message";
 import { replyText } from "@/lib/reply-text";
 import type { ThreadMessage } from "@/lib/stopped-turns";
+import { findModel } from "../../../convex/lib/models";
 import { ActionCard, AutoApprovedRecord } from "./action-card";
 import {
   ConnectorToolRow,
@@ -103,6 +104,9 @@ export const AssistantMessage = memo(function AssistantMessage({
   // A failed reply has Regenerate in its error bubble, so the row under it
   // leaves Regenerate out.
   const footerRegenerate = lastTurn && !failed && regenerate !== undefined;
+  const modelName = message.metadata?.modelId
+    ? findModel(message.metadata.modelId)?.name
+    : undefined;
 
   return (
     <Message align="start">
@@ -156,12 +160,16 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         )}
         {stopped && <TurnMarker kind="stopped" />}
-        {!streaming && (text || footerRegenerate) && (
-          // Stays shown while the reply is read aloud, so Stop is in reach.
-          <MessageFooter className="-mt-1.5 gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 has-data-reading:opacity-100 pointer-coarse:opacity-100">
-            {text && <CopyButton text={text} label="Copy reply" />}
-            {text && <ReadAloudButton id={message.id} text={text} />}
-            {footerRegenerate && <RegenerateButton />}
+        {!streaming && (text || footerRegenerate || modelName) && (
+          <MessageFooter className="-mt-1.5 gap-1">
+            {/* Always shown, so a thread that mixes models reads clearly. */}
+            {modelName && <span className="pr-1.5">{modelName}</span>}
+            {/* Stays shown while the reply is read aloud, so Stop is in reach. */}
+            <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 has-data-reading:opacity-100 pointer-coarse:opacity-100">
+              {text && <CopyButton text={text} label="Copy reply" />}
+              {text && <ReadAloudButton id={message.id} text={text} />}
+              {footerRegenerate && <RegenerateButton />}
+            </div>
           </MessageFooter>
         )}
       </MessageContent>

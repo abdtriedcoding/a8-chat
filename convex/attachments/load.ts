@@ -4,12 +4,12 @@ import { v, type Infer } from "convex/values";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { components } from "../_generated/api";
 import type { MutationCtx } from "../_generated/server";
-import { chatModel } from "../agents/chat";
 import {
   checkAttachmentCount,
   getAcceptedMediaTypes,
   UNNAMED_FILE,
 } from "../lib/attachments";
+import type { Model } from "../lib/models";
 
 /**
  * Why a Send refused an attachment: the user didn't upload it, or
@@ -29,9 +29,9 @@ export type AttachmentNotFound = Infer<typeof vAttachmentNotFound>;
  * AttachmentNotFound if the user didn't register a file, or it's been
  * deleted.
  *
- * Throws if there are more than MAX_ATTACHMENTS_PER_PROMPT files, or the
- * model doesn't accept one. The browser checks both before uploading, so only
- * a call that skips it gets these.
+ * Throws if there are more than MAX_ATTACHMENTS_PER_PROMPT files, or
+ * `model`, the reply's model, doesn't read one. The browser checks both
+ * before uploading, so only a call that skips it gets these.
  *
  * The parts carry the files' storage URLs. The model's provider fetches the
  * files from there, so the reply runner never loads them.
@@ -40,10 +40,11 @@ export async function loadPromptAttachments(
   ctx: MutationCtx,
   userId: string,
   fileIds: string[],
+  model: Model,
 ) {
   const uniqueFileIds = [...new Set(fileIds)];
   checkAttachmentCount(uniqueFileIds.length);
-  const acceptedMediaTypes = getAcceptedMediaTypes(chatModel.provider);
+  const acceptedMediaTypes = getAcceptedMediaTypes(model.reads);
 
   const loadedAttachments = await Promise.all(
     uniqueFileIds.map(async (fileId) => {

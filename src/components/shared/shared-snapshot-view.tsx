@@ -98,6 +98,7 @@ function toThreadMessage({ _id, message }: SharedRow): ThreadMessage {
     text: message.text,
     // The snapshot's parts are a subset of the UI message's.
     parts: message.parts as ThreadMessage["parts"],
+    metadata: message.modelId ? { modelId: message.modelId } : undefined,
     _creationTime: 0,
   };
 }

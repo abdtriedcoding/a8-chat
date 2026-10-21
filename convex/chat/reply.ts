@@ -15,12 +15,15 @@ import {
 import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
+import { gatewayOptions, languageModelFor } from "../lib/gateway";
 import { replyInstructions } from "../lib/instructions";
+import { modelOrDefault } from "../lib/models";
 import {
   findThreadScheduledPrompt,
   type RunEnding,
 } from "../lib/scheduledPrompts";
 import { findTemporaryThread } from "../lib/temporaryThreads";
+import { getThreadModel } from "../lib/threadModels";
 import {
   CACHE_BREAKPOINT,
   createReplyTools,
@@ -101,9 +104,11 @@ export const streamReply = internalAction({
         { threadId, promptMessageId, order, continuing },
       );
       if (!start) return;
+      const { modelId, ...toolStart } = start;
+      const model = modelOrDefault(modelId);
       replyTools = await createReplyTools(ctx, {
         threadId,
-        ...start,
+        ...toolStart,
         timeZone,
         stepsTaken,
         autoApprovedCount,
@@ -114,6 +119,8 @@ export const streamReply = internalAction({
         { threadId },
         {
           promptMessageId,
+          model: languageModelFor(model),
+          providerOptions: gatewayOptions(model),
           // A cache breakpoint on the instructions. The tools come before
           // them in the request, so they cache too.
           instructions: {
@@ -266,6 +273,7 @@ const vReplyStart = v.union(
     threadDefersTools: v.boolean(),
     temporary: v.boolean(),
     autoApprove: v.boolean(),
+    modelId: v.string(),
   }),
 );
 
@@ -273,7 +281,7 @@ type ReplyStart = Infer<typeof vReplyStart>;
 
 /**
  * Everything streamReply reads before it builds tools, in one query. The
- * fields go to createReplyTools as they are.
+ * fields other than `modelId` go to createReplyTools as they are.
  *
  * Null if streamReply shouldn't call the model. That's when the user pressed
  * Stop before the runner started, or the prompt is gone. A regenerate or an
@@ -296,6 +304,9 @@ type ReplyStart = Infer<typeof vReplyStart>;
  * - `autoApprove`: whether the thread has auto-approve on. Never in a
  *   scheduled prompt thread, whose runs always stop on their cards (ADR
  *   0013). Read at every start, so a change counts from the next one.
+ * - `modelId`: the thread's model (getThreadModel), read at every start
+ *   too, so a reply continuing after action cards and a queued prompt use
+ *   the model the thread has then.
  */
 export const getReplyStart = internalQuery({
   args: {
@@ -328,13 +339,17 @@ export const getReplyStart = internalQuery({
     if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
     const userId = thread?.userId;
-    const connections = userId ? await readUserConnections(ctx, userId) : [];
+    const [connections, model] = await Promise.all([
+      userId ? readUserConnections(ctx, userId) : [],
+      getThreadModel(ctx, { threadId, userId }),
+    ]);
     return {
       promptText: prompt?.text ?? "",
       connections,
       threadDefersTools: deferredToolThread !== null,
       temporary: temporaryThread !== null,
       autoApprove: isAutoApproveOn(autoApproveThread, scheduledPrompt),
+      modelId: model.id,
     };
   },
 });

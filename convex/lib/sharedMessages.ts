@@ -51,6 +51,9 @@ export const vSharedMessage = v.object({
   role: v.union(v.literal("user"), v.literal("assistant")),
   // The turn's order in the thread. A prompt and its reply share it.
   order: v.number(),
+  // A reply's model (lib/models.ts). Unset on a prompt, on a reply from a
+  // model that left the list, and on snapshots copied before a8 kept it.
+  modelId: v.optional(v.string()),
   text: v.string(),
   parts: v.array(
     v.union(
@@ -69,10 +72,13 @@ type SharedPart = SharedMessage["parts"][number];
  * The message as a shared snapshot keeps it, or null when nothing of it is
  * kept. A prompt keeps its text and attachments. A reply keeps its text,
  * its web searches, and the names of its connector and scheduled prompt
- * tool calls. It drops every other field, such as IDs, metadata, status
- * and errors.
+ * tool calls, and `modelId`, the model that wrote it (replyModelIds). It
+ * drops every other field, such as IDs, metadata, status and errors.
  */
-export function redactMessage(message: UIMessage): SharedMessage | null {
+export function redactMessage(
+  message: UIMessage,
+  modelId: string | undefined,
+): SharedMessage | null {
   if (message.role !== "user" && message.role !== "assistant") return null;
   const parts = message.parts.flatMap((part): SharedPart[] =>
     message.role === "user" ? promptPart(part) : replyPart(part),
@@ -82,7 +88,13 @@ export function redactMessage(message: UIMessage): SharedMessage | null {
   // Like replyText in the client, a reply's steps get a blank line between.
   const text = message.role === "user" ? message.text : texts.join("\n\n");
   if (!text && texts.length === parts.length) return null;
-  return { role: message.role, order: message.order, text, parts };
+  return {
+    role: message.role,
+    order: message.order,
+    ...(message.role === "assistant" && modelId !== undefined && { modelId }),
+    text,
+    parts,
+  };
 }
 
 type Part = UIMessage["parts"][number];

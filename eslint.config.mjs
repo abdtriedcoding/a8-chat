@@ -11,6 +11,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "connectorView",
   "creditPeriod",
   "errors",
+  "models",
   "monthlyPeriod",
   "prompt",
   "queue",

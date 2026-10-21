@@ -56,6 +56,13 @@ export function NewChat({ prompt }: { prompt?: string }) {
   const openTemporaryThread = useOpenTemporaryThread();
   const busy = starting || navigating;
   const { isAuthenticated } = useConvexAuth();
+  // The chat starts on the user's default model, unless they pick another.
+  const defaultModelId = useQuery(
+    api.models.defaultModel,
+    isAuthenticated ? {} : "skip",
+  );
+  const [pickedModelId, setPickedModelId] = useState<string>();
+  const modelId = pickedModelId ?? defaultModelId ?? undefined;
   const user = useQuery(api.auth.getCurrentUser, isAuthenticated ? {} : "skip");
   const firstName = user?.name.trim().split(/\s+/)[0];
   // The server doesn't know the local hour, and the name loads after the
@@ -74,6 +81,7 @@ export function NewChat({ prompt }: { prompt?: string }) {
           timeZone: browserTimeZone(),
           temporary,
           autoApprove,
+          modelId,
         }),
       );
       if (temporary) openTemporaryThread(threadId);
@@ -144,6 +152,8 @@ export function NewChat({ prompt }: { prompt?: string }) {
           disabled={busy}
           autoApprove={autoApprove}
           onAutoApproveChange={isAuthenticated ? setAutoApprove : undefined}
+          modelId={modelId}
+          onModelChange={isAuthenticated ? setPickedModelId : undefined}
           autoFocus
           className="w-full max-w-2xl *:data-[slot=input-group]:rounded-xl *:data-[slot=input-group]:border-white/60 *:data-[slot=input-group]:shadow-[0_12px_40px_-12px_rgb(30_58_138/0.45)] dark:*:data-[slot=input-group]:border-white/15 dark:*:data-[slot=input-group]:bg-card/75 dark:*:data-[slot=input-group]:shadow-[0_12px_40px_-12px_rgb(0_0_0/0.6)] dark:*:data-[slot=input-group]:backdrop-blur-xl"
         />

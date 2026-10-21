@@ -3,7 +3,8 @@ import { generateText } from "ai";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { internalAction, internalMutation } from "./_generated/server";
-import { chatModel } from "./agents/chat";
+import { gatewayOptions, languageModelFor } from "./lib/gateway";
+import { modelOrDefault, TITLE_MODEL_ID } from "./lib/models";
 import { cleanTitle } from "./lib/prompt";
 import { recordModelUsage } from "./lib/usage";
 
@@ -23,9 +24,13 @@ const MAX_TITLE_TOKENS = 30;
 
 const MAX_TITLE_PROMPT_LENGTH = 1_000;
 
+// Titles stay on a cheap model, whatever the thread's model.
+const titleModel = modelOrDefault(TITLE_MODEL_ID);
+const titleLanguageModel = languageModelFor(titleModel);
+
 /**
- * Asks the model for a short title for a new thread, and saves it in place
- * of the placeholder. 
+ * Asks TITLE_MODEL_ID for a short title for a new thread, and saves it in
+ * place of the placeholder. It costs the user no credits.
  *
  * The title comes from the first 1,000 characters of the prompt's text, or
  * from its file names when it has no text.
@@ -47,7 +52,8 @@ export const generateTitle = internalAction({
       .slice(0, MAX_TITLE_PROMPT_LENGTH)
       .join("");
     const result = await generateText({
-      model: chatModel,
+      model: titleLanguageModel,
+      providerOptions: gatewayOptions(titleModel),
       ...(prompt
         ? {
             instructions: TITLE_INSTRUCTIONS,
@@ -63,8 +69,8 @@ export const generateTitle = internalAction({
       userId,
       threadId,
       agentName: undefined,
-      provider: chatModel.provider,
-      model: chatModel.modelId,
+      provider: titleLanguageModel.provider,
+      model: titleLanguageModel.modelId,
       usage: result.usage,
       providerMetadata: result.providerMetadata,
     });
