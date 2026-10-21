@@ -169,6 +169,10 @@ _Avoid_: provider, LLM (in UI copy), engine
 The company that made a model, like OpenAI, Google or Anthropic. The picker has a tab for each lab and shows its logo beside each model's name.
 _Avoid_: provider, vendor, maker
 
+**Connector check**:
+A test of whether a model can use connectors. The model finds a deferred tool with a8's tool search, runs a read, asks for an action, and answers after the user cancels the action card. The picker marks each model that passed one. A model without the mark may still work.
+_Avoid_: verified model, certified model
+
 **Default model**:
 The model a new thread starts on. The user sets it. If the user's plan doesn't include it, new threads and model switches use the first Free model instead.
 _Avoid_: preferred model, global model

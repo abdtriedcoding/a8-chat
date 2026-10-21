@@ -14,7 +14,7 @@ Prices set the plan. `convex/lib/models.ts` estimates a typical reply at 30,000 
 
 ## Consequences
 
-- Most models on the list haven't been tried with connectors or action cards. The gateway's `tool-use` tag is the only check. A model that turns out broken can be filtered out in the script.
+- Most models on the list haven't been tried with connectors or action cards. The gateway's `tool-use` tag is the only check. ADR 0018 marks the models that passed a connector check and keeps the rest on the list.
 - New models wait for someone to run the script. A scheduled job that runs it and opens a pull request would close that gap.
 - A model the gateway drops leaves the list on the next sync. Threads on it fall back to the default model, as before (lib/threadModels.ts).
 - Every Claude model gets Anthropic's tool search and cache breakpoints (ADR 0015, ADR 0016). The gateway lists only Claude 4.5 and later, which all support them.
