@@ -257,6 +257,11 @@ if (!process.env.AI_GATEWAY_API_KEY) {
 const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
 /** Dollars spent so far, across every model. */
 let spent = 0;
+/**
+ * Set when a step's cost can't be found. `spent` is then too low, so no
+ * new model starts.
+ */
+let costUnknown = false;
 
 heading(`Checking ${selected.length} model(s), budget $${budget.toFixed(2)}`);
 const queue = [...selected];
@@ -267,7 +272,13 @@ const skipped = queue.length;
 const passed = [...results.values()].filter((result) => result.passed).length;
 heading("Totals");
 console.log(`${results.size} checked: ${passed} passed, ${results.size - passed} failed`);
-if (skipped > 0) console.log(`${skipped} not started, since the budget ran out`);
+if (skipped > 0) {
+  console.log(
+    costUnknown
+      ? `${skipped} not started, since a step's cost couldn't be found`
+      : `${skipped} not started, since the budget ran out`,
+  );
+}
 console.log(`spent $${spent.toFixed(4)}`);
 
 if (values["no-write"]) {
@@ -277,9 +288,12 @@ if (values["no-write"]) {
   console.log("Wrote convex/lib/connectorChecks.ts.");
 }
 
-/** Takes models off the queue until it's empty or the budget is spent. */
+/**
+ * Takes models off the queue until it's empty, the budget is spent, or a
+ * cost is unknown.
+ */
 async function runQueue() {
-  while (queue.length > 0 && spent < budget) {
+  while (queue.length > 0 && spent < budget && !costUnknown) {
     const model = queue.shift()!;
     const { passed, note, cost } = await checkModel(model);
     results.set(model.gatewayId, {
@@ -606,12 +620,21 @@ function costMeter() {
         spent += cost;
       } else if (typeof gatewayMeta?.generationId === "string") {
         lookups.push(gatewayMeta.generationId);
+      } else {
+        costUnknown = true;
       }
     },
-    /** The check's cost, after looking up steps whose metadata had none. */
+    /**
+     * The check's cost, after looking up steps whose metadata had none. A
+     * lookup that finds no cost sets costUnknown.
+     */
     total: async () => {
       for (const id of lookups.splice(0)) {
-        const cost = (await generationInfo(id))?.totalCost ?? 0;
+        const cost = (await generationInfo(id))?.totalCost;
+        if (typeof cost !== "number" || !Number.isFinite(cost)) {
+          costUnknown = true;
+          continue;
+        }
         known += cost;
         spent += cost;
       }
