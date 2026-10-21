@@ -1,15 +1,98 @@
-// The cost recorder (ADR 0015). lib/usage.ts prices model calls and web
-// searches and sends them here. Only the hosted a8 records costs.
+// The cost recorder (ADR 0015). lib/usage.ts sends model calls, with the
+// cost AI Gateway reports, and web searches here. Only the hosted a8
+// records costs.
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation } from "./_generated/server";
+import { internalAction, internalMutation } from "./_generated/server";
 import { authComponent } from "./auth";
 import { billingEnabled, getPlan } from "./lib/billing";
 import { CREDITS_PER_USD, currentCreditRow } from "./lib/credits";
 import { addDailySpend } from "./lib/dailySpend";
+import { gateway } from "./lib/gateway";
 import { vTokenCounts, vUsageKind } from "./schema";
 
 const PURGE_BATCH_SIZE = 100;
+
+/**
+ * How long after a model call to first ask the gateway for its cost, and
+ * before the second try. Each try after that waits twice as long as the
+ * one before. The gateway took 8 to 10 seconds to report a cost in testing
+ * (Oct 21, 2026).
+ */
+const COST_LOOKUP_DELAY_MS = 5_000;
+
+/**
+ * How many times recordGenerationCost asks the gateway for a cost. Six
+ * tries span about two and a half minutes.
+ */
+const COST_LOOKUP_ATTEMPTS = 6;
+
+/** A model call's usage event, before the gateway reports its cost. */
+const vModelCall = v.object({
+  userId: v.optional(v.string()),
+  threadId: v.optional(v.string()),
+  kind: vUsageKind,
+  model: v.string(),
+  tokens: vTokenCounts,
+});
+
+/**
+ * Schedules recordGenerationCost for a model call. recordModelUsage
+ * (lib/usage.ts) calls it from the usage handler, whose ctx can't schedule.
+ */
+export const scheduleCostLookup = internalMutation({
+  args: { generationId: v.string(), event: vModelCall },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.scheduler.runAfter(
+      COST_LOOKUP_DELAY_MS,
+      internal.usage.recordGenerationCost,
+      args,
+    );
+    return null;
+  },
+});
+
+/**
+ * Asks AI Gateway what a model call cost and records it (ADR 0015). The
+ * gateway can take a while to record a generation, so a lookup that fails
+ * tries again, waiting longer each time, up to COST_LOOKUP_ATTEMPTS times. A cost the gateway never
+ * reports is logged, not recorded.
+ */
+export const recordGenerationCost = internalAction({
+  args: {
+    generationId: v.string(),
+    event: vModelCall,
+    attempt: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { generationId, event, attempt = 1 }): Promise<null> => {
+    let costUsd: number;
+    try {
+      ({ totalCost: costUsd } = await gateway.getGenerationInfo({
+        id: generationId,
+      }));
+    } catch (error) {
+      if (attempt >= COST_LOOKUP_ATTEMPTS) {
+        console.error(`No cost for generation ${generationId}`, event, error);
+        return null;
+      }
+      await ctx.scheduler.runAfter(
+        COST_LOOKUP_DELAY_MS * 2 ** (attempt - 1),
+        internal.usage.recordGenerationCost,
+        { generationId, event, attempt: attempt + 1 },
+      );
+      return null;
+    }
+    // A failed write is logged, like a failed lookup.
+    await ctx
+      .runMutation(internal.usage.record, { ...event, costUsd })
+      .catch((error: unknown) =>
+        console.error("Couldn't record usage", event, error),
+      );
+    return null;
+  },
+});
 
 /**
  * Records one usage event. It doesn't know where the cost came from. Adds

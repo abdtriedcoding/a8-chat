@@ -17,12 +17,13 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `auth.ts`: Better Auth's options, `getCurrentUser`, and `purgeAccount`, which deletes a user's data when they delete their account.
 - `emails.ts`: queues verification, password reset and scheduled run emails through Resend.
 - `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, and the action that cancels a deleted user's subscription.
-- `usage.ts`: the cost recorder. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.
+- `usage.ts`: the cost recorder, and the lookup of each model call's cost on AI Gateway. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.
 - `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins, connector tool calls and shares. Web searches also have a daily cap across all users. On the hosted a8, a send also needs credits left and the day's spend under the daily ceiling (`checkSpend`). Self-hosted a8 has no credits, so its sends keep daily caps per user and across all users.
 
 ### Chat
 
-- `agents/chat.ts`: the chat model, the Agent and the native tools.
+- `agents/chat.ts`: the Agent and the native tools.
+- `models.ts`: the model picker's functions, which set a thread's model and the user's default model.
 - `chat/send.ts`: the four Sends, which are `startThread`, `sendMessage`, `editPrompt` and `regenerateReply`, plus starting and resuming the queue. `sendMessage` queues its prompt while the thread is busy.
 - `chat/reply.ts`: `streamReply`, which writes a reply, and the reply's start and failure.
 - `chat/stop.ts`: stopping a reply, and the text a stopped reply keeps.
@@ -32,7 +33,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `chat/messages.ts`: `listThreadMessages`, the thread's messages for the UI.
 - `threads.ts`: listing, getting, searching, renaming and deleting threads.
 - `sharedSnapshots.ts`: sharing a thread through a public link (ADR 0011). It copies the thread's finished turns in batches, unshares, and serves the public page's queries.
-- `titles.ts`: a new thread's title, written by the model from its first prompt.
+- `titles.ts`: a new thread's title, written by Claude Haiku from its first prompt at no credit cost.
 - `tools/webSearch.ts`: the web search tool, and the only code that calls Tavily (ADR 0001).
 
 ### Attachments
@@ -56,8 +57,10 @@ These modules hold helpers and register no Convex functions.
 - `lib/monthlyPeriod.ts`: the date math for a plan's monthly periods, shared with the Billing page.
 - `lib/credits.ts`: the credit ledger, and `currentCreditRow`, which opens a new period on the first usage in it or after an upgrade.
 - `lib/creditPeriod.ts`: which ledger row covers now, shared with the Billing page.
-- `lib/usage.ts`: prices reply steps, titles and web searches and sends them to the cost recorder.
-- `lib/modelPrices.ts`: Anthropic's token prices for the Claude models a8 runs.
+- `lib/usage.ts`: sends reply steps, titles and web searches to the cost recorder. A model call costs what AI Gateway reports for it.
+- `lib/models.ts`: the model list, with each model's lab, gateway id, attachments, plans and rough credits per reply. Shared with the picker.
+- `lib/gateway.ts`: the AI Gateway client, and the language model for a model on the list.
+- `lib/threadModels.ts`: each thread's model and each user's default model.
 - `lib/guards.ts`: session and ownership checks. See the rules below.
 - `lib/errors.ts`: the error codes and `appError`. See the rules below.
 - `lib/prompt.ts`: prompt and title checks, and the prompt message the model gets.

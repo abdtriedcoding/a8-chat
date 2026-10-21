@@ -1,4 +1,4 @@
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -44,12 +44,9 @@ export type UploadedAttachment = {
  * The composer's attachments. `addFiles` checks each file, then uploads it
  * to Convex storage and registers it (convex/attachments/upload.ts). The attach
  * button, paste and drag-drop all add files through it.
- * `acceptedMediaTypes` lists the media types the current model takes, and
- * is empty while it loads.
+ * `acceptedMediaTypes` lists the media types the composer's model reads.
  */
-export function useComposerAttachments() {
-  const capabilities = useQuery(api.attachments.upload.capabilities);
-  const acceptedMediaTypes = capabilities?.acceptedMediaTypes ?? [];
+export function useComposerAttachments(acceptedMediaTypes: readonly string[]) {
   const generateUploadUrl = useMutation(
     api.attachments.upload.generateUploadUrl,
   );

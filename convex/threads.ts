@@ -42,6 +42,7 @@ import {
   listTemporaryThreadIds,
   refuseTemporaryThread,
 } from "./lib/temporaryThreads";
+import { deleteThreadModel, getThreadModel } from "./lib/threadModels";
 import { snippetAround } from "./lib/threadSearchSnippet";
 
 const vThreadSummary = v.object({
@@ -197,16 +198,19 @@ export const get = query({
       // Whether the thread has auto-approve on. Always false in a
       // scheduled prompt thread.
       autoApprove: v.boolean(),
+      // The id of the model its next reply uses (getThreadModel).
+      modelId: v.string(),
     }),
     v.null(),
   ),
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
     if (!thread) return null;
-    const [temporary, scheduledPrompt, autoApprove] = await Promise.all([
+    const [temporary, scheduledPrompt, autoApprove, model] = await Promise.all([
       findTemporaryThread(ctx, threadId),
       findThreadScheduledPrompt(ctx, threadId),
       findAutoApproveThread(ctx, threadId),
+      getThreadModel(ctx, { threadId, userId: thread.userId }),
     ]);
     return {
       _id: thread._id,
@@ -216,6 +220,7 @@ export const get = query({
       scheduledPromptId: scheduledPrompt?._id ?? null,
       unread: (scheduledPrompt?.unreadRuns ?? 0) > 0,
       autoApprove: isAutoApproveOn(autoApprove, scheduledPrompt),
+      modelId: model.id,
     };
   },
 });
@@ -393,10 +398,11 @@ export async function setThreadStatus(
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
  * the background. This deletes its stoppedReplies, deferredToolThreads,
- * threadPins, temporaryThreads, autoApproveThreads and pendingActions rows,
- * its queue, its shared snapshot and its scheduled prompt right away, and
- * cancels the scheduled prompt's next run. Its attachments, queued ones included, are
- * left unreferenced, and cleanUpUnsentUploads deletes them.
+ * threadPins, temporaryThreads, autoApproveThreads, threadModels and
+ * pendingActions rows, its queue, its shared snapshot and its scheduled
+ * prompt right away, and cancels the scheduled prompt's next run. Its
+ * attachments, queued ones included, are left unreferenced, and
+ * cleanUpUnsentUploads deletes them.
  */
 export const remove = mutation({
   args: { threadId: v.string() },
@@ -431,6 +437,7 @@ export async function deleteThread(ctx: MutationCtx, threadId: string) {
   if (temporary) await ctx.db.delete("temporaryThreads", temporary._id);
   const autoApprove = await findAutoApproveThread(ctx, threadId);
   if (autoApprove) await ctx.db.delete("autoApproveThreads", autoApprove._id);
+  await deleteThreadModel(ctx, threadId);
   await deletePendingActions(ctx, threadId);
   await deleteThreadQueue(ctx, threadId);
   await deleteThreadSnapshot(ctx, threadId);

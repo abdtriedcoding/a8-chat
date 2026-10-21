@@ -37,6 +37,7 @@ import { useQueueActions } from "@/hooks/use-queue-actions";
 import { useRegenerateReply } from "@/hooks/use-regenerate-reply";
 import { useSendPrompt } from "@/hooks/use-send-prompt";
 import { useSetAutoApprove } from "@/hooks/use-set-auto-approve";
+import { useSetThreadModel } from "@/hooks/use-set-thread-model";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { useStableMessages } from "@/hooks/use-stable-messages";
@@ -110,13 +111,14 @@ export function ThreadView({ threadId }: { threadId: string }) {
     replyInProgress || (queuedPrompts.length > 0 && queue?.paused !== true);
   const queueFull = sendQueues && queuedPrompts.length >= MAX_QUEUED_PROMPTS;
 
-  const send = useSendPrompt(threadId, sendQueues);
+  const send = useSendPrompt(threadId, sendQueues, thread?.modelId);
   const stop = useStopReply(threadId);
   const regenerate = useRegenerateReply(threadId);
   const edit = useEditPrompt(threadId);
   const decide = useDecideAction(threadId);
   const queueActions = useQueueActions(threadId);
   const setAutoApprove = useSetAutoApprove();
+  const setThreadModel = useSetThreadModel();
   // A stopped turn counts as done, and so does a reply that timed out.
   const canRedoLastTurn = messages.length > 0 && !replyInProgress;
   const copyableText = lastReplyText(messages, stopped);
@@ -247,6 +249,12 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onAutoApproveChange={
             thread && !thread.scheduledPromptId
               ? (on) => setAutoApprove({ threadId, on })
+              : undefined
+          }
+          modelId={thread?.modelId}
+          onModelChange={
+            thread
+              ? (modelId) => setThreadModel({ threadId, modelId })
               : undefined
           }
           autoFocus

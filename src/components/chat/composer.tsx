@@ -27,6 +27,8 @@ import { useComposerMentions } from "@/hooks/use-composer-mentions";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
+import { getAcceptedMediaTypes } from "../../../convex/lib/attachments";
+import { modelOrDefault } from "../../../convex/lib/models";
 import { ComposerAttachmentChip } from "./attachments";
 import { AutoApproveChip } from "./auto-approve-chip";
 import { CreditNotice } from "./credit-notice";
@@ -34,6 +36,7 @@ import { DictationButton } from "./dictation-button";
 import { FileDropZone } from "./file-drop-zone";
 import { MentionHighlights } from "./mention-highlights";
 import { MentionMenu } from "./mention-menu";
+import { ModelPicker } from "./model-picker";
 
 /**
  * The message box's padding and text size, which MentionHighlights copies
@@ -48,10 +51,10 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * one. `initialText` is read on mount only, so give the box a new key to
  * start it with other text.
  *
- * When the current model accepts files, they can be attached with the
- * attach button, by pasting them into the box, or by dropping them on the
- * page. A prompt can be just attachments, and Send waits for every upload to
- * finish.
+ * When `modelId`, the model the next reply uses, reads files, they can be
+ * attached with the attach button, by pasting them into the box, or by
+ * dropping them on the page. A prompt can be just attachments, and Send
+ * waits for every upload to finish.
  *
  * Typing @ opens a menu of connectors to mention (useComposerMentions). A
  * prompt that mentions a connector that isn't connected can't be sent, and
@@ -63,7 +66,8 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * dictating waits for the last words (useDictation's stop).
  *
  * While `onAutoApproveChange` is set, the toolbar has the auto-approve chip
- * (AutoApproveChip), on while `autoApprove` is.
+ * (AutoApproveChip), on while `autoApprove` is. While `onModelChange` is
+ * set, the model chip (ModelPicker) follows it.
  *
  * On the hosted a8, a notice above the box says when the user is out of
  * credits or low on them (CreditNotice).
@@ -81,6 +85,8 @@ export function Composer({
   textareaRef,
   autoApprove = false,
   onAutoApproveChange,
+  modelId,
+  onModelChange,
   className,
 }: {
   initialText?: string;
@@ -92,9 +98,12 @@ export function Composer({
   textareaRef?: Ref<HTMLTextAreaElement>;
   autoApprove?: boolean;
   onAutoApproveChange?: (on: boolean) => Promise<unknown> | void;
+  modelId?: string;
+  onModelChange?: (modelId: string) => Promise<unknown> | void;
   className?: string;
 }) {
   const [text, setText] = useState(initialText);
+  const model = modelOrDefault(modelId);
   const {
     acceptedMediaTypes,
     attachments,
@@ -103,7 +112,7 @@ export function Composer({
     clearAttachments,
     restoreAttachments,
     freePreviews,
-  } = useComposerAttachments();
+  } = useComposerAttachments(getAcceptedMediaTypes(model.reads));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const highlightsRef = useRef<HTMLDivElement>(null);
@@ -327,6 +336,13 @@ export function Composer({
             <AutoApproveChip
               on={autoApprove}
               onChange={onAutoApproveChange}
+              disabled={disabled}
+            />
+          )}
+          {onModelChange && (
+            <ModelPicker
+              modelId={model.id}
+              onChange={onModelChange}
               disabled={disabled}
             />
           )}

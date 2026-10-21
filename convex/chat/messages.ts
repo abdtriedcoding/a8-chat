@@ -13,6 +13,7 @@ import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { query } from "../_generated/server";
 import { getOwnThread } from "../lib/guards";
+import { replyModelIds } from "../lib/models";
 import { replyFailureReason } from "../lib/replyFailure";
 import { isAwaitingContinuation } from "./approval";
 
@@ -24,11 +25,14 @@ import { isAwaitingContinuation } from "./approval";
  *   what it is, such as attachments too large for the model.
  * - `continuing`: the user has decided on every action card in the reply,
  *   and the runner hasn't picked the reply up again yet.
+ * - `modelId`: the model that wrote the reply (lib/models.ts). Unset while
+ *   the reply has no saved step, and for a model that left the list.
  */
 export type MessageMetadata = {
   stopped?: true;
   failureReason?: string;
   continuing?: boolean;
+  modelId?: string;
 };
 
 const MAX_MESSAGES_PER_PAGE = 100;
@@ -111,6 +115,9 @@ export const listThreadMessages = query({
         ...turnMetadata.get(newestTurn[0].order),
         continuing: true,
       });
+    }
+    for (const [order, modelId] of replyModelIds(paginated.page)) {
+      turnMetadata.set(order, { ...turnMetadata.get(order), modelId });
     }
     for (const message of paginated.page) {
       if (message.status !== "failed") continue;

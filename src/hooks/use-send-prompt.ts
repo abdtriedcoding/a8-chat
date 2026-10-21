@@ -13,8 +13,13 @@ import { browserTimeZone } from "../../convex/lib/timeZone";
  * with `shouldQueue`, in the queue stack. The server decides whether the
  * prompt goes right away or joins the queue, and the screen follows once
  * it answers. A refused send throws a ConvexError that errorMessage can show.
+ * `modelId` is the composer's model, which becomes the thread's.
  */
-export function useSendPrompt(threadId: string, shouldQueue: boolean) {
+export function useSendPrompt(
+  threadId: string,
+  shouldQueue: boolean,
+  modelId: string | undefined,
+) {
   const sendMessage = useMutation(api.chat.send.sendMessage);
 
   return async (prompt: string, attachments: UploadedAttachment[]) => {
@@ -32,6 +37,7 @@ export function useSendPrompt(threadId: string, shouldQueue: boolean) {
         prompt,
         attachmentFileIds: attachments.map(({ fileId }) => fileId),
         timeZone: browserTimeZone(),
+        modelId,
       }),
     );
   };

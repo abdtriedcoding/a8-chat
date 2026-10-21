@@ -12,7 +12,9 @@ const app = defineApp({
     BETTER_AUTH_SECRET: v.string(),
     GOOGLE_CLIENT_ID: v.string(),
     GOOGLE_CLIENT_SECRET: v.string(),
-    ANTHROPIC_API_KEY: v.string(),
+    // The one model key. Every model, Claude included, goes through Vercel AI
+    // Gateway (ADR 0015).
+    AI_GATEWAY_API_KEY: v.string(),
     // Optional. Without it, the model gets no web search tool.
     TAVILY_API_KEY: v.optional(v.string()),
     // Base64-encoded 32-byte key that encrypts connection tokens. Generate

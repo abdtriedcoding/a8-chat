@@ -146,6 +146,24 @@ export default defineSchema({
     userId: v.string(),
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
+  // One row per thread with the model its replies use (lib/threadModels.ts).
+  // startThread adds it, and sendMessage and the picker (setThreadModel in
+  // convex/models.ts) change it. A thread with no row, like a scheduled
+  // prompt's, uses the user's default model. Deleting the thread deletes it.
+  threadModels: defineTable({
+    userId: v.string(),
+    threadId: v.string(),
+    // An id from the model list (lib/models.ts). It can be one that left
+    // the list.
+    modelId: v.string(),
+  }).index("by_threadId", ["threadId"]),
+  // One row per user who has set a preference (convex/models.ts). A user
+  // with no row gets the defaults. Deleting the account deletes it.
+  userPreferences: defineTable({
+    userId: v.string(),
+    // The model new threads start on. Unset means DEFAULT_MODEL_ID.
+    defaultModelId: v.optional(v.string()),
+  }).index("by_userId", ["userId"]),
   // One row per user who has seen the auto-approve warning, so the dialog
   // shows once per account (markWarningSeen in convex/autoApprove.ts).
   // Deleting the account deletes it.

@@ -1,4 +1,5 @@
 import { appError, ERROR_CODES } from "./errors";
+import { MODELS } from "./models";
 
 /** The most attachments one prompt can carry. */
 export const MAX_ATTACHMENTS_PER_PROMPT = 5;
@@ -29,25 +30,26 @@ const SUPPORTED_FILE_TYPES: Record<
 };
 
 /**
- * What each model accepts, by provider. Anthropic models read images and
- * PDFs, and every other model reads nothing. Stage 9's models table
- * replaces this list.
+ * The media types a model reads as attachments, out of the ones a8 takes.
+ * `reads` is from the model's entry in the model list (lib/models.ts).
  */
-const ATTACHMENT_KINDS_BY_PROVIDER: Record<string, AttachmentKind[]> = {
-  anthropic: ["image", "pdf"],
-};
-
-/**
- * The media types a model accepts as attachments, out of the ones a8 takes.
- * `providerId` is the AI SDK's provider id, such as "anthropic.messages".
- */
-export function getAcceptedMediaTypes(providerId: string): string[] {
-  const providerName = providerId.split(".")[0];
-  const acceptedKinds = ATTACHMENT_KINDS_BY_PROVIDER[providerName] ?? [];
+export function getAcceptedMediaTypes(
+  reads: readonly AttachmentKind[],
+): string[] {
   return Object.entries(SUPPORTED_FILE_TYPES)
-    .filter(([, fileType]) => acceptedKinds.includes(fileType.kind))
+    .filter(([, fileType]) => reads.includes(fileType.kind))
     .map(([mediaType]) => mediaType);
 }
+
+/**
+ * The media types a8 takes as uploads, which are the ones any listed model
+ * reads. A
+ * Send checks its files again against the reply's model
+ * (loadPromptAttachments).
+ */
+export const UPLOAD_MEDIA_TYPES = getAcceptedMediaTypes([
+  ...new Set(MODELS.flatMap((model) => model.reads)),
+]);
 
 /** Whether a8 takes a media type as an image or a PDF. Null for neither. */
 export function getAttachmentKind(mediaType: string): AttachmentKind | null {
