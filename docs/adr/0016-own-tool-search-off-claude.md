@@ -1,6 +1,6 @@
 # Models other than Claude use a8's own tool search
 
-When a thread's connector tools go over the tool budget (ADR 0006), a Claude reply finds deferred tools with Anthropic's native tool search, as before. Every other model gets a tool search tool that a8 writes itself. The tool searches the deferred tools' names and descriptions and loads the ones it finds into the thread. Anthropic's search can't go through AI Gateway (ADR 0015), Gemini has no tool search, and OpenAI's works only on its own models. One tool a8 owns covers every lab, for the same reason web search is a8's own tool (ADR 0001).
+When a thread's connector tools go over the tool budget (ADR 0006), a Claude reply finds deferred tools with Anthropic's native tool search, as before. Every other model gets a tool search tool that a8 writes itself. The tool searches the deferred tools' names and descriptions and loads the ones it finds into the thread. Anthropic's search runs only on Claude, even through AI Gateway (ADR 0015). Gemini has no tool search, and OpenAI's works only on its own models. One tool a8 owns covers every lab, for the same reason web search is a8's own tool (ADR 0001).
 
 Claude keeps Anthropic's search because the tool search spike tested it, and it keeps the prompt cache.
 
