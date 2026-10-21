@@ -1,3 +1,4 @@
+import type { ModelMessage } from "ai";
 import { appError, ERROR_CODES } from "./errors";
 import { MODELS } from "./models";
 
@@ -101,6 +102,59 @@ export function getOversizeReason(
 
 function describeOversize(filename: string, maxSizeInBytes: number) {
   return `${filename} is over the ${maxSizeInBytes / BYTES_PER_MB} MB limit.`;
+}
+
+/**
+ * The messages with each image or PDF the model can't read replaced by a
+ * text note that names it, so the model knows the file is there. A thread
+ * can switch to a model that can't read a file from an earlier turn. This
+ * changes what's sent to the model, not what's saved. `reads` is from the
+ * model's entry in the model list.
+ */
+export function replaceUnreadableAttachments(
+  messages: ModelMessage[],
+  reads: readonly AttachmentKind[],
+): ModelMessage[] {
+  return messages.map((message) => {
+    if (message.role !== "user" || typeof message.content === "string") {
+      return message;
+    }
+    if (!message.content.some((part) => !canRead(part, reads))) {
+      return message;
+    }
+    return {
+      ...message,
+      content: message.content.map((part) =>
+        canRead(part, reads)
+          ? part
+          : { type: "text" as const, text: unreadableNote(part) },
+      ),
+    };
+  });
+}
+
+type UserPart = Exclude<
+  Extract<ModelMessage, { role: "user" }>["content"],
+  string
+>[number];
+
+function canRead(part: UserPart, reads: readonly AttachmentKind[]) {
+  const kind = partKind(part);
+  return kind === null || reads.includes(kind);
+}
+
+/** The attachment kind of an image or file part, or null for any other. */
+function partKind(part: UserPart): AttachmentKind | null {
+  if (part.type === "image") return "image";
+  if (part.type === "file") return getAttachmentKind(part.mediaType);
+  return null;
+}
+
+/** "[A PDF the current model can't read: report.pdf]" */
+function unreadableNote(part: UserPart): string {
+  const filename = part.type === "file" ? part.filename : undefined;
+  const what = partKind(part) === "pdf" ? "A PDF" : "An image";
+  return `[${what} the current model can't read${filename ? `: ${filename}` : ""}]`;
 }
 
 /** How many bytes from the start of a file detectMediaType needs. */

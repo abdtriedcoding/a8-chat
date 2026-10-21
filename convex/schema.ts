@@ -1,5 +1,5 @@
 import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { vSchedule } from "./lib/schedule";
 import { vSharedMessage } from "./lib/sharedMessages";
 
@@ -84,6 +84,18 @@ export const vTokenCounts = v.object({
   cacheReadTokens: v.number(),
 });
 
+/**
+ * Why a Send moved a thread off its model: the model left the list, or the
+ * user's plan doesn't include it (resolveReplyModel in lib/threadModels.ts).
+ */
+export const vModelSwitch = v.object({
+  // The model the thread had. It can be an id that left the list.
+  modelId: v.string(),
+  reason: v.union(v.literal("removed"), v.literal("plan")),
+});
+
+export type ModelSwitch = Infer<typeof vModelSwitch>;
+
 const vWaitingRun = v.union(
   v.object({ queuedPromptId: v.id("queuedPrompts") }),
   v.object({ promptMessageId: v.string() }),
@@ -156,6 +168,10 @@ export default defineSchema({
     // An id from the model list (lib/models.ts). It can be one that left
     // the list.
     modelId: v.string(),
+    // Set when a Send moved the thread off a model it couldn't use, for
+    // the composer's note. The user's next Send, a new pick or the note's
+    // dismiss button clears it.
+    switchedFrom: v.optional(vModelSwitch),
   }).index("by_threadId", ["threadId"]),
   // One row per user who has set a preference (convex/models.ts). A user
   // with no row gets the defaults. Deleting the account deletes it.

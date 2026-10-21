@@ -15,6 +15,7 @@ import {
   NativeSelectOptGroup,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { useIsModelLocked } from "@/hooks/use-is-model-locked";
 import { useSetDefaultModel } from "@/hooks/use-set-default-model";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
@@ -22,10 +23,12 @@ import { LAB_NAMES, modelsByLab } from "../../../convex/lib/models";
 
 /**
  * Sets the user's default model, which new chats start on. A pick saves
- * right away. The composer's model chip can set it too.
+ * right away. The composer's model chip can set it too. On Free, the Pro
+ * models can't be picked.
  */
 export function DefaultModelCard() {
   const defaultModelId = useQuery(api.models.defaultModel);
+  const isLocked = useIsModelLocked();
   const setDefaultModel = useSetDefaultModel();
 
   async function change(modelId: string) {
@@ -58,11 +61,18 @@ export function DefaultModelCard() {
           >
             {modelsByLab().map(({ lab, models }) => (
               <NativeSelectOptGroup key={lab} label={LAB_NAMES[lab]}>
-                {models.map((model) => (
-                  <NativeSelectOption key={model.id} value={model.id}>
-                    {model.name}
-                  </NativeSelectOption>
-                ))}
+                {models.map((model) => {
+                  const locked = isLocked(model);
+                  return (
+                    <NativeSelectOption
+                      key={model.id}
+                      value={model.id}
+                      disabled={locked}
+                    >
+                      {locked ? `${model.name} (Pro)` : model.name}
+                    </NativeSelectOption>
+                  );
+                })}
               </NativeSelectOptGroup>
             ))}
           </NativeSelect>

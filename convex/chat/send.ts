@@ -33,10 +33,13 @@ import {
 } from "../lib/scheduledPrompts";
 import type { Model } from "../lib/models";
 import {
+  checkModelPick,
   getDefaultModel,
-  getThreadModel,
-  requireModel,
+  resolveSendModel,
+  saveSendModel,
+  settleReplyModel,
   setThreadModelRow,
+  vModelLocked,
 } from "../lib/threadModels";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { checkSpend, limitSend, vSendLimited } from "../rateLimits";
@@ -87,9 +90,12 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 //
 // startThread and sendMessage take the model picked in the composer
 // (`modelId`) and make it the thread's model (lib/threadModels.ts). A new
-// thread without one starts on the user's default model. Every reply uses
-// the thread's model at the moment it starts, so a queued prompt, a
-// regenerate and an edit use it too.
+// thread without one starts on the user's default model. A pick the user's
+// plan doesn't include returns ModelLocked. Every reply uses the thread's
+// model at the moment it starts, so a queued prompt, a regenerate and an
+// edit use it too. When the thread can't use its model anymore, because it
+// left the list or the user's plan changed, each Send moves the thread to
+// the default model first (resolveSendModel), and the composer says why.
 
 /**
  * Why a Send was refused: the thread's queue already holds
@@ -122,6 +128,7 @@ export const startThread = mutation({
     v.object({ threadId: v.string() }),
     vSendLimited,
     vAttachmentNotFound,
+    vModelLocked,
   ),
   handler: async (
     ctx,
@@ -136,8 +143,9 @@ export const startThread = mutation({
   ) => {
     const user = await requireUser(ctx);
     const model = modelId
-      ? requireModel(modelId)
+      ? await checkModelPick(ctx, user._id, modelId)
       : await getDefaultModel(ctx, user._id);
+    if ("code" in model) return model;
     const prepared = await prepareSend(
       ctx,
       user._id,
@@ -199,15 +207,20 @@ export const sendMessage = mutation({
     vSendLimited,
     vAttachmentNotFound,
     vQueueFull,
+    vModelLocked,
   ),
   handler: async (
     ctx,
     { prompt, attachmentFileIds = [], threadId, timeZone, modelId },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    const model = modelId
-      ? requireModel(modelId)
-      : await getThreadModel(ctx, { threadId, userId: user._id });
+    const sendModel = await resolveSendModel(ctx, {
+      threadId,
+      userId: user._id,
+      modelId,
+    });
+    if ("code" in sendModel) return sendModel;
+    const { model } = sendModel;
     const [lastTurn, queue, paused] = await Promise.all([
       getLastTurn(ctx, threadId),
       listQueuedPrompts(ctx, threadId),
@@ -233,10 +246,11 @@ export const sendMessage = mutation({
     if ("code" in prepared) return prepared;
     const { text, message, attachments } = prepared;
     await setThreadStatus(ctx, threadId, "active");
-    await setThreadModelRow(ctx, {
+    await saveSendModel(ctx, {
       threadId,
       userId: user._id,
-      modelId: model.id,
+      ...sendModel,
+      userSend: true,
     });
     if (shouldQueue) {
       // Leaves the last turn's actions as they are. startNextPrompt starts
@@ -324,7 +338,7 @@ export const regenerateReply = mutation({
     const user = await authorizeThreadAccess(ctx, threadId);
     const refused = await limitSend(ctx, user._id);
     if (refused) return refused;
-    await redoLastTurn(ctx, { threadId, timeZone });
+    await redoLastTurn(ctx, { threadId, userId: user._id, timeZone });
     return null;
   },
 });
@@ -343,7 +357,12 @@ export const editPrompt = mutation({
     if (refused) return refused;
     // redoLastTurn checks the new text, since it loads the prompt, and a
     // prompt with attachments can have no text.
-    await redoLastTurn(ctx, { threadId, timeZone, newText: prompt });
+    await redoLastTurn(ctx, {
+      threadId,
+      userId: user._id,
+      timeZone,
+      newText: prompt,
+    });
     return null;
   },
 });
@@ -393,6 +412,9 @@ async function prepareSend(
  * doesn't save a reply to a prompt that's gone. So this works right after a
  * Stop, and on a turn whose runner never replied.
  *
+ * The new reply uses the thread's model, or the default model when the
+ * thread can't use its model anymore (settleReplyModel).
+ *
  * Throws while the reply is still on its way. That includes a stopped reply
  * that its runner hasn't saved yet, which takes a moment.
  */
@@ -400,9 +422,15 @@ async function redoLastTurn(
   ctx: MutationCtx,
   {
     threadId,
+    userId,
     timeZone,
     newText,
-  }: { threadId: string; timeZone: string | undefined; newText?: string },
+  }: {
+    threadId: string;
+    userId: string;
+    timeZone: string | undefined;
+    newText?: string;
+  },
 ) {
   const turn = await getLastTurn(ctx, threadId);
   const order = turn[0]?.order;
@@ -414,6 +442,7 @@ async function redoLastTurn(
     throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS_MESSAGE);
   }
   await setThreadStatus(ctx, threadId, "active");
+  await settleReplyModel(ctx, { threadId, userId, userSend: true });
 
   // The Agent also aborts any stream still running at this order.
   await chatAgent.deleteMessages(ctx, {
@@ -513,7 +542,11 @@ async function startNextQueuedPrompt(
     ctx,
     next.userId,
     next.attachmentFileIds,
-    await getThreadModel(ctx, { threadId, userId: next.userId }),
+    await settleReplyModel(ctx, {
+      threadId,
+      userId: next.userId,
+      userSend: false,
+    }),
   );
   if ("code" in attachments) {
     await pauseThreadQueue(ctx, threadId);

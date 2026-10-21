@@ -27,7 +27,10 @@ import { useComposerMentions } from "@/hooks/use-composer-mentions";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
-import { getAcceptedMediaTypes } from "../../../convex/lib/attachments";
+import {
+  getAcceptedMediaTypes,
+  getAttachmentKind,
+} from "../../../convex/lib/attachments";
 import { modelOrDefault } from "../../../convex/lib/models";
 import { ComposerAttachmentChip } from "./attachments";
 import { AutoApproveChip } from "./auto-approve-chip";
@@ -343,6 +346,13 @@ export function Composer({
             <ModelPicker
               modelId={model.id}
               onChange={onModelChange}
+              attachmentKinds={[
+                ...new Set(
+                  attachments.flatMap(
+                    ({ mediaType }) => getAttachmentKind(mediaType) ?? [],
+                  ),
+                ),
+              ]}
               disabled={disabled}
             />
           )}

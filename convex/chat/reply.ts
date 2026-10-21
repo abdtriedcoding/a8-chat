@@ -15,6 +15,7 @@ import {
 import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
+import { replaceUnreadableAttachments } from "../lib/attachments";
 import { gatewayOptions, languageModelFor } from "../lib/gateway";
 import { replyInstructions } from "../lib/instructions";
 import { modelOrDefault } from "../lib/models";
@@ -23,7 +24,7 @@ import {
   type RunEnding,
 } from "../lib/scheduledPrompts";
 import { findTemporaryThread } from "../lib/temporaryThreads";
-import { getThreadModel } from "../lib/threadModels";
+import { resolveReplyModel } from "../lib/threadModels";
 import {
   CACHE_BREAKPOINT,
   createReplyTools,
@@ -163,7 +164,8 @@ export const streamReply = internalAction({
           // reply offers. It changes what's sent, not what's saved. The
           // second cache breakpoint goes on the last message before the
           // new prompt, so the steps of this reply and the next prompt
-          // read the history from the cache.
+          // read the history from the cache. An attachment from an earlier
+          // turn that the model can't read goes as a note naming it.
           contextHandler: async (
             _ctx,
             { search, recent, inputMessages, inputPrompt, existingResponses },
@@ -171,7 +173,10 @@ export const streamReply = internalAction({
             const history = [...search, ...recent, ...inputMessages];
             return fitHistory(
               withCacheBreakpoint(
-                [...history, ...inputPrompt, ...existingResponses],
+                replaceUnreadableAttachments(
+                  [...history, ...inputPrompt, ...existingResponses],
+                  model.reads,
+                ),
                 history.length - 1,
               ),
             );
@@ -304,7 +309,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  * - `autoApprove`: whether the thread has auto-approve on. Never in a
  *   scheduled prompt thread, whose runs always stop on their cards (ADR
  *   0013). Read at every start, so a change counts from the next one.
- * - `modelId`: the thread's model (getThreadModel), read at every start
+ * - `modelId`: the thread's model, or the default model when the thread
+ *   can't use its model anymore (resolveReplyModel). Read at every start
  *   too, so a reply continuing after action cards and a queued prompt use
  *   the model the thread has then.
  */
@@ -339,9 +345,9 @@ export const getReplyStart = internalQuery({
     if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
     const userId = thread?.userId;
-    const [connections, model] = await Promise.all([
+    const [connections, { model }] = await Promise.all([
       userId ? readUserConnections(ctx, userId) : [],
-      getThreadModel(ctx, { threadId, userId }),
+      resolveReplyModel(ctx, { threadId, userId }),
     ]);
     return {
       promptText: prompt?.text ?? "",
