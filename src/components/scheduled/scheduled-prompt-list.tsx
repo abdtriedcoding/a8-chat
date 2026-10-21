@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/hooks/use-confirm";
+import { useErrorToast } from "@/hooks/use-error-toast";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import { describeSchedule } from "../../../convex/lib/scheduleText";
@@ -113,6 +114,7 @@ export function ScheduledPromptList() {
   const remove = useMutation(api.scheduledPrompts.remove);
   const router = useRouter();
   const [confirmDialog, confirm] = useConfirm();
+  const showError = useErrorToast();
   const [editing, setEditing] = useState<ScheduledPrompt | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   // The row a thread's Scheduled badge links to, as /scheduled#<id>.
@@ -158,7 +160,7 @@ export function ScheduledPromptList() {
             },
           },
         ),
-      (error: unknown) => toast.error(errorMessage(error)),
+      showError,
     );
   }
 

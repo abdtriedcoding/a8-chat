@@ -76,6 +76,7 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 | `POLAR_SERVER` | With billing | `sandbox` or `production`, the Polar server the token belongs to. |
 | `POLAR_PRO_MONTHLY_PRODUCT_ID` | With billing | The ID of the Polar product for Pro at $12 a month. |
 | `POLAR_PRO_YEARLY_PRODUCT_ID` | With billing | The ID of the Polar product for Pro at $120 a year. |
+| `DAILY_SPEND_CEILING_USD` | No | With billing, the most a8 spends on models across all users in a UTC day, in dollars, like `50`. Once the day's spend reaches it, a8 refuses every send until 00:00 UTC. Unset, it's $20. You can raise it as revenue grows without a deploy. |
 
 Convex sets `CONVEX_SITE_URL` itself. A connector's OAuth redirect URI is `<CONVEX_SITE_URL>/connectors/callback`.
 

@@ -24,10 +24,12 @@ import {
 } from "@/hooks/use-composer-attachments";
 import { useComposerDictation } from "@/hooks/use-composer-dictation";
 import { useComposerMentions } from "@/hooks/use-composer-mentions";
+import { useErrorToast } from "@/hooks/use-error-toast";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
 import { ComposerAttachmentChip } from "./attachments";
 import { AutoApproveChip } from "./auto-approve-chip";
+import { CreditNotice } from "./credit-notice";
 import { DictationButton } from "./dictation-button";
 import { FileDropZone } from "./file-drop-zone";
 import { MentionHighlights } from "./mention-highlights";
@@ -62,6 +64,9 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  *
  * While `onAutoApproveChange` is set, the toolbar has the auto-approve chip
  * (AutoApproveChip), on while `autoApprove` is.
+ *
+ * On the hosted a8, a notice above the box says when the user is out of
+ * credits or low on them (CreditNotice).
  *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
@@ -102,6 +107,7 @@ export function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const highlightsRef = useRef<HTMLDivElement>(null);
+  const showError = useErrorToast();
   const mentions = useComposerMentions({ text, setText });
   const dictation = useComposerDictation({
     text,
@@ -143,7 +149,7 @@ export function Composer({
       // Put the prompt back, unless something new was typed meanwhile.
       setText((current) => (current === "" ? prompt : current));
       restoreAttachments(attachmentsToSend);
-      toast.error(errorMessage(error));
+      showError(error);
     }
   }
 
@@ -189,6 +195,7 @@ export function Composer({
           onPick={mentions.pick}
         />
       )}
+      <CreditNotice className="mb-2" />
       <InputGroup>
         {mentions.blockedMentions.length > 0 && (
           <InputGroupAddon

@@ -177,6 +177,10 @@ _Avoid_: preferred model, global model
 A unit of hosted usage worth one US cent of model cost. A reply on a premium model uses more credits than the same reply on a cheap one, and a web search costs one credit. Thread titles cost nothing. a8 checks the balance at each send: a reply that starts always finishes, even if it takes the balance below zero, and then sends wait until the plan renews. A scheduled run with no credits counts as a failed run. Credits reset every month, and leftovers expire.
 _Avoid_: token (for credits), point, coin
 
+**Daily spend ceiling**:
+The most the hosted a8 spends on models across all users in a UTC day, set in dollars by the operator. Once the day's spend reaches it, a8 refuses every send until 00:00 UTC, whatever the user's credits. Thread titles count toward it.
+_Avoid_: daily cap, daily limit (those are self-hosted send caps)
+
 **Plan**:
 What a hosted user pays for: Free or Pro. Each plan grants a number of credits a month. Free can use only a few cheap models, and Pro can use every model. An upgrade grants the new plan's full credits at once and starts a new month from that day. A downgrade waits until the month ends. Hosted users can't bring their own model keys, and self-hosted a8 has no plans or credits.
 _Avoid_: tier, subscription (outside billing code), package

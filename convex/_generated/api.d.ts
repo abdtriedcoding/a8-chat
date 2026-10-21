@@ -40,6 +40,7 @@ import type * as lib_connectorView from "../lib/connectorView.js";
 import type * as lib_connectors from "../lib/connectors.js";
 import type * as lib_creditPeriod from "../lib/creditPeriod.js";
 import type * as lib_credits from "../lib/credits.js";
+import type * as lib_dailySpend from "../lib/dailySpend.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_guards from "../lib/guards.js";
@@ -114,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   "lib/connectors": typeof lib_connectors;
   "lib/creditPeriod": typeof lib_creditPeriod;
   "lib/credits": typeof lib_credits;
+  "lib/dailySpend": typeof lib_dailySpend;
   "lib/encryption": typeof lib_encryption;
   "lib/errors": typeof lib_errors;
   "lib/guards": typeof lib_guards;

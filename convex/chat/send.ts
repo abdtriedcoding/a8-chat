@@ -32,7 +32,7 @@ import {
   moveWaitingRun,
 } from "../lib/scheduledPrompts";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
-import { limitSend, vRateLimited } from "../rateLimits";
+import { checkSpend, limitSend, vSendLimited } from "../rateLimits";
 import { setThreadStatus } from "../threads";
 import { closeUnrunActions, waitingApprovalIds } from "./approval";
 import {
@@ -63,7 +63,9 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 //
 // sendMessage queues its prompt while the thread is busy (convex/chat/
 // queue.ts). limitSend counts the prompt when sendMessage queues it, and
-// startNextPrompt doesn't count it again.
+// startNextPrompt doesn't count it again. On the hosted a8, startNextPrompt
+// checks the user's credits and the daily spend ceiling again (checkSpend),
+// since they can run out while the prompt waits.
 //
 // sendMessage, regenerateReply and editPrompt move an archived thread back
 // to the user's chats.
@@ -104,7 +106,7 @@ export const startThread = mutation({
   },
   returns: v.union(
     v.object({ threadId: v.string() }),
-    vRateLimited,
+    vSendLimited,
     vAttachmentNotFound,
   ),
   handler: async (
@@ -169,7 +171,7 @@ export const sendMessage = mutation({
   },
   returns: v.union(
     v.object({ status: v.union(v.literal("sent"), v.literal("queued")) }),
-    vRateLimited,
+    vSendLimited,
     vAttachmentNotFound,
     vQueueFull,
   ),
@@ -250,11 +252,12 @@ export const startNextPrompt = internalMutation({
  * It works after a failed or stopped reply, and after a reply that never
  * started (isThreadBusy). Throws while a reply is still running or could
  * still start, and when one of the next prompt's attachments is gone. The
- * queue stays paused then.
+ * queue stays paused then. When checkSpend refuses the next prompt, the
+ * queue stays paused too, and this returns the refusal, like a Send.
  */
 export const resumeQueue = mutation({
   args: { threadId: v.string() },
-  returns: v.null(),
+  returns: v.union(v.null(), vSendLimited),
   handler: async (ctx, { threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
     const turn = await getLastTurn(ctx, threadId);
@@ -271,6 +274,7 @@ export const resumeQueue = mutation({
         "An attachment in the next prompt is gone. Delete the prompt and queue it again.",
       );
     }
+    if (started !== null && started !== "started") return started;
     return null;
   },
 });
@@ -281,7 +285,7 @@ export const resumeQueue = mutation({
  */
 export const regenerateReply = mutation({
   args: { threadId: v.string(), timeZone: vTimeZone },
-  returns: v.union(v.null(), vRateLimited),
+  returns: v.union(v.null(), vSendLimited),
   handler: async (ctx, { threadId, timeZone }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
     const refused = await limitSend(ctx, user._id);
@@ -298,7 +302,7 @@ export const regenerateReply = mutation({
  */
 export const editPrompt = mutation({
   args: { threadId: v.string(), prompt: v.string(), timeZone: vTimeZone },
-  returns: v.union(v.null(), vRateLimited),
+  returns: v.union(v.null(), vSendLimited),
   handler: async (ctx, { threadId, prompt, timeZone }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
     const refused = await limitSend(ctx, user._id);
@@ -439,6 +443,12 @@ async function redoLastTurn(
  * always see the failure. A stopped reply with no text is saved as failed
  * too, and doesn't pause it. It pauses the queue too if one of the prompt's
  * attachments is gone, and returns "attachmentGone" then.
+ *
+ * On the hosted a8 the prompt has to pass checkSpend as it starts. When it
+ * doesn't, this pauses the queue and returns the refusal. checkSpend would
+ * refuse a queued scheduled run too, so the run leaves the queue and counts
+ * as a failed run, wherever it waits in the queue. Otherwise the paused
+ * queue would hold it, and every later run would be skipped.
  */
 async function startNextQueuedPrompt(
   ctx: MutationCtx,
@@ -471,6 +481,19 @@ async function startNextQueuedPrompt(
   if ("code" in attachments) {
     await pauseThreadQueue(ctx, threadId);
     return "attachmentGone";
+  }
+  const refused = await checkSpend(ctx, next.userId);
+  if (refused) {
+    for (const queued of await listQueuedPrompts(ctx, threadId)) {
+      if (!queued.scheduledPromptId) continue;
+      await deleteQueuedPromptRows(ctx, queued);
+      await ctx.runMutation(internal.scheduledPrompts.recordRefusedRun, {
+        scheduledPromptId: queued.scheduledPromptId,
+        message: refused.message,
+      });
+    }
+    await pauseThreadQueue(ctx, threadId);
+    return refused;
   }
   await deleteQueuedPromptRows(ctx, next);
   // No card is waiting, so this cancels nothing the user hasn't seen. It
