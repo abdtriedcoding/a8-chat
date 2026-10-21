@@ -170,7 +170,7 @@ The company that made a model, like OpenAI, Google or Anthropic. The picker show
 _Avoid_: provider, vendor, maker
 
 **Default model**:
-The model a new thread starts on. The user sets it.
+The model a new thread starts on. The user sets it. If the user's plan doesn't include it, new threads and model switches use the first Free model instead.
 _Avoid_: preferred model, global model
 
 **Credit**:

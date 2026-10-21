@@ -50,6 +50,7 @@ import { MAX_QUEUED_PROMPTS } from "../../../convex/lib/queue";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
+import { ModelSwitchNotice } from "./model-switch-notice";
 import { QueueStack } from "./queue-stack";
 import { ThreadActionsProvider } from "./thread-actions-context";
 
@@ -239,6 +240,15 @@ export function ThreadView({ threadId }: { threadId: string }) {
             onResume={replyInProgress ? undefined : queueActions.resume}
             className="mx-auto max-w-3xl"
           />
+        )}
+        {thread?.modelSwitch && (
+          <div className="mx-auto mb-2 max-w-3xl">
+            <ModelSwitchNotice
+              threadId={threadId}
+              modelSwitch={thread.modelSwitch}
+              modelId={thread.modelId}
+            />
+          </div>
         )}
         <Composer
           onSend={send}

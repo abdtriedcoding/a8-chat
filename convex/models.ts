@@ -4,9 +4,10 @@ import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { authorizeThreadAccess, optionalUser, requireUser } from "./lib/guards";
 import {
+  clearModelSwitch,
   findUserPreferences,
   getDefaultModel,
-  requireModel,
+  requireModelPick,
   setDefaultModelRow,
   setThreadModelRow,
 } from "./lib/threadModels";
@@ -22,13 +23,16 @@ export const defaultModel = query({
   },
 });
 
-/** Sets the model the user's new threads start on. */
+/**
+ * Sets the model the user's new threads start on. Throws for a model the
+ * user's plan doesn't include.
+ */
 export const setDefaultModel = mutation({
   args: { modelId: v.string() },
   returns: v.null(),
   handler: async (ctx, { modelId }) => {
     const user = await requireUser(ctx);
-    requireModel(modelId);
+    await requireModelPick(ctx, user._id, modelId);
     await setDefaultModelRow(ctx, { userId: user._id, modelId });
     return null;
   },
@@ -37,15 +41,26 @@ export const setDefaultModel = mutation({
 /**
  * Sets the model of the thread's next reply, from the picker. A reply
  * already running keeps its model, and a queued prompt uses the new one
- * when it starts.
+ * when it starts. Throws for a model the user's plan doesn't include.
  */
 export const setThreadModel = mutation({
   args: { threadId: v.string(), modelId: v.string() },
   returns: v.null(),
   handler: async (ctx, { threadId, modelId }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    requireModel(modelId);
+    await requireModelPick(ctx, user._id, modelId);
     await setThreadModelRow(ctx, { threadId, userId: user._id, modelId });
+    return null;
+  },
+});
+
+/** Hides the composer's note about the thread's last model switch. */
+export const dismissModelSwitch = mutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    await clearModelSwitch(ctx, threadId);
     return null;
   },
 });

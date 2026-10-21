@@ -38,6 +38,7 @@ import {
 } from "./lib/schedule";
 import type { RunEmailKind } from "./lib/runEmails";
 import { resolveTimeZone } from "./lib/timeZone";
+import { settleReplyModel } from "./lib/threadModels";
 import { limitSend } from "./rateLimits";
 import { vLastRun, vScheduledPromptStatus } from "./schema";
 import { setThreadStatus } from "./threads";
@@ -544,7 +545,9 @@ export const nextRun = internalQuery({
  * It never interrupts a reply or cancels a card. While a reply is running
  * or a card waits, the prompt joins the queue instead. It also joins when
  * the queue has prompts or is paused. Like a Send, it moves an archived
- * thread back to the sidebar. Returns whether it sent or queued the
+ * thread back to the sidebar. When the thread can't use its model
+ * anymore, the run replies on the user's default model, and the thread
+ * moves to it (settleReplyModel). Returns whether it sent or queued the
  * prompt, or why it sent nothing: the queue is full, or the send limit
  * refused.
  */
@@ -590,6 +593,11 @@ async function sendRun(
   // ends approved actions that never ran, like one in a stopped reply,
   // which Anthropic needs a result for.
   await closeUnrunActions(ctx, threadId, turn);
+  await settleReplyModel(ctx, {
+    threadId,
+    userId: row.userId,
+    userSend: false,
+  });
   const promptMessageId = await sendPrompt(ctx, {
     threadId,
     message: buildPromptMessage(row.prompt, []),
