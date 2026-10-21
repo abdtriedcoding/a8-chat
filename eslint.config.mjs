@@ -10,6 +10,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "autoApprove",
   "connectorView",
   "errors",
+  "monthlyPeriod",
   "prompt",
   "queue",
   "scheduleText",

@@ -38,6 +38,18 @@ export async function requireIdentity(ctx: ActionCtx): Promise<string> {
   return identity.subject;
 }
 
+/**
+ * The signed-in user's ID and email, from the identity like
+ * requireIdentity. Throws when signed out. For actions.
+ */
+export async function requireIdentityEmail(
+  ctx: ActionCtx,
+): Promise<{ userId: string; email: string }> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity?.email) throw unauthenticated();
+  return { userId: identity.subject, email: identity.email };
+}
+
 /** The thread, or null when signed out or it isn't the user's. For queries. */
 export async function getOwnThread(ctx: QueryCtx, threadId: string) {
   const user = await optionalUser(ctx);

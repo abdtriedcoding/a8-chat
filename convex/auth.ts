@@ -12,6 +12,7 @@ import {
   query,
 } from "./_generated/server";
 import authConfig from "./auth.config";
+import { billingEnabled } from "./lib/billing";
 import { limitSignIn, resetUserLimits } from "./rateLimits";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
@@ -71,11 +72,23 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
         // Runs before Better Auth deletes the user, and a throw stops the
         // deletion. The cleanup is scheduled, not awaited: it can take many
         // transactions, and an HTTP request can't wait for all of them.
+        // Cancelling the subscription is awaited, so a failed cancel stops
+        // the deletion and Polar never charges a deleted account.
         beforeDelete: async (user): Promise<void> => {
-          if (!("scheduler" in ctx)) {
-            throw new APIError("INTERNAL_SERVER_ERROR", {
-              message: "Couldn't delete your account. Please try again.",
-            });
+          const failed = new APIError("INTERNAL_SERVER_ERROR", {
+            message: "Couldn't delete your account. Please try again.",
+          });
+          if (!("scheduler" in ctx)) throw failed;
+          if (billingEnabled) {
+            if (!("runAction" in ctx)) throw failed;
+            try {
+              await ctx.runAction(internal.billing.cancelSubscriptions, {
+                userId: user.id,
+              });
+            } catch (error) {
+              console.error("Couldn't cancel the subscription", error);
+              throw failed;
+            }
           }
           await ctx.scheduler.runAfter(0, internal.auth.purgeAccount, {
             userId: user.id,

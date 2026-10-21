@@ -70,8 +70,23 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 | `RESEND_API_KEY` | Yes | The [Resend](https://resend.com) API key that sends verification, password reset and scheduled run emails. |
 | `EMAIL_FROM` | Yes | The sender of those emails, like `a8 <noreply@your-domain.com>`. Resend needs the domain verified. |
 | `RESEND_TEST_MODE` | No | Set to `true` and Resend only delivers to its `resend.dev` test addresses. Unset or any other value sends to real addresses. |
+| `BILLING_ENABLED` | No | Set to `true` on the hosted a8 to turn on the Free and Pro plans, sold through [Polar](https://polar.sh). Unset, a8 runs self-hosted, with no plans and no Billing page. When it's `true`, the deploy fails unless every `POLAR_*` variable below is set. |
+| `POLAR_ORGANIZATION_TOKEN` | With billing | A Polar organization access token. See [Billing](#billing) for its scopes. |
+| `POLAR_WEBHOOK_SECRET` | With billing | The secret of the Polar webhook that points at `<CONVEX_SITE_URL>/polar/events`. |
+| `POLAR_SERVER` | With billing | `sandbox` or `production`, the Polar server the token belongs to. |
+| `POLAR_PRO_MONTHLY_PRODUCT_ID` | With billing | The ID of the Polar product for Pro at $12 a month. |
+| `POLAR_PRO_YEARLY_PRODUCT_ID` | With billing | The ID of the Polar product for Pro at $120 a year. |
 
 Convex sets `CONVEX_SITE_URL` itself. A connector's OAuth redirect URI is `<CONVEX_SITE_URL>/connectors/callback`.
+
+### Billing
+
+Only the hosted a8 sets these up. In the Polar organization (use [sandbox.polar.sh](https://sandbox.polar.sh) for testing):
+
+1. Create two recurring products: Pro at $12 a month and Pro at $120 a year. Free isn't a Polar product, since a user without a subscription is on Free.
+2. Create an organization access token with the scopes `products:read`, `products:write`, `subscriptions:read`, `subscriptions:write`, `customers:read`, `customers:write`, `checkouts:read`, `checkouts:write`, `customer_portal:read`, `customer_portal:write` and `customer_sessions:write`.
+3. Add a webhook to `<CONVEX_SITE_URL>/polar/events` with the events `product.created`, `product.updated`, `subscription.created` and `subscription.updated`, in the Raw format.
+4. Set the `POLAR_*` variables, then `BILLING_ENABLED=true`, and deploy.
 
 ### Next.js (`.env.local`)
 

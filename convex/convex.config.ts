@@ -1,5 +1,6 @@
 import agent from "@convex-dev/agent/convex.config";
 import betterAuth from "@convex-dev/better-auth/convex.config";
+import polar from "@convex-dev/polar/convex.config.js";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import resend from "@convex-dev/resend/convex.config.js";
 import { defineApp } from "convex/server";
@@ -36,6 +37,20 @@ const app = defineApp({
     // role or higher to mint the browser's short-lived tokens. Without it,
     // the composer shows no mic.
     DEEPGRAM_API_KEY: v.optional(v.string()),
+    // Optional. "true" turns on plans and billing through Polar, for the
+    // hosted a8. Unset or any other value runs a8 self-hosted, with no plans.
+    // When it's "true", the deploy fails unless every POLAR_* variable below
+    // is set (convex/lib/billing.ts).
+    BILLING_ENABLED: v.optional(v.string()),
+    // Polar's organization access token, and the secret of the webhook that
+    // points at <CONVEX_SITE_URL>/polar/events.
+    POLAR_ORGANIZATION_TOKEN: v.optional(v.string()),
+    POLAR_WEBHOOK_SECRET: v.optional(v.string()),
+    // "sandbox" or "production", the Polar server the token belongs to.
+    POLAR_SERVER: v.optional(v.string()),
+    // The Polar product IDs of Pro monthly and Pro yearly.
+    POLAR_PRO_MONTHLY_PRODUCT_ID: v.optional(v.string()),
+    POLAR_PRO_YEARLY_PRODUCT_ID: v.optional(v.string()),
   },
 });
 
@@ -43,5 +58,6 @@ app.use(betterAuth);
 app.use(agent);
 app.use(rateLimiter);
 app.use(resend);
+app.use(polar);
 
 export default app;

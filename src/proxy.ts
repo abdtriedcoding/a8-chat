@@ -25,5 +25,6 @@ export const config = {
     "/connectors",
     "/archived",
     "/settings/account",
+    "/settings/billing",
   ],
 };
