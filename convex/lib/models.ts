@@ -12,6 +12,8 @@ import type { AttachmentKind } from "./attachments";
 
 export type Lab = "anthropic" | "openai" | "google";
 
+export type PlanName = PlanTerms["name"];
+
 /** Each lab's name, in the order the picker groups them. */
 export const LAB_NAMES: Record<Lab, string> = {
   anthropic: "Anthropic",
@@ -31,7 +33,7 @@ export type Model = {
   /** How many tokens of prompt and reply it takes. */
   contextTokens: number;
   /** The plans that can use it. Pro gets every model. */
-  plans: PlanTerms["name"][];
+  plans: PlanName[];
   /**
    * About how many credits one reply costs, for the picker only. Hand-set
    * for a reply of a few steps with connectors. Real charges come from each
@@ -149,6 +151,24 @@ export function findModelBySavedId(savedId: string): Model | undefined {
     (model) =>
       model.gatewayId === savedId || model.formerIds?.includes(savedId),
   );
+}
+
+/**
+ * Whether a user on `plan` can use the model. `plan` is null when billing
+ * is off, and then every listed model is open.
+ */
+export function planIncludes(plan: PlanName | null, model: Model): boolean {
+  return plan === null || model.plans.includes(plan);
+}
+
+/**
+ * The first Free model on the list. A reply falls back to it when the
+ * user's default model isn't on their plan either.
+ */
+export function firstFreeModel(): Model {
+  const model = MODELS.find((entry) => entry.plans.includes("free"));
+  if (!model) throw new Error("The model list has no Free model.");
+  return model;
 }
 
 /** The listed models of each lab, in LAB_NAMES order, for the pickers. */

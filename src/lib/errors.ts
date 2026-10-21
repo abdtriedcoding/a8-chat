@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import { ERROR_CODES, type ErrorCode } from "../../convex/lib/errors";
 import type { AttachmentNotFound } from "../../convex/attachments/load";
 import type { QueueFull } from "../../convex/chat/send";
+import type { ModelLocked } from "../../convex/lib/threadModels";
 import type { SendLimited } from "../../convex/rateLimits";
 
 const GENERIC_MESSAGE = "Something went wrong. Please try again.";
@@ -56,9 +57,10 @@ function hasErrorCode(error: unknown, code: ErrorCode): boolean {
 
 /**
  * Why a Send was refused: a rate limit, no credits left, the daily spend
- * ceiling, an attachment that's gone, or a full queue.
+ * ceiling, an attachment that's gone, a full queue, or a model the user's
+ * plan doesn't include.
  */
-type SendRefused = SendLimited | AttachmentNotFound | QueueFull;
+type SendRefused = SendLimited | AttachmentNotFound | QueueFull | ModelLocked;
 
 /**
  * Returns a Send's result, or throws a ConvexError if the Send was refused.
@@ -80,6 +82,7 @@ function isSendRefused(value: unknown): value is SendRefused {
       value.code === ERROR_CODES.OUT_OF_CREDITS ||
       value.code === ERROR_CODES.DAILY_SPEND_CEILING ||
       value.code === ERROR_CODES.NOT_FOUND ||
-      value.code === ERROR_CODES.QUEUE_FULL)
+      value.code === ERROR_CODES.QUEUE_FULL ||
+      value.code === ERROR_CODES.MODEL_LOCKED)
   );
 }

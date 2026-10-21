@@ -61,7 +61,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/usage.ts`: sends reply steps, titles and web searches to the cost recorder. A model call costs what AI Gateway reports for it.
 - `lib/models.ts`: the model list, with each model's lab, gateway id, attachments, plans and rough credits per reply. Shared with the picker.
 - `lib/gateway.ts`: the AI Gateway client, and the language model for a model on the list.
-- `lib/threadModels.ts`: each thread's model and each user's default model.
+- `lib/threadModels.ts`: each thread's model and each user's default model, and the plan check on each send. A send whose thread model left the list or isn't on the user's plan replies on the default model and moves the thread to it.
 - `lib/guards.ts`: session and ownership checks. See the rules below.
 - `lib/errors.ts`: the error codes and `appError`. See the rules below.
 - `lib/prompt.ts`: prompt and title checks, and the prompt message the model gets.

@@ -42,8 +42,13 @@ import {
   listTemporaryThreadIds,
   refuseTemporaryThread,
 } from "./lib/temporaryThreads";
-import { deleteThreadModel, getThreadModel } from "./lib/threadModels";
+import {
+  deleteThreadModel,
+  findThreadModel,
+  getThreadModel,
+} from "./lib/threadModels";
 import { snippetAround } from "./lib/threadSearchSnippet";
+import { vModelSwitch } from "./schema";
 
 const vThreadSummary = v.object({
   _id: v.string(),
@@ -198,20 +203,25 @@ export const get = query({
       // Whether the thread has auto-approve on. Always false in a
       // scheduled prompt thread.
       autoApprove: v.boolean(),
-      // The id of the model its next reply uses (getThreadModel).
+      // The id of the model the composer's chip shows (getThreadModel).
       modelId: v.string(),
+      // The model the last Send moved the thread off, and why, for the
+      // composer's note. Null when there's no note to show.
+      modelSwitch: v.union(vModelSwitch, v.null()),
     }),
     v.null(),
   ),
   handler: async (ctx, { threadId }) => {
     const thread = await getOwnThread(ctx, threadId);
     if (!thread) return null;
-    const [temporary, scheduledPrompt, autoApprove, model] = await Promise.all([
-      findTemporaryThread(ctx, threadId),
-      findThreadScheduledPrompt(ctx, threadId),
-      findAutoApproveThread(ctx, threadId),
-      getThreadModel(ctx, { threadId, userId: thread.userId }),
-    ]);
+    const [temporary, scheduledPrompt, autoApprove, model, modelRow] =
+      await Promise.all([
+        findTemporaryThread(ctx, threadId),
+        findThreadScheduledPrompt(ctx, threadId),
+        findAutoApproveThread(ctx, threadId),
+        getThreadModel(ctx, { threadId, userId: thread.userId }),
+        findThreadModel(ctx, threadId),
+      ]);
     return {
       _id: thread._id,
       title: thread.title,
@@ -221,6 +231,7 @@ export const get = query({
       unread: (scheduledPrompt?.unreadRuns ?? 0) > 0,
       autoApprove: isAutoApproveOn(autoApprove, scheduledPrompt),
       modelId: model.id,
+      modelSwitch: modelRow?.switchedFrom ?? null,
     };
   },
 });
