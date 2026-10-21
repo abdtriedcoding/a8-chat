@@ -9,7 +9,7 @@ This ADR first kept Claude on the Anthropic API, since the gateway's docs didn't
 - A cache breakpoint wrote 13,796 tokens on the first request and read all of them on the second. The same prompt without the breakpoint read nothing, so the reads come from the breakpoint.
 - The gateway accepted a client tool call placed before two tool search results, the order that breaks with gateway-executed tools (vercel/ai#21895). The model then called a tool that only the replayed search had loaded, so the search results reached Anthropic.
 
-a8 offers a short list of models, kept in code, not every model the gateway lists. Every model on the list has been tried with connectors and action cards, and adding one takes a pull request.
+a8 first offered a short list of models, each tried with connectors and action cards. ADR 0017 replaced it with every chat model on the gateway.
 
 ## Considered options
 
