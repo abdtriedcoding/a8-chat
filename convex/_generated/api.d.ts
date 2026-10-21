@@ -44,6 +44,7 @@ import type * as lib_dailySpend from "../lib/dailySpend.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_gateway from "../lib/gateway.js";
+import type * as lib_gatewayModels from "../lib/gatewayModels.js";
 import type * as lib_guards from "../lib/guards.js";
 import type * as lib_instructions from "../lib/instructions.js";
 import type * as lib_models from "../lib/models.js";
@@ -123,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "lib/encryption": typeof lib_encryption;
   "lib/errors": typeof lib_errors;
   "lib/gateway": typeof lib_gateway;
+  "lib/gatewayModels": typeof lib_gatewayModels;
   "lib/guards": typeof lib_guards;
   "lib/instructions": typeof lib_instructions;
   "lib/models": typeof lib_models;

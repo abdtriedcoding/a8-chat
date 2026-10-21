@@ -10,6 +10,7 @@
     "lint": "eslint",
     "probe": "bun scripts/probe-connector.ts",
     "probe:gateway": "bun scripts/probe-gateway.ts",
+    "sync:models": "bun scripts/sync-models.ts",
     "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p convex"
   },
   "dependencies": {

@@ -19,7 +19,7 @@ import { useIsModelLocked } from "@/hooks/use-is-model-locked";
 import { useSetDefaultModel } from "@/hooks/use-set-default-model";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
-import { LAB_NAMES, modelsByLab } from "../../../convex/lib/models";
+import { modelsByLab } from "../../../convex/lib/models";
 
 /**
  * Sets the user's default model, which new chats start on. A pick saves
@@ -60,7 +60,7 @@ export function DefaultModelCard() {
             className="w-full sm:w-72"
           >
             {modelsByLab().map(({ lab, models }) => (
-              <NativeSelectOptGroup key={lab} label={LAB_NAMES[lab]}>
+              <NativeSelectOptGroup key={lab.id} label={lab.name}>
                 {models.map((model) => {
                   const locked = isLocked(model);
                   return (
