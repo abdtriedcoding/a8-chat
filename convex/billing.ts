@@ -12,12 +12,14 @@ import {
   vBillingInterval,
   vPlanTerms,
 } from "./lib/billing";
+import { latestCreditRow } from "./lib/credits";
 import { appError, ERROR_CODES } from "./lib/errors";
 import {
   optionalUser,
   requireIdentity,
   requireIdentityEmail,
 } from "./lib/guards";
+import { vCreditPeriod } from "./schema";
 
 const BILLING_PATH = "/settings/billing";
 
@@ -39,6 +41,26 @@ export const plan = query({
     const user = await optionalUser(ctx);
     if (!user) return null;
     return await getPlanTerms(ctx, user._id);
+  },
+});
+
+/**
+ * The signed-in user's latest credit ledger row. Null when signed out,
+ * billing is off, or the user hasn't used any credits yet. The caller
+ * works out the current period with resolveCreditPeriod, since a query
+ * can't read the clock.
+ */
+export const latestCredits = query({
+  args: {},
+  returns: v.union(vCreditPeriod, v.null()),
+  handler: async (ctx) => {
+    if (!billingEnabled) return null;
+    const user = await optionalUser(ctx);
+    if (!user) return null;
+    const row = await latestCreditRow(ctx, user._id);
+    if (!row) return null;
+    const { periodStart, periodEnd, creditsGranted, creditsUsed } = row;
+    return { periodStart, periodEnd, creditsGranted, creditsUsed };
   },
 });
 

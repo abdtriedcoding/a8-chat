@@ -9,6 +9,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "attachments",
   "autoApprove",
   "connectorView",
+  "creditPeriod",
   "errors",
   "monthlyPeriod",
   "prompt",

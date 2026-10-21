@@ -4,6 +4,7 @@ import { Agent, type UsageHandler } from "@convex-dev/agent";
 import type { ToolSet } from "ai";
 import { components } from "../_generated/api";
 import { env } from "../_generated/server";
+import { recordModelUsage } from "../lib/usage";
 import { canSearchWeb, webSearch } from "../tools/webSearch";
 
 /**
@@ -36,25 +37,12 @@ export const chatModel = anthropic("claude-haiku-5-5");
  */
 export const toolSearch = anthropic.tools.toolSearchBm25_20251119();
 
-/** Logs a model call's token usage. Replies and titles both log here. */
-export const logUsage: UsageHandler = async (
-  _ctx,
-  { userId, threadId, provider, model, usage },
-) => {
-  // Stage 1 only logs usage. Billing and limits build on this later.
-  console.log("usage", {
-    userId,
-    threadId,
-    provider,
-    model,
-    inputTokens: usage.inputTokens,
-    // The part of inputTokens read from or written to Anthropic's prompt
-    // cache (streamReply's cache breakpoints).
-    cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
-    cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens,
-    outputTokens: usage.outputTokens,
-  });
-};
+/**
+ * Logs each reply step's tokens and records its cost. Titles record theirs
+ * in generateTitle.
+ */
+const recordReplyUsage: UsageHandler = (ctx, usage) =>
+  recordModelUsage(ctx, "replyStep", usage);
 
 // Instructions, tools and the step limit are set for each reply
 // (streamReply). The instructions carry the user's date, and the tools
@@ -62,5 +50,5 @@ export const logUsage: UsageHandler = async (
 export const chatAgent = new Agent(components.agent, {
   name: "a8",
   languageModel: chatModel,
-  usageHandler: logUsage,
+  usageHandler: recordReplyUsage,
 });
