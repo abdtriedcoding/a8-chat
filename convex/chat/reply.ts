@@ -18,7 +18,7 @@ import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
 import { replaceUnreadableAttachments } from "../lib/attachments";
 import { gatewayOptions, languageModelFor } from "../lib/gateway";
 import { replyInstructions } from "../lib/instructions";
-import { modelOrDefault } from "../lib/models";
+import { isClaude, modelOrDefault } from "../lib/models";
 import {
   findThreadScheduledPrompt,
   type RunEnding,
@@ -107,14 +107,16 @@ export const streamReply = internalAction({
       if (!start) return;
       const { modelId, ...toolStart } = start;
       const model = modelOrDefault(modelId);
+      const claude = isClaude(model);
       replyTools = await createReplyTools(ctx, {
         threadId,
         ...toolStart,
         timeZone,
         stepsTaken,
         autoApprovedCount,
+        model,
       });
-      const { log, fitHistory, maxSteps } = replyTools;
+      const { log, fitHistory, maxSteps, activeTools } = replyTools;
       const result = await chatAgent.streamText(
         ctx,
         { threadId },
@@ -122,8 +124,9 @@ export const streamReply = internalAction({
           promptMessageId,
           model: languageModelFor(model),
           providerOptions: gatewayOptions(model),
-          // A cache breakpoint on the instructions. The tools come before
-          // them in the request, so they cache too.
+          // On Claude, a cache breakpoint on the instructions. The tools
+          // come before them in the request, so they cache too. Other
+          // models get the gateway's automatic caching (gatewayOptions).
           instructions: {
             role: "system",
             content: replyInstructions({
@@ -134,22 +137,31 @@ export const streamReply = internalAction({
               connectorText: replyTools.connectorText,
               autoApprove: replyTools.autoApprove,
             }),
-            providerOptions: CACHE_BREAKPOINT,
+            providerOptions: claude ? CACHE_BREAKPOINT : undefined,
           },
           tools: replyTools.tools,
           toolApproval: replyTools.toolApproval,
           stopWhen: stepCountIs(maxSteps),
           // The last step can't call tools, so a reply that hits the step
-          // cap or runs long still ends with text. With no active tools,
-          // @ai-sdk/anthropic sends no tools and leaves tool search parts
-          // out of the history. Anthropic accepts plain tool calls in
-          // history without their tools. toolChoice "none" also sends no
-          // tools, but keeps the search parts, which Anthropic rejects.
-          prepareStep: ({ stepNumber }) =>
-            stepNumber === maxSteps - 1 ||
-            Date.now() - startedAt >= REPLY_TIME_LIMIT_MS
-              ? { activeTools: [] }
-              : {},
+          // cap or runs long still ends with text. On Claude it has no
+          // active tools. @ai-sdk/anthropic then sends no tools and leaves
+          // tool search parts out of the history. Anthropic accepts plain
+          // tool calls in history without their tools. toolChoice "none"
+          // also sends no tools, but keeps the search parts, which
+          // Anthropic rejects.
+          //
+          // Other models get toolChoice "none" on the last step instead.
+          // On every step, they see the tools a8's own search has found so
+          // far (activeTools, ADR 0016).
+          prepareStep: ({ stepNumber }) => {
+            const lastStep =
+              stepNumber === maxSteps - 1 ||
+              Date.now() - startedAt >= REPLY_TIME_LIMIT_MS;
+            if (claude) return lastStep ? { activeTools: [] } : {};
+            return lastStep
+              ? { activeTools: activeTools(), toolChoice: "none" }
+              : { activeTools: activeTools() };
+          },
           onStepFinish: (step) => log.addStep(step),
           onToolExecutionEnd: (event) => log.addToolRun(event),
           onAbort: () => {
@@ -161,24 +173,25 @@ export const streamReply = internalAction({
           saveStreamDeltas: { chunking: "word", throttleMs: 100 },
           // Runs once per call, on the history saved before it, so a
           // continuation runs it again. Later steps add only tools this
-          // reply offers. It changes what's sent, not what's saved. The
-          // second cache breakpoint goes on the last message before the
-          // new prompt, so the steps of this reply and the next prompt
-          // read the history from the cache. An attachment from an earlier
-          // turn that the model can't read goes as a note naming it.
+          // reply offers. It changes what's sent, not what's saved. On
+          // Claude, the second cache breakpoint goes on the last message
+          // before the new prompt, so the steps of this reply and the next
+          // prompt read the history from the cache. An attachment from an
+          // earlier turn that the model can't read goes as a note naming
+          // it.
           contextHandler: async (
             _ctx,
             { search, recent, inputMessages, inputPrompt, existingResponses },
           ) => {
             const history = [...search, ...recent, ...inputMessages];
+            const messages = replaceUnreadableAttachments(
+              [...history, ...inputPrompt, ...existingResponses],
+              model.reads,
+            );
             return fitHistory(
-              withCacheBreakpoint(
-                replaceUnreadableAttachments(
-                  [...history, ...inputPrompt, ...existingResponses],
-                  model.reads,
-                ),
-                history.length - 1,
-              ),
+              claude
+                ? withCacheBreakpoint(messages, history.length - 1)
+                : messages,
             );
           },
         },
@@ -276,6 +289,7 @@ const vReplyStart = v.union(
     promptText: v.string(),
     connections: v.array(schema.doc("connections")),
     threadDefersTools: v.boolean(),
+    foundToolNames: v.array(v.string()),
     temporary: v.boolean(),
     autoApprove: v.boolean(),
     modelId: v.string(),
@@ -305,6 +319,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   user, so the thread names the user.
  * - `threadDefersTools`: whether the thread already defers connector tools
  *   (deferThreadTools).
+ * - `foundToolNames`: the tools a8's own search found in the thread before
+ *   (recordFoundTools).
  * - `temporary`: whether the thread is temporary.
  * - `autoApprove`: whether the thread has auto-approve on. Never in a
  *   scheduled prompt thread, whose runs always stop on their cards (ADR
@@ -331,6 +347,7 @@ export const getReplyStart = internalQuery({
       stopped,
       thread,
       deferredToolThread,
+      foundTools,
       temporaryThread,
       autoApproveThread,
       scheduledPrompt,
@@ -338,6 +355,7 @@ export const getReplyStart = internalQuery({
       getStoppedReply(ctx, threadId, order),
       getThreadMetadata(ctx, components.agent, { threadId }).catch(() => null),
       findDeferredToolThread(ctx, threadId),
+      findThreadFoundTools(ctx, threadId),
       findTemporaryThread(ctx, threadId),
       findAutoApproveThread(ctx, threadId),
       findThreadScheduledPrompt(ctx, threadId),
@@ -353,6 +371,7 @@ export const getReplyStart = internalQuery({
       promptText: prompt?.text ?? "",
       connections,
       threadDefersTools: deferredToolThread !== null,
+      foundToolNames: foundTools?.toolNames ?? [],
       temporary: temporaryThread !== null,
       autoApprove: isAutoApproveOn(autoApproveThread, scheduledPrompt),
       modelId: model.id,
@@ -391,6 +410,36 @@ export const deferThreadTools = internalMutation({
 async function findDeferredToolThread(ctx: QueryCtx, threadId: string) {
   return await ctx.db
     .query("deferredToolThreads")
+    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .unique();
+}
+
+/**
+ * Records the tools a8's own search found in the thread (ADR 0016),
+ * replacing the ones recorded before. A reply calls it after each search
+ * that finds tools, and to drop tools it no longer offers
+ * (lib/replyTools.ts). An empty list deletes the row.
+ */
+export const recordFoundTools = internalMutation({
+  args: { threadId: v.string(), toolNames: v.array(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { threadId, toolNames }) => {
+    const row = await findThreadFoundTools(ctx, threadId);
+    if (toolNames.length === 0) {
+      if (row) await ctx.db.delete("threadFoundTools", row._id);
+    } else if (row) {
+      await ctx.db.patch("threadFoundTools", row._id, { toolNames });
+    } else {
+      await ctx.db.insert("threadFoundTools", { threadId, toolNames });
+    }
+    return null;
+  },
+});
+
+/** The thread's threadFoundTools row, or null if a8's search found none. */
+async function findThreadFoundTools(ctx: QueryCtx, threadId: string) {
+  return await ctx.db
+    .query("threadFoundTools")
     .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
     .unique();
 }

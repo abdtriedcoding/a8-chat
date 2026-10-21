@@ -1,7 +1,7 @@
 import type { Doc } from "../_generated/dataModel";
 import { MAX_AUTO_APPROVED_ACTIONS } from "./autoApprove";
 import { CONNECTOR_VIEWS, type ConnectorView } from "./connectorView";
-import { TOOL_SEARCH_KEY, type ToolLoading } from "./toolLoading";
+import type { ToolLoading } from "./toolLoading";
 
 const INSTRUCTIONS =
   "You are a8, a helpful AI assistant. Answer clearly and concisely. " +
@@ -81,11 +81,11 @@ const CONNECTOR_GUIDE =
   "reconnecting, tell them to connect it on the Connectors page. Don't " +
   "guess what's in it.";
 
-// Only added when the reply defers connector tools to tool search (ADR 0006).
-// Without it, Haiku sometimes calls a tool name it guessed.
-const TOOL_SEARCH =
+// Only added when the reply defers connector tools to tool search (ADR 0006,
+// ADR 0016). Without it, Haiku sometimes calls a tool name it guessed.
+const toolSearchInstruction = (searchTool: string) =>
   "Some connector tools aren't loaded yet. Before you call a connector " +
-  `tool that isn't in your tool list, find it with the ${TOOL_SEARCH_KEY} ` +
+  `tool that isn't in your tool list, find it with the ${searchTool} ` +
   "tool. Search for the app and the task, like \"Linear issues assigned to " +
   "me\". Never call a connector tool you haven't seen.";
 
@@ -140,21 +140,25 @@ export function replyInstructions({
  * @param connections The user's connections, of any status.
  * @param mentioned The connectors the prompt mentions (findMentions).
  * @param loading How the reply offers connector tools (arrangeReplyTools).
+ * @param searchTool The search tool's key, Anthropic's or a8's, for when
+ *   loading is `search`.
  */
 export function connectorInstructions({
   connections,
   mentioned,
   loading,
+  searchTool,
 }: {
   connections: ConnectionSummary[];
   mentioned: ConnectorView[];
   loading: ToolLoading;
+  searchTool: string;
 }): string | undefined {
   if (connections.length === 0) return undefined;
   return [
     CONNECTOR_GUIDE,
     connectorStatusLine(connections),
-    ...(loading === "search" ? [TOOL_SEARCH] : []),
+    ...(loading === "search" ? [toolSearchInstruction(searchTool)] : []),
     ...mentioned.map((connector) => mentionInstruction(connector, connections)),
   ].join("\n");
 }

@@ -35,6 +35,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `sharedSnapshots.ts`: sharing a thread through a public link (ADR 0011). It copies the thread's finished turns in batches, unshares, and serves the public page's queries.
 - `titles.ts`: a new thread's title, written by Claude Haiku from its first prompt at no credit cost.
 - `tools/webSearch.ts`: the web search tool, and the only code that calls Tavily (ADR 0001).
+- `tools/findTools.ts`: a8's own tool search, which finds deferred connector tools on models other than Claude (ADR 0016).
 
 ### Attachments
 
@@ -81,7 +82,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/encryption.ts`: encrypts and decrypts stored secrets under `CONNECTION_ENCRYPTION_KEY`.
 - `lib/connectorToolList.ts`: what a8 keeps of a vendor's tool list, and its token estimate.
 - `lib/connectorTools.ts`: a reply's connector tools, the account label tool and reading MCP tool results.
-- `lib/toolLoading.ts`: which connector tools load and which are deferred (ADR 0006, ADR 0009).
+- `lib/toolLoading.ts`: which connector tools load and which are deferred (ADR 0006, ADR 0009, ADR 0016).
 - `lib/replyTools.ts`: `createReplyTools`, the one call a reply makes for its tools.
 
 ## Auth rules (`lib/guards.ts`)

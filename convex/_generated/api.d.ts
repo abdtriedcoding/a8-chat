@@ -75,6 +75,7 @@ import type * as temporaryThreads from "../temporaryThreads.js";
 import type * as threads from "../threads.js";
 import type * as titles from "../titles.js";
 import type * as toolLists from "../toolLists.js";
+import type * as tools_findTools from "../tools/findTools.js";
 import type * as tools_scheduledPrompts from "../tools/scheduledPrompts.js";
 import type * as tools_webSearch from "../tools/webSearch.js";
 import type * as usage from "../usage.js";
@@ -153,6 +154,7 @@ declare const fullApi: ApiFromModules<{
   threads: typeof threads;
   titles: typeof titles;
   toolLists: typeof toolLists;
+  "tools/findTools": typeof tools_findTools;
   "tools/scheduledPrompts": typeof tools_scheduledPrompts;
   "tools/webSearch": typeof tools_webSearch;
   usage: typeof usage;

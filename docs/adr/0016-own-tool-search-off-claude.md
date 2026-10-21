@@ -14,3 +14,5 @@ Claude keeps Anthropic's search because the tool search spike tested it, and it 
 
 - The tools a search finds have to outlast the `streamText` call that found them. An approval continuation (ADR 0002) is a new call, and AI SDK `toolSearch()` forgets its finds there (ADR 0006). a8 records found tools on the thread, so later replies and continuations load them.
 - A thread that switches between Claude and another model changes which search it uses. When a thread switches away from Claude, a8 drops Anthropic's tool references from the history it sends, the same way it drops references to tools it no longer offers.
+- Tools a8's search found also load up front on Claude replies. A Claude reply's history can then call them with no tool reference behind them. Each such find changes Claude's tool list, so the next Claude reply misses the prompt cache once.
+- The last step of a reply on another model keeps its tools but sets `toolChoice: "none"`, so a reply that hits the step cap still ends with text. Claude's last step sends no tools, because Anthropic rejects tool search parts without the search tool.
