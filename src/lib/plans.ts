@@ -14,5 +14,5 @@ export const PRO_PRICES: Record<
 export const BILLING_INTERVALS = Object.keys(PRO_PRICES) as BillingInterval[];
 
 export function isBillingInterval(value: string): value is BillingInterval {
-  return value in PRO_PRICES;
+  return Object.hasOwn(PRO_PRICES, value);
 }

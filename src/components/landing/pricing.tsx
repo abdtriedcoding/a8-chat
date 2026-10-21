@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { usePageRestored } from "@/hooks/use-page-restored";
+import { errorMessage } from "@/lib/errors";
 import {
   BILLING_INTERVALS,
   isBillingInterval,
@@ -83,15 +85,21 @@ export function Pricing({
 }) {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [opening, setOpening] = useState(false);
+  usePageRestored(() => setOpening(false));
 
   async function checkout() {
     setOpening(true);
-    const result = await startCheckout(billingInterval);
-    if ("url" in result) {
-      window.location.assign(result.url);
-      return;
+    try {
+      const result = await startCheckout(billingInterval);
+      if ("url" in result) {
+        window.location.assign(result.url);
+        return;
+      }
+      toast.error(result.error);
+    } catch (error) {
+      // The server function's own failures, such as a dropped connection.
+      toast.error(errorMessage(error));
     }
-    toast.error(result.error);
     setOpening(false);
   }
 

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { usePageRestored } from "@/hooks/use-page-restored";
 import { errorMessage } from "@/lib/errors";
 import {
   BILLING_INTERVALS,
@@ -38,6 +39,7 @@ export function PlanCard() {
   const portal = useAction(api.billing.portal);
   // What's opening: a checkout interval or the portal.
   const [opening, setOpening] = useState<BillingInterval | "portal">();
+  usePageRestored(() => setOpening(undefined));
 
   async function open(
     key: BillingInterval | "portal",

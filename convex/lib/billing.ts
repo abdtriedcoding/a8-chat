@@ -112,7 +112,12 @@ export async function getPlanTerms(
   userId: string,
 ): Promise<PlanTerms | null> {
   if (!billingEnabled) return null;
-  for (const subscription of await liveSubscriptions(ctx, userId)) {
+  // A renewing subscription wins over a cancelled one, so a second
+  // subscription that renews doesn't show as ending.
+  const subscriptions = (await liveSubscriptions(ctx, userId)).sort(
+    (a, b) => Number(a.cancelAtPeriodEnd) - Number(b.cancelAtPeriodEnd),
+  );
+  for (const subscription of subscriptions) {
     const billingInterval = proInterval(subscription.productId);
     if (!billingInterval) continue;
     const endsAt = subscription.cancelAtPeriodEnd
@@ -139,15 +144,20 @@ export async function getPlanTerms(
   };
 }
 
-/** Revokes the user's subscriptions at once, so Polar stops charging. */
+/**
+ * Revokes the user's subscriptions at once, so Polar stops charging. Tries
+ * every subscription before throwing the first failure.
+ */
 export async function revokeSubscriptions(ctx: ActionCtx, userId: string) {
+  const errors: unknown[] = [];
   for (const { id } of await liveSubscriptions(ctx, userId)) {
     const result = await subscriptionsUpdate(polar.polar, {
       id,
       subscriptionUpdate: { revoke: true },
     });
-    if (!result.ok) throw result.error;
+    if (!result.ok) errors.push(result.error);
   }
+  if (errors.length > 0) throw errors[0];
 }
 
 /** The user's subscriptions that Polar hasn't ended. */
