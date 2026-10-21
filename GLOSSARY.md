@@ -158,3 +158,25 @@ A connector tool the model finds through tool search instead of seeing it up fro
 **Tool budget**:
 The token size the user's connector tools can reach before a thread defers them.
 _Avoid_: tool cap, tool limit
+
+### Models and plans
+
+**Model**:
+The AI that writes a thread's replies, like GPT-5.5 or Claude Opus. The user picks one from a short list a8 has tested with connectors and action cards. Each thread remembers the model it last used, and the user can switch at any send: the next reply uses the new one. Each reply records the model that wrote it. If the thread's model is no longer allowed, because the user's plan changed or a8 removed the model, the next send uses the default model instead. When a lab fails mid-reply, the reply fails, and a8 never moves it to another model on its own.
+_Avoid_: provider, LLM (in UI copy), engine
+
+**Lab**:
+The company that made a model, like OpenAI, Google or Anthropic. The picker shows it beside each model's name.
+_Avoid_: provider, vendor, maker
+
+**Default model**:
+The model a new thread starts on. The user sets it.
+_Avoid_: preferred model, global model
+
+**Credit**:
+A unit of hosted usage worth one US cent of model cost. A reply on a premium model uses more credits than the same reply on a cheap one, and a web search costs one credit. Thread titles cost nothing. a8 checks the balance at each send: a reply that starts always finishes, even if it takes the balance below zero, and then sends wait until the plan renews. A scheduled run with no credits counts as a failed run. Credits reset every month, and leftovers expire.
+_Avoid_: token (for credits), point, coin
+
+**Plan**:
+What a hosted user pays for: Free or Pro. Each plan grants a number of credits a month. Free can use only a few cheap models, and Pro can use every model. An upgrade grants the new plan's full credits at once and starts a new month from that day. A downgrade waits until the month ends. Hosted users can't bring their own model keys, and self-hosted a8 has no plans or credits.
+_Avoid_: tier, subscription (outside billing code), package
