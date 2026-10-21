@@ -38,10 +38,13 @@ import type * as lib_connectorToolList from "../lib/connectorToolList.js";
 import type * as lib_connectorTools from "../lib/connectorTools.js";
 import type * as lib_connectorView from "../lib/connectorView.js";
 import type * as lib_connectors from "../lib/connectors.js";
+import type * as lib_creditPeriod from "../lib/creditPeriod.js";
+import type * as lib_credits from "../lib/credits.js";
 import type * as lib_encryption from "../lib/encryption.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_guards from "../lib/guards.js";
 import type * as lib_instructions from "../lib/instructions.js";
+import type * as lib_modelPrices from "../lib/modelPrices.js";
 import type * as lib_monthlyPeriod from "../lib/monthlyPeriod.js";
 import type * as lib_oauthDiscovery from "../lib/oauthDiscovery.js";
 import type * as lib_pendingActions from "../lib/pendingActions.js";
@@ -58,6 +61,7 @@ import type * as lib_temporaryThreads from "../lib/temporaryThreads.js";
 import type * as lib_threadSearchSnippet from "../lib/threadSearchSnippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as lib_toolLoading from "../lib/toolLoading.js";
+import type * as lib_usage from "../lib/usage.js";
 import type * as pendingActions from "../pendingActions.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as scheduledPrompts from "../scheduledPrompts.js";
@@ -69,6 +73,7 @@ import type * as titles from "../titles.js";
 import type * as toolLists from "../toolLists.js";
 import type * as tools_scheduledPrompts from "../tools/scheduledPrompts.js";
 import type * as tools_webSearch from "../tools/webSearch.js";
+import type * as usage from "../usage.js";
 
 import type {
   ApiFromModules,
@@ -107,10 +112,13 @@ declare const fullApi: ApiFromModules<{
   "lib/connectorTools": typeof lib_connectorTools;
   "lib/connectorView": typeof lib_connectorView;
   "lib/connectors": typeof lib_connectors;
+  "lib/creditPeriod": typeof lib_creditPeriod;
+  "lib/credits": typeof lib_credits;
   "lib/encryption": typeof lib_encryption;
   "lib/errors": typeof lib_errors;
   "lib/guards": typeof lib_guards;
   "lib/instructions": typeof lib_instructions;
+  "lib/modelPrices": typeof lib_modelPrices;
   "lib/monthlyPeriod": typeof lib_monthlyPeriod;
   "lib/oauthDiscovery": typeof lib_oauthDiscovery;
   "lib/pendingActions": typeof lib_pendingActions;
@@ -127,6 +135,7 @@ declare const fullApi: ApiFromModules<{
   "lib/threadSearchSnippet": typeof lib_threadSearchSnippet;
   "lib/timeZone": typeof lib_timeZone;
   "lib/toolLoading": typeof lib_toolLoading;
+  "lib/usage": typeof lib_usage;
   pendingActions: typeof pendingActions;
   rateLimits: typeof rateLimits;
   scheduledPrompts: typeof scheduledPrompts;
@@ -138,6 +147,7 @@ declare const fullApi: ApiFromModules<{
   toolLists: typeof toolLists;
   "tools/scheduledPrompts": typeof tools_scheduledPrompts;
   "tools/webSearch": typeof tools_webSearch;
+  usage: typeof usage;
 }>;
 
 /**

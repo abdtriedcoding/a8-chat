@@ -3,8 +3,9 @@ import { generateText } from "ai";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { internalAction, internalMutation } from "./_generated/server";
-import { chatModel, logUsage } from "./agents/chat";
+import { chatModel } from "./agents/chat";
 import { cleanTitle } from "./lib/prompt";
+import { recordModelUsage } from "./lib/usage";
 
 const TITLE_INSTRUCTIONS =
   "Write a title for a chat that starts with the user's message, which is " +
@@ -58,7 +59,7 @@ export const generateTitle = internalAction({
           }),
       maxOutputTokens: MAX_TITLE_TOKENS,
     });
-    await logUsage(ctx, {
+    await recordModelUsage(ctx, "title", {
       userId,
       threadId,
       agentName: undefined,

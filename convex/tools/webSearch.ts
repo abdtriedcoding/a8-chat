@@ -5,6 +5,7 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { env } from "../_generated/server";
+import { recordWebSearch } from "../lib/usage";
 import { checkWebSearch, countWebSearch } from "../rateLimits";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
@@ -129,7 +130,8 @@ export type WebSearchOutput = WebSearchResult[] | string;
  * search goes through. Over a cap it returns WEB_SEARCH_OFF, and when the
  * search fails it returns WEB_SEARCH_FAILED, so the model can still answer
  * and tell the user. A failed search doesn't count, so retries during a
- * Tavily outage don't use up the day's searches.
+ * Tavily outage don't use up the day's searches. A search that goes
+ * through costs the user one credit, and a failed one costs nothing.
  */
 export const webSearch = createTool({
   description:
@@ -157,6 +159,7 @@ export const webSearch = createTool({
       return WEB_SEARCH_FAILED;
     }
     await countWebSearch(ctx, ctx.userId);
+    await recordWebSearch(ctx, ctx.userId, ctx.threadId);
     return results;
   },
 });

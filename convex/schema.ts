@@ -54,6 +54,36 @@ export const vLastRun = v.object({
   message: v.optional(v.string()),
 });
 
+/**
+ * What a usage event paid for. A title's cost counts toward the day's spend
+ * but not toward the user's credits.
+ */
+export const vUsageKind = v.union(
+  v.literal("replyStep"),
+  v.literal("webSearch"),
+  v.literal("title"),
+);
+
+/** A credit ledger row's period and credits. Times are in ms. */
+export const vCreditPeriod = v.object({
+  periodStart: v.number(),
+  // Credits reset here, and leftovers expire.
+  periodEnd: v.number(),
+  creditsGranted: v.number(),
+  // A decimal, since a short reply costs a fraction of a credit. It can
+  // pass creditsGranted, since a reply that starts always finishes.
+  creditsUsed: v.number(),
+});
+
+/** A model call's tokens. */
+export const vTokenCounts = v.object({
+  // Input tokens that neither read nor wrote the prompt cache.
+  inputTokens: v.number(),
+  outputTokens: v.number(),
+  cacheWriteTokens: v.number(),
+  cacheReadTokens: v.number(),
+});
+
 const vWaitingRun = v.union(
   v.object({ queuedPromptId: v.id("queuedPrompts") }),
   v.object({ promptMessageId: v.string() }),
@@ -322,6 +352,38 @@ export default defineSchema({
     .index("by_state", ["state"])
     .index("by_expiresAt", ["expiresAt"])
     .index("by_userId", ["userId"]),
+  // The credit ledger (lib/credits.ts): one row per user per credit period,
+  // only when billing is on. The first usage in a period opens its row, and
+  // an upgrade ends the current row early and opens the next. The Billing
+  // page reads the latest row. Deleting the account deletes the rows.
+  creditLedger: defineTable({
+    userId: v.string(),
+    ...vCreditPeriod.fields,
+  }).index("by_userId_and_periodStart", ["userId", "periodStart"]),
+  // One row per recorded cost (record in convex/usage.ts), only when
+  // billing is on, so the bill can be checked against real usage. Deleting
+  // the account deletes the user's rows.
+  usageEvents: defineTable({
+    userId: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    kind: vUsageKind,
+    // Unset for a web search.
+    model: v.optional(v.string()),
+    tokens: v.optional(vTokenCounts),
+    costUsd: v.number(),
+    // What came off the user's credits. 0 for a title.
+    credits: v.number(),
+  }).index("by_userId", ["userId"]),
+  // What a8 spent on models and searches across all users in a UTC day, in
+  // USD, for the daily dollar ceiling. Every usage event adds to one of
+  // DAILY_SPEND_SHARDS rows picked at random, so replies running at once
+  // don't all write the same document. The day's spend is the rows' sum.
+  dailySpend: defineTable({
+    // "YYYY-MM-DD", in UTC.
+    day: v.string(),
+    shard: v.number(),
+    usd: v.number(),
+  }).index("by_day_and_shard", ["day", "shard"]),
   // OAuth client registrations: the client a8 registered with a connector's
   // authorization server (convex/signIns.ts). One row per connector per
   // deployment, shared by every user. Notion orphans earlier grants when a

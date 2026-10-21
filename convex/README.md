@@ -16,7 +16,8 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 
 - `auth.ts`: Better Auth's options, `getCurrentUser`, and `purgeAccount`, which deletes a user's data when they delete their account.
 - `emails.ts`: queues verification, password reset and scheduled run emails through Resend.
-- `billing.ts`: the Billing page's plan query, Pro checkout and Polar's customer portal, and the action that cancels a deleted user's subscription.
+- `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, and the action that cancels a deleted user's subscription.
+- `usage.ts`: the cost recorder. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.
 - `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins, connector tool calls and shares. Sends and web searches also have a daily cap across all users.
 
 ### Chat
@@ -53,6 +54,10 @@ These modules hold helpers and register no Convex functions.
 
 - `lib/billing.ts`: whether billing is on, the Polar client, and `getPlan`, the one place that answers which plan a user is on, what it grants a month and the current month's dates.
 - `lib/monthlyPeriod.ts`: the date math for a plan's monthly periods, shared with the Billing page.
+- `lib/credits.ts`: the credit ledger, and `currentCreditRow`, which opens a new period on the first usage in it or after an upgrade.
+- `lib/creditPeriod.ts`: which ledger row covers now, shared with the Billing page.
+- `lib/usage.ts`: prices reply steps, titles and web searches and sends them to the cost recorder.
+- `lib/modelPrices.ts`: Anthropic's token prices for the Claude models a8 runs.
 - `lib/guards.ts`: session and ownership checks. See the rules below.
 - `lib/errors.ts`: the error codes and `appError`. See the rules below.
 - `lib/prompt.ts`: prompt and title checks, and the prompt message the model gets.

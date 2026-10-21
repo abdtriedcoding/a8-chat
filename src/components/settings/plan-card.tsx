@@ -24,9 +24,15 @@ import {
   type BillingInterval,
 } from "@/lib/plans";
 import { api } from "../../../convex/_generated/api";
+import {
+  creditsLeft,
+  resolveCreditPeriod,
+} from "../../../convex/lib/creditPeriod";
 import { monthlyPeriod } from "../../../convex/lib/monthlyPeriod";
 
 type PlanTerms = NonNullable<FunctionReturnType<typeof api.billing.plan>>;
+
+type LatestCredits = FunctionReturnType<typeof api.billing.latestCredits>;
 
 /**
  * The user's plan and when its credits reset. Free users upgrade from here,
@@ -35,6 +41,7 @@ type PlanTerms = NonNullable<FunctionReturnType<typeof api.billing.plan>>;
  */
 export function PlanCard() {
   const plan = useQuery(api.billing.plan);
+  const latestCredits = useQuery(api.billing.latestCredits);
   const checkout = useAction(api.billing.checkout);
   const portal = useAction(api.billing.portal);
   // What's opening: a checkout interval or the portal.
@@ -65,7 +72,11 @@ export function PlanCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="py-4">
-        {plan ? <PlanSummary plan={plan} /> : <Skeleton className="h-12 w-full" />}
+        {plan && latestCredits !== undefined ? (
+          <PlanSummary plan={plan} latestCredits={latestCredits} />
+        ) : (
+          <Skeleton className="h-16 w-full" />
+        )}
       </CardContent>
       {plan?.name === "free" && (
         <CardFooter className="flex-wrap gap-2">
@@ -101,11 +112,22 @@ export function PlanCard() {
   );
 }
 
-function PlanSummary({ plan }: { plan: PlanTerms }) {
-  // The reset date as of opening the page. A page left open past it shows
-  // the old date until a reload.
+function PlanSummary({
+  plan,
+  latestCredits,
+}: {
+  plan: PlanTerms;
+  latestCredits: LatestCredits;
+}) {
+  // The period as of opening the page. A page left open past its end shows
+  // the old one until a reply opens the next.
   const [now] = useState(Date.now);
-  const { periodEnd } = monthlyPeriod(plan.periodAnchor, now);
+  const resolved = resolveCreditPeriod(
+    latestCredits,
+    { ...plan, ...monthlyPeriod(plan.periodAnchor, now) },
+    now,
+  );
+  const period = "keeps" in resolved ? resolved.keeps : resolved.opens;
   return (
     <div className="flex flex-col gap-1">
       <span className="flex items-center gap-2 text-sm font-medium">
@@ -116,9 +138,13 @@ function PlanSummary({ plan }: { plan: PlanTerms }) {
           </Badge>
         )}
       </span>
+      <span className="text-sm">
+        {formatCredits(creditsLeft(period))} of{" "}
+        {formatCredits(period.creditsGranted)} credits left
+      </span>
       <span className="text-sm text-muted-foreground">
         {plan.monthlyCredits} credits a month. They reset on{" "}
-        {formatDate(periodEnd)}.
+        {formatDate(period.periodEnd)}.
       </span>
       {plan.endsAt !== null && (
         <span className="text-sm text-muted-foreground">
@@ -127,6 +153,16 @@ function PlanSummary({ plan }: { plan: PlanTerms }) {
       )}
     </div>
   );
+}
+
+/**
+ * Credits to two decimal places, rounded down, so a balance just under a
+ * whole credit doesn't show as the whole credit.
+ */
+function formatCredits(credits: number): string {
+  return (Math.floor(credits * 100) / 100).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatDate(ms: number): string {
