@@ -10,6 +10,7 @@
 import type { MessageDoc } from "@convex-dev/agent";
 import type { PlanTerms } from "./billing";
 import type { AttachmentKind } from "./attachments";
+import { CONNECTOR_CHECKS } from "./connectorChecks";
 import { GATEWAY_LABS, GATEWAY_MODELS, SYNCED_ON } from "./gatewayModels";
 
 /** A lab's id on AI Gateway, like "anthropic" or "openai". */
@@ -44,6 +45,11 @@ export type Model = {
   reasoning: boolean;
   /** Whether the gateway tags it as fast. */
   fast: boolean;
+  /**
+   * Whether it passed a connector check (lib/connectorChecks.ts, ADR 0018).
+   * False for a model that failed one or was never checked.
+   */
+  worksWithConnectors: boolean;
   /** Whether it came out within NEW_FOR_DAYS of the last sync. */
   isNew: boolean;
   /** The plans that can use it. Pro gets every model. */
@@ -126,6 +132,7 @@ export const MODELS: Model[] = GATEWAY_MODELS.map((entry) => {
     contextTokens: entry.contextTokens,
     reasoning: entry.reasoning,
     fast: entry.fast,
+    worksWithConnectors: CONNECTOR_CHECKS[entry.gatewayId]?.passed === true,
     isNew: entry.released !== null && Date.parse(entry.released) >= newSince,
     plans:
       creditsPerReply <= FREE_MAX_CREDITS_PER_REPLY

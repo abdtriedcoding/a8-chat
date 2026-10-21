@@ -9,6 +9,7 @@ import {
   FileTextIcon,
   ListFilterIcon,
   LockIcon,
+  PlugIcon,
   StarIcon,
   ZapIcon,
   type LucideIcon,
@@ -73,7 +74,7 @@ const FEATURED = "featured";
 type Tab = typeof FEATURED | Lab;
 
 /** What the filter menu can narrow the list to. */
-type Filter = "image" | "pdf" | "reasoning" | "fast" | "plan";
+type Filter = "connectors" | "image" | "pdf" | "reasoning" | "fast" | "plan";
 
 /** Each capability's icon and name, for the filters and the row icons. */
 const CAPABILITIES: {
@@ -82,6 +83,12 @@ const CAPABILITIES: {
   icon: LucideIcon;
   has: (model: Model) => boolean;
 }[] = [
+  {
+    filter: "connectors",
+    label: "Works with connectors",
+    icon: PlugIcon,
+    has: (model) => model.worksWithConnectors,
+  },
   {
     filter: "image",
     label: "Reads images",
@@ -114,7 +121,8 @@ const CAPABILITIES: {
  * tab: a8's featured models, or one lab's. Typing searches every lab at
  * once, and the filter menu narrows by what a model can do. Each row has
  * the model's description, icons for what it reads and does and, on the
- * hosted a8, about how many credits a reply costs. The footer makes the
+ * hosted a8, about how many credits a reply costs. A plug icon marks a
+ * model that passed a connector check (ADR 0018). The footer makes the
  * current model the user's default model. A failed `onChange` shows as a
  * toast.
  *
@@ -438,7 +446,7 @@ function FilterMenu({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>Show models that</DropdownMenuLabel>
         {CAPABILITIES.map(({ filter, label, icon: Icon }) => (
           <DropdownMenuCheckboxItem

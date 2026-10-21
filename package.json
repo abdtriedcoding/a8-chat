@@ -11,6 +11,7 @@
     "probe": "bun scripts/probe-connector.ts",
     "probe:gateway": "bun scripts/probe-gateway.ts",
     "sync:models": "bun scripts/sync-models.ts",
+    "check:connectors": "bun scripts/check-connectors.ts",
     "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p convex"
   },
   "dependencies": {

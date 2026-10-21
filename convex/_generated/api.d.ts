@@ -34,6 +34,7 @@ import type * as lib_autoApprove from "../lib/autoApprove.js";
 import type * as lib_billing from "../lib/billing.js";
 import type * as lib_connectionTokens from "../lib/connectionTokens.js";
 import type * as lib_connectorAuth from "../lib/connectorAuth.js";
+import type * as lib_connectorChecks from "../lib/connectorChecks.js";
 import type * as lib_connectorToolList from "../lib/connectorToolList.js";
 import type * as lib_connectorTools from "../lib/connectorTools.js";
 import type * as lib_connectorView from "../lib/connectorView.js";
@@ -114,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   "lib/billing": typeof lib_billing;
   "lib/connectionTokens": typeof lib_connectionTokens;
   "lib/connectorAuth": typeof lib_connectorAuth;
+  "lib/connectorChecks": typeof lib_connectorChecks;
   "lib/connectorToolList": typeof lib_connectorToolList;
   "lib/connectorTools": typeof lib_connectorTools;
   "lib/connectorView": typeof lib_connectorView;
