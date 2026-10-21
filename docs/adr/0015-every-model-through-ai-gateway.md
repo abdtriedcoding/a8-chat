@@ -2,7 +2,7 @@
 
 Replies from every lab, Claude included, go through Vercel AI Gateway. a8 pins Claude requests to Anthropic (`providerOptions.gateway.only: ["anthropic"]`) and keeps sending Anthropic's provider tools and options. The spec planned OpenRouter for every model, but OpenRouter rejects Anthropic's BM25 tool search with a 400, and its AI SDK provider drops `deferLoading` on function tools (checked Oct 21, 2026). We picked AI Gateway over OpenRouter because it passes tool search through, adds no fee on top of model prices, and is part of the AI SDK. OpenRouter takes 5.5% of every credit purchase. a8 already deploys on Vercel.
 
-This ADR first kept Claude on the Anthropic API, since the gateway's docs didn't say whether it passes tool search through. The gateway spike (`scripts/probe-gateway.ts`, issue #318) settled it on Oct 21, 2026. Two runs of Claude Haiku 5.5 through the gateway passed every check a8 relies on:
+This ADR first kept Claude on the Anthropic API, since the gateway's docs didn't say whether it passes tool search through. The gateway spike (`scripts/probe-gateway.ts`, issue #318) settled it on Oct 21, 2026. Three runs of Claude Haiku 5.5 through the gateway passed every check a8 relies on:
 
 - Anthropic's BM25 tool search found a deferred tool, and the model called it.
 - `deferLoading` kept deferred tools out of the prompt. Against a request with tool search and no connector tools, eight connector tools added 3,659 input tokens loaded and 93 deferred.
