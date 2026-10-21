@@ -2,7 +2,7 @@
 
 import { useAction, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,8 @@ import { monthlyPeriod } from "../../../convex/lib/monthlyPeriod";
 type PlanTerms = NonNullable<FunctionReturnType<typeof api.billing.plan>>;
 
 type LatestCredits = FunctionReturnType<typeof api.billing.latestCredits>;
+
+const MINUTE_MS = 60_000;
 
 /**
  * The user's plan and when its credits reset. Free users upgrade from here,
@@ -119,9 +121,13 @@ function PlanSummary({
   plan: PlanTerms;
   latestCredits: LatestCredits;
 }) {
-  // The period as of opening the page. A page left open past its end shows
-  // the old one until a reply opens the next.
-  const [now] = useState(Date.now);
+  // The clock moves on each minute, so a page left open past the reset
+  // shows the new period, even before a reply opens its row.
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), MINUTE_MS);
+    return () => window.clearInterval(timer);
+  }, []);
   const resolved = resolveCreditPeriod(
     latestCredits,
     { ...plan, ...monthlyPeriod(plan.periodAnchor, now) },
