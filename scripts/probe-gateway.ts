@@ -86,7 +86,7 @@ const results: { name: string; ok: boolean }[] = [];
 
 /** A fake connector tool's input schema, without its `type: "object"`. */
 type ToolInput = {
-  properties: Record<string, { type: string; description: string }>;
+  properties: Record<string, { type: "string"; description: string }>;
   required: string[];
 };
 
@@ -395,9 +395,9 @@ function replyTools({
   for (const [name, { connector, description, input = CREATE_INPUT }] of Object.entries(
     connectorTools,
   )) {
-    // Spreading the optional parts loses which kind of Tool this is, so
-    // TypeScript needs the cast.
-    tools[name] = tool({
+    // tool() can't infer a type from the optional parts spread in, so
+    // this builds the Tool by hand, and TypeScript needs the cast.
+    tools[name] = {
       description: `[${connector}] ${description} ${usageNotes(name)}`,
       inputSchema: jsonSchema<Record<string, unknown>>({ type: "object", ...input }),
       ...(executeTarget &&
@@ -405,7 +405,7 @@ function replyTools({
       ...(deferred && {
         providerOptions: { anthropic: { deferLoading: true } },
       }),
-    }) as Tool;
+    } as Tool;
   }
   return tools;
 }
