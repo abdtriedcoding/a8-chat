@@ -11,6 +11,7 @@ import { countAutoApproved } from "../lib/autoApprove";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess } from "../lib/guards";
 import { deletePendingActions, setPendingActions } from "../lib/pendingActions";
+import { settleReplyModel } from "../lib/threadModels";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { getStoppedReply } from "./stop";
 import { getLastTurn } from "./turns";
@@ -34,6 +35,9 @@ const ACTION_STOPPED = "The user stopped the reply before this action ran.";
  * shows it. Once the user has decided on every action the step asked for,
  * the reply continues. An approved action runs first. A cancelled one tells
  * the model the user declined.
+ *
+ * The reply continues on the thread's model, or on the default model when
+ * the thread can't use its model anymore (settleReplyModel).
  *
  * Throws if the action isn't waiting anymore: another tab decided on it, a
  * new prompt cancelled it, or a regenerate or an edit replaced its turn.
@@ -75,6 +79,10 @@ export const decideAction = mutation({
       count: waiting.length - 1,
     });
     if (waiting.length > 1) return null;
+    // The continuing reply uses the thread's model as it is now. When the
+    // thread can't use it anymore, this moves the thread off it, and the
+    // composer says why.
+    await settleReplyModel(ctx, { threadId, userId: user._id, userSend: false });
     await ctx.scheduler.runAfter(0, internal.chat.reply.streamReply, {
       threadId,
       // The Agent continues the reply from the user's decisions.
