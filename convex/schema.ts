@@ -104,6 +104,16 @@ export default defineSchema({
   deferredToolThreads: defineTable({
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
+  // One row for each thread where a8's own tool search (ADR 0016) found
+  // deferred connector tools. Later replies, and a reply continuing after
+  // action cards, load them up front. A reply drops the tools it no longer
+  // offers (createReplyTools in convex/lib/replyTools.ts). Deleting the
+  // thread deletes it.
+  threadFoundTools: defineTable({
+    threadId: v.string(),
+    // Model tool names, like linear__create_issue.
+    toolNames: v.array(v.string()),
+  }).index("by_threadId", ["threadId"]),
   // One row per pinned thread (setPinned in convex/threads.ts). Its creation
   // time is when the user pinned the thread. Archiving or deleting the thread
   // deletes the row.

@@ -3,13 +3,20 @@ const ATTACHMENTS_TOO_LARGE =
   "The attachments are too large for this model.";
 
 /**
- * Anthropic's errors for a request too big for the model: too many PDF
- * pages or images, a file over its limit, too many bytes, or more tokens
- * than the context window holds. A prompt's text is capped at 16,000
- * characters (checkPrompt), so attachments are what makes a request this
- * big.
+ * The labs' errors for a request too big for the model, as AI Gateway
+ * passes them on. Anthropic's: too many PDF pages or images, a file over
+ * its limit, too many bytes, or more tokens than the context window holds.
+ * OpenAI's and Google's: more tokens than the context window holds. A
+ * prompt's text is capped at 16,000 characters (checkPrompt), so
+ * attachments are what makes a request this big. Other errors show the
+ * generic failure.
  */
 const TOO_LARGE_ERRORS = [
+  // OpenAI: "Your input exceeds the context window of this model. ..."
+  /exceeds the context window/i,
+  // Google: "The input token count exceeds the maximum number of tokens
+  // allowed (1048576)."
+  /input token count exceeds the maximum number of tokens/i,
   // "prompt is too long: 215000 tokens > 200000 maximum"
   /prompt is too long/i,
   // "input length and `max_tokens` exceed context limit: ..."

@@ -398,9 +398,10 @@ export async function setThreadStatus(
 /**
  * Deletes a thread. The Agent deletes its messages and streams in batches in
  * the background. This deletes its stoppedReplies, deferredToolThreads,
- * threadPins, temporaryThreads, autoApproveThreads, threadModels and
- * pendingActions rows, its queue, its shared snapshot and its scheduled
- * prompt right away, and cancels the scheduled prompt's next run. Its
+ * threadFoundTools, threadPins, temporaryThreads, autoApproveThreads,
+ * threadModels and pendingActions rows, its queue, its shared snapshot and
+ * its scheduled prompt right away, and cancels the scheduled prompt's next
+ * run. Its
  * attachments, queued ones included, are left unreferenced, and
  * cleanUpUnsentUploads deletes them.
  */
@@ -432,6 +433,11 @@ export async function deleteThread(ctx: MutationCtx, threadId: string) {
     .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
     .unique();
   if (deferred) await ctx.db.delete("deferredToolThreads", deferred._id);
+  const foundTools = await ctx.db
+    .query("threadFoundTools")
+    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .unique();
+  if (foundTools) await ctx.db.delete("threadFoundTools", foundTools._id);
   await unpinThread(ctx, threadId);
   const temporary = await findTemporaryThread(ctx, threadId);
   if (temporary) await ctx.db.delete("temporaryThreads", temporary._id);

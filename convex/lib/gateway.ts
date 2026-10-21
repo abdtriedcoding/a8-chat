@@ -16,9 +16,13 @@ export function languageModelFor(model: Model) {
 /**
  * The gateway's options for a call to the model, for `providerOptions`. A
  * Claude request goes to Anthropic only, so Anthropic's tool search and
- * cache breakpoints reach it. The gateway's model fallbacks stay off for
- * every model, since a8 never moves a reply to another model.
+ * cache breakpoints reach it. Other models get the gateway's automatic
+ * caching, which caches where the lab supports it. The gateway's model
+ * fallbacks stay off for every model, since a8 never moves a reply to
+ * another model.
  */
-export function gatewayOptions(model: Model): ProviderOptions | undefined {
-  return isClaude(model) ? { gateway: { only: ["anthropic"] } } : undefined;
+export function gatewayOptions(model: Model): ProviderOptions {
+  return isClaude(model)
+    ? { gateway: { only: ["anthropic"] } }
+    : { gateway: { caching: "auto" } };
 }
