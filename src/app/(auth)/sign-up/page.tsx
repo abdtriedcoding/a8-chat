@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { SignUpForm } from "@/components/auth/sign-up-form";
-import { requireSignedOut } from "@/lib/auth-server";
 
 export const metadata: Metadata = { title: "Sign up" };
 
-export default async function SignUpPage() {
-  await requireSignedOut();
+// Static. proxy.ts sends signed-in users to /chat.
+export default function SignUpPage() {
   return <SignUpForm />;
 }

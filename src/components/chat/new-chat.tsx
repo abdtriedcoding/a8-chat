@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "cn";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import { GhostIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";

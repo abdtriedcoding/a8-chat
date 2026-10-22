@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { useTransition } from "react";
 import * as z from "zod";
@@ -27,6 +27,12 @@ const formSchema = z.object({
   email: z.email("Enter a valid email address."),
   password: z.string().min(1, "Enter your password."),
 });
+
+/** SignInForm with the error Better Auth puts in the URL when Google sign-in fails. */
+export function SignInFormFromUrl() {
+  const error = useSearchParams().get("error");
+  return <SignInForm oauthError={error ?? undefined} />;
+}
 
 export function SignInForm({ oauthError }: { oauthError?: string }) {
   const router = useRouter();

@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import * as z from "zod";
@@ -29,6 +29,20 @@ const formSchema = z.object({
 });
 
 const LINK_PROBLEM = "This reset link is invalid, expired, or already used.";
+
+/**
+ * ResetPasswordForm with the token from the email's link, or the error
+ * Better Auth puts there when the token was bad.
+ */
+export function ResetPasswordFormFromUrl() {
+  const searchParams = useSearchParams();
+  return (
+    <ResetPasswordForm
+      token={searchParams.get("token") ?? undefined}
+      linkError={searchParams.get("error") ?? undefined}
+    />
+  );
+}
 
 export function ResetPasswordForm({
   token,

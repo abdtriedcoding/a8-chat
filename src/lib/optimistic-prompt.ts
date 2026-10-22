@@ -1,5 +1,5 @@
 import type { OptimisticLocalStore } from "convex/browser";
-import { insertAtTop } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
@@ -31,30 +31,42 @@ export function optimisticallySendPrompt(
 
   // The server saves the text trimmed.
   const trimmedText = prompt.trim();
-  insertAtTop({
-    paginatedQuery: messagesQuery,
-    argsToMatch: { threadId, streamArgs: undefined },
-    item: {
-      id: crypto.randomUUID(),
-      _creationTime: Date.now(),
-      key: `${threadId}-${newPromptOrder}-0`,
-      order: newPromptOrder,
-      stepOrder: 0,
-      status: "pending",
-      role: "user",
-      text: trimmedText,
-      parts: [
-        ...attachments.map(({ fileUrl, mediaType, filename }) => ({
-          type: "file" as const,
-          url: fileUrl,
-          mediaType,
-          filename,
-        })),
-        ...(trimmedText ? [{ type: "text" as const, text: trimmedText }] : []),
-      ],
-    },
-    localQueryStore: localStore,
-  });
+  const item: FunctionReturnType<typeof messagesQuery>["page"][number] = {
+    id: crypto.randomUUID(),
+    _creationTime: Date.now(),
+    key: `${threadId}-${newPromptOrder}-0`,
+    order: newPromptOrder,
+    stepOrder: 0,
+    status: "pending",
+    role: "user",
+    text: trimmedText,
+    parts: [
+      ...attachments.map(({ fileUrl, mediaType, filename }) => ({
+        type: "file" as const,
+        url: fileUrl,
+        mediaType,
+        filename,
+      })),
+      ...(trimmedText ? [{ type: "text" as const, text: trimmedText }] : []),
+    ],
+  };
+  // insertAtTop updates only one first page. This updates all of them,
+  // since the query cache can hold two: the one on screen, which gets an end
+  // cursor once earlier messages load, and the cached one without it.
+  for (const { args, value } of localStore.getAllQueries(messagesQuery)) {
+    if (
+      args.threadId !== threadId ||
+      args.streamArgs ||
+      args.paginationOpts.cursor !== null ||
+      value === undefined
+    ) {
+      continue;
+    }
+    localStore.setQuery(messagesQuery, args, {
+      ...value,
+      page: [item, ...value.page],
+    });
+  }
 }
 
 const OPTIMISTIC_ID_PREFIX = "optimistic-";

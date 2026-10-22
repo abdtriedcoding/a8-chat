@@ -1,6 +1,7 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";

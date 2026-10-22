@@ -5,11 +5,13 @@ import { isAuthenticated } from "@/lib/auth-server";
 const AUTH_PAGES = ["/sign-in", "/sign-up", "/forgot-password"];
 
 export async function proxy(request: NextRequest) {
+  const hasSessionCookie = getSessionCookie(request) !== null;
   if (AUTH_PAGES.includes(request.nextUrl.pathname)) {
-    if (await isAuthenticated()) {
+    // An anonymous visitor gets the static page with no Convex call.
+    if (hasSessionCookie && (await isAuthenticated())) {
       return NextResponse.redirect(new URL("/chat", request.url));
     }
-  } else if (!getSessionCookie(request)) {
+  } else if (!hasSessionCookie) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
   return NextResponse.next();
@@ -24,6 +26,7 @@ export const config = {
     "/c/:path*",
     "/connectors",
     "/archived",
+    "/scheduled",
     "/settings/account",
     "/settings/billing",
   ],

@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "cn";
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   BrainIcon,
   ChevronDownIcon,

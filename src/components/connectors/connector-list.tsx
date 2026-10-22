@@ -1,6 +1,7 @@
 "use client";
 
-import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { useAction, useConvexAuth } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";

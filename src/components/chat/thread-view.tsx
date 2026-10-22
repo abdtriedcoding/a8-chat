@@ -1,7 +1,6 @@
 "use client";
 
-import { useUIMessages } from "@convex-dev/agent/react";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import {
   ArchiveIcon,
   CalendarClockIcon,
@@ -30,7 +29,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useDecideAction } from "@/hooks/use-decide-action";
 import { useEditPrompt } from "@/hooks/use-edit-prompt";
 import { useQueueActions } from "@/hooks/use-queue-actions";
@@ -42,6 +40,10 @@ import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { useStableMessages } from "@/hooks/use-stable-messages";
 import { useStopReply } from "@/hooks/use-stop-reply";
+import {
+  MESSAGES_PAGE_SIZE,
+  useThreadQueries,
+} from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
 import { lastReplyText } from "@/lib/reply-text";
 import { stoppedTurns } from "@/lib/stopped-turns";
@@ -49,34 +51,18 @@ import { api } from "../../../convex/_generated/api";
 import { MAX_QUEUED_PROMPTS } from "../../../convex/lib/queue";
 import { ChatHeader, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
+import { ConversationSkeleton } from "./conversation-skeleton";
 import { MessageList } from "./message-list";
 import { ModelSwitchNotice } from "./model-switch-notice";
 import { QueueStack } from "./queue-stack";
 import { ThreadActionsProvider } from "./thread-actions-context";
 
-const PAGE_SIZE = 20;
-
 export function ThreadView({ threadId }: { threadId: string }) {
-  const { isAuthenticated } = useConvexAuth();
-  const thread = useQuery(
-    api.threads.get,
-    isAuthenticated ? { threadId } : "skip",
-  );
-
   const {
-    results: rawMessages,
-    status,
-    loadMore,
-  } = useUIMessages(
-    api.chat.messages.listThreadMessages,
-    isAuthenticated && thread !== null ? { threadId } : "skip",
-    { initialNumItems: PAGE_SIZE, stream: true },
-  );
-
-  const queue = useQuery(
-    api.chat.queue.getQueue,
-    isAuthenticated && thread !== null ? { threadId } : "skip",
-  );
+    thread,
+    messages: { results: rawMessages, status, loadMore },
+    queue,
+  } = useThreadQueries(threadId, { stream: true });
 
   // After a reload, marks the thread again, so leaving still deletes it.
   const openTemporaryThread = useOpenTemporaryThread();
@@ -157,9 +143,15 @@ export function ThreadView({ threadId }: { threadId: string }) {
       : undefined,
   });
 
+  // The page's metadata says "Chat". React puts the <title> that mounts
+  // last first in <head>, and this one mounts once the thread loads, after
+  // Next's. Matches the "%s · a8" template in the root layout.
+  const title = thread?.temporary && <title>Temporary chat · a8</title>;
+
   if (thread === null) {
     return (
       <>
+        {title}
         <ChatHeader />
         <Empty>
           <EmptyHeader>
@@ -183,6 +175,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
 
   return (
     <>
+      {title}
       <ChatHeader>
         {thread?.temporary && (
           <h1 className="min-w-0 flex-1 px-2">
@@ -222,7 +215,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
           <MessageList
             messages={messages}
             status={status}
-            onLoadEarlier={() => loadMore(PAGE_SIZE)}
+            onLoadEarlier={() => loadMore(MESSAGES_PAGE_SIZE)}
             stopped={stopped}
             replyStatus={replyStatus}
           />
@@ -310,23 +303,4 @@ async function copyReply(text: string) {
   } catch {
     toast.error("Couldn't copy the reply.");
   }
-}
-
-function ConversationSkeleton() {
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-6">
-      <span role="status" className="sr-only">
-        Loading chat…
-      </span>
-      <Skeleton aria-hidden="true" className="h-10 w-2/5 self-end rounded-xl" />
-      <div aria-hidden="true" className="flex gap-2">
-        <Skeleton className="size-8 shrink-0 rounded-full" />
-        <div className="flex flex-1 flex-col gap-2 pt-1.5">
-          <Skeleton className="h-4 w-4/5" />
-          <Skeleton className="h-4 w-3/5" />
-          <Skeleton className="h-4 w-2/3" />
-        </div>
-      </div>
-    </div>
-  );
 }

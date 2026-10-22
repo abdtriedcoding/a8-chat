@@ -5,6 +5,7 @@ import {
   type AuthClient,
 } from "@convex-dev/better-auth/react";
 import { ConvexReactClient } from "convex/react";
+import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
 import type { ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 
@@ -35,7 +36,9 @@ export function ConvexClientProvider({
       authClient={providerAuthClient}
       initialToken={initialToken}
     >
-      {children}
+      {/* Keeps a query subscribed for 5 minutes after the last component
+          using it unmounts, so a thread opened recently shows at once. */}
+      <ConvexQueryCacheProvider>{children}</ConvexQueryCacheProvider>
     </ConvexBetterAuthProvider>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
 import type { ReactNode } from "react";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
@@ -18,5 +19,11 @@ const convex = new ConvexReactClient(convexUrl);
  * as anyone else would.
  */
 export function PublicConvexProvider({ children }: { children: ReactNode }) {
-  return <ConvexProvider client={convex}>{children}</ConvexProvider>;
+  // The cache provider lets components shared with the chat pages use the
+  // cached query hooks here too.
+  return (
+    <ConvexProvider client={convex}>
+      <ConvexQueryCacheProvider>{children}</ConvexQueryCacheProvider>
+    </ConvexProvider>
+  );
 }

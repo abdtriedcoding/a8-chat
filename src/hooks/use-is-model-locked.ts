@@ -1,4 +1,5 @@
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import { api } from "../../convex/_generated/api";
 import { planIncludes, type Model } from "../../convex/lib/models";
 
