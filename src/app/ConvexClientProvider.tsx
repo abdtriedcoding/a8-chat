@@ -36,11 +36,12 @@ if (typeof window !== "undefined") convex.connectionState();
  * Renders in the layout's shell, outside the Suspense boundary that waits for
  * the token, so this module runs while the shell hydrates and the WebSocket
  * opens without waiting for the server. The preconnect lets the browser look
- * up and reach the deployment while it reads the HTML.
+ * up and reach the deployment early. The call becomes a Link header, which the
+ * browser reads before the HTML. The tag puts the same hint in the HTML.
  */
 export function ConvexPreconnect() {
   preconnect(convex.url);
-  return null;
+  return <link rel="preconnect" href={convex.url} />;
 }
 
 export function ConvexClientProvider({
