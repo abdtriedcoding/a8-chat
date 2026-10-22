@@ -5,13 +5,15 @@ import {
   ArchiveIcon,
   CalendarClockIcon,
   PlugIcon,
+  SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import { AppIcon } from "@/components/icons/app-icon";
-import { NavUser } from "@/components/nav-user";
-import { ThreadList } from "@/components/thread-list";
+import { NavUser, NavUserSkeleton } from "@/components/nav-user";
+import { ThreadList, ThreadListSkeleton } from "@/components/thread-list";
 import { ThreadSearchButton } from "@/components/thread-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,9 +28,50 @@ import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { api } from "../../convex/_generated/api";
 
 export function AppSidebar() {
+  const unreadRuns = useQuery(api.scheduledPrompts.unreadCount, {});
+  return (
+    <SidebarFrame
+      search={<ThreadSearchButton />}
+      unreadRuns={unreadRuns ?? 0}
+      threads={<ThreadList />}
+      user={<NavUser />}
+    />
+  );
+}
+
+/**
+ * The sidebar before the app has its Convex token, the same size as
+ * AppSidebar. Its links work, and search waits for the app.
+ */
+export function AppSidebarSkeleton() {
+  return (
+    <SidebarFrame
+      search={
+        <Button variant="ghost" className="justify-start" disabled>
+          <SearchIcon data-icon="inline-start" />
+          Search chats
+        </Button>
+      }
+      unreadRuns={0}
+      threads={<ThreadListSkeleton />}
+      user={<NavUserSkeleton />}
+    />
+  );
+}
+
+function SidebarFrame({
+  search,
+  unreadRuns,
+  threads,
+  user,
+}: {
+  search: ReactNode;
+  unreadRuns: number;
+  threads: ReactNode;
+  user: ReactNode;
+}) {
   const closeOnMobile = useCloseSidebarOnMobile();
   const pathname = usePathname();
-  const unreadRuns = useQuery(api.scheduledPrompts.unreadCount, {});
   return (
     <Sidebar>
       <SidebarHeader className="gap-3">
@@ -47,7 +90,7 @@ export function AppSidebar() {
               New chat
             </Link>
           </Button>
-          <ThreadSearchButton />
+          {search}
           <Button
             variant="ghost"
             className="justify-start aria-[current=page]:bg-muted"
@@ -74,7 +117,7 @@ export function AppSidebar() {
             >
               <CalendarClockIcon data-icon="inline-start" />
               Scheduled
-              {(unreadRuns ?? 0) > 0 && (
+              {unreadRuns > 0 && (
                 <Badge className="ml-auto tabular-nums">
                   {unreadRuns}
                   <span className="sr-only">
@@ -100,12 +143,8 @@ export function AppSidebar() {
           </Button>
         </div>
       </SidebarHeader>
-      <SidebarContent>
-        <ThreadList />
-      </SidebarContent>
-      <SidebarFooter>
-        <NavUser />
-      </SidebarFooter>
+      <SidebarContent>{threads}</SidebarContent>
+      <SidebarFooter>{user}</SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );
