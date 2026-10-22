@@ -29,27 +29,12 @@ export function optimisticallySendPrompt(
   }
   const newPromptOrder = highestOrderOnScreen + 1;
 
-  // The server saves the text trimmed.
-  const trimmedText = prompt.trim();
-  const item: FunctionReturnType<typeof messagesQuery>["page"][number] = {
-    id: crypto.randomUUID(),
-    _creationTime: Date.now(),
+  const item = promptMessage({
     key: `${threadId}-${newPromptOrder}-0`,
     order: newPromptOrder,
-    stepOrder: 0,
-    status: "pending",
-    role: "user",
-    text: trimmedText,
-    parts: [
-      ...attachments.map(({ fileUrl, mediaType, filename }) => ({
-        type: "file" as const,
-        url: fileUrl,
-        mediaType,
-        filename,
-      })),
-      ...(trimmedText ? [{ type: "text" as const, text: trimmedText }] : []),
-    ],
-  };
+    prompt,
+    attachments,
+  });
   // insertAtTop updates only one first page. This updates all of them,
   // since the query cache can hold two: the one on screen, which gets an end
   // cursor once earlier messages load, and the cached one without it.
@@ -67,6 +52,46 @@ export function optimisticallySendPrompt(
       page: [item, ...value.page],
     });
   }
+}
+
+/**
+ * A prompt as listThreadMessages returns it, before the server saves it.
+ * `key` is the one the saved prompt gets.
+ */
+export function promptMessage({
+  key,
+  order,
+  prompt,
+  attachments,
+}: {
+  key: string;
+  order: number;
+  prompt: string;
+  attachments: UploadedAttachment[];
+}): FunctionReturnType<
+  typeof api.chat.messages.listThreadMessages
+>["page"][number] {
+  // The server saves the text trimmed.
+  const trimmedText = prompt.trim();
+  return {
+    id: crypto.randomUUID(),
+    _creationTime: Date.now(),
+    key,
+    order,
+    stepOrder: 0,
+    status: "pending",
+    role: "user",
+    text: trimmedText,
+    parts: [
+      ...attachments.map(({ fileUrl, mediaType, filename }) => ({
+        type: "file" as const,
+        url: fileUrl,
+        mediaType,
+        filename,
+      })),
+      ...(trimmedText ? [{ type: "text" as const, text: trimmedText }] : []),
+    ],
+  };
 }
 
 const OPTIMISTIC_ID_PREFIX = "optimistic-";

@@ -4,7 +4,6 @@ import { useMutation } from "convex/react";
 import {
   ArchiveIcon,
   CalendarClockIcon,
-  GhostIcon,
   MessageSquareOffIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -45,11 +44,16 @@ import {
   useThreadQueries,
 } from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
+import {
+  clearStartingThread,
+  useClearStartingThreadOnLeave,
+  useStartingThread,
+} from "@/lib/starting-threads";
 import { lastReplyText } from "@/lib/reply-text";
 import { stoppedTurns } from "@/lib/stopped-turns";
 import { api } from "../../../convex/_generated/api";
 import { MAX_QUEUED_PROMPTS } from "../../../convex/lib/queue";
-import { ChatHeader, ThreadHeading } from "./chat-header";
+import { ChatHeader, TemporaryHeading, ThreadHeading } from "./chat-header";
 import { Composer } from "./composer";
 import { ConversationSkeleton } from "./conversation-skeleton";
 import { MessageList } from "./message-list";
@@ -79,7 +83,23 @@ export function ThreadView({ threadId }: { threadId: string }) {
     if (unread) markRead({ threadId }).catch(() => {});
   }, [unread, threadId, markRead]);
 
-  const messages = useStableMessages(rawMessages);
+  // A thread the new-chat page just started shows as that page left it, not
+  // as the skeleton, until its first page loads.
+  const startingThread = useStartingThread(threadId);
+  const loading = thread === undefined || status === "LoadingFirstPage";
+  const showStartingThread = loading && startingThread !== undefined;
+  // Until the thread itself loads, the Composer shows what the new-chat
+  // page's did.
+  const startingComposer =
+    thread === undefined ? startingThread : undefined;
+  useEffect(() => {
+    if (thread === null || !loading) clearStartingThread(threadId);
+  }, [thread, loading, threadId]);
+  useClearStartingThreadOnLeave(threadId);
+
+  const messages = useStableMessages(
+    showStartingThread ? [startingThread.prompt] : rawMessages,
+  );
   const stopped = stoppedTurns(messages);
   const replyStatus = useReplyStatus(messages, stopped);
   const replyInProgress =
@@ -177,13 +197,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
     <>
       {title}
       <ChatHeader>
-        {thread?.temporary && (
-          <h1 className="min-w-0 flex-1 px-2">
-            <Badge variant="secondary">
-              <GhostIcon data-icon="inline-start" />
-              Temporary
-            </Badge>
-          </h1>
+        {(thread?.temporary ?? startingThread?.temporary) && (
+          <TemporaryHeading />
         )}
         {thread && !thread.temporary && (
           <>
@@ -200,7 +215,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
           </>
         )}
       </ChatHeader>
-      {thread === undefined || status === "LoadingFirstPage" ? (
+      {loading && !showStartingThread ? (
         <ConversationSkeleton />
       ) : (
         <ThreadActionsProvider
@@ -246,19 +261,22 @@ export function ThreadView({ threadId }: { threadId: string }) {
         <Composer
           onSend={send}
           onStop={replyInProgress ? stop : undefined}
+          disabled={startingComposer !== undefined}
           sendDisabled={queueFull}
-          autoApprove={thread?.autoApprove === true}
+          autoApprove={
+            (thread?.autoApprove ?? startingComposer?.autoApprove) === true
+          }
           // Scheduled runs always stop on their cards (ADR 0013).
           onAutoApproveChange={
             thread && !thread.scheduledPromptId
               ? (on) => setAutoApprove({ threadId, on })
-              : undefined
+              : startingComposer && (() => {})
           }
-          modelId={thread?.modelId}
+          modelId={thread?.modelId ?? startingComposer?.modelId}
           onModelChange={
             thread
               ? (modelId) => setThreadModel({ threadId, modelId })
-              : undefined
+              : startingComposer && (() => {})
           }
           autoFocus
           textareaRef={composerRef}
