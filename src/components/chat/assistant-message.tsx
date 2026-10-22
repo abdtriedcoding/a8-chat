@@ -1,7 +1,7 @@
 "use client";
 
 import { useSmoothText } from "@convex-dev/agent/react";
-import { memo } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { AppIcon } from "@/components/icons/app-icon";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
@@ -37,12 +37,12 @@ import {
   webSearchParts,
 } from "./web-search";
 
-export const AssistantMessage = memo(function AssistantMessage({
-  message,
-  stopped = false,
-  continuing = false,
-  lastTurn = false,
-}: {
+// A reply that mounts without text and then gets more than this in one piece
+// is loading text the stream already had, such as after a switch back to its
+// thread mid-reply. A live reply's first text is a delta, far shorter.
+const LOADED_TEXT_CHARS = 200;
+
+type AssistantMessageProps = {
   message: ThreadMessage;
   /** Whether the user stopped this reply. */
   stopped?: boolean;
@@ -53,7 +53,25 @@ export const AssistantMessage = memo(function AssistantMessage({
   continuing?: boolean;
   /** Whether this is the last turn's reply, which can be regenerated. */
   lastTurn?: boolean;
-}) {
+};
+
+export const AssistantMessage = memo(function AssistantMessage(
+  props: AssistantMessageProps,
+) {
+  // useSmoothText takes its starting text only when it mounts, so a reply
+  // whose text loads after it mounts mounts again, starting from that text.
+  const [mount, setMount] = useState(0);
+  const remount = useCallback(() => setMount((n) => n + 1), []);
+  return <Reply key={mount} {...props} remount={remount} />;
+});
+
+function Reply({
+  message,
+  stopped = false,
+  continuing = false,
+  lastTurn = false,
+  remount,
+}: AssistantMessageProps & { remount: () => void }) {
   const { regenerate } = useThreadActionsContext();
   const text = replyText(message);
   const toolCalls = connectorToolCalls(message);
@@ -61,9 +79,15 @@ export const AssistantMessage = memo(function AssistantMessage({
   // Every call without a card shows as a row, or as a record when
   // auto-approve ran it.
   const toolRows = toolCalls.filter((call) => !waitingActions.includes(call));
-  const [visibleText, { isStreaming }] = useSmoothText(text, {
-    startStreaming: message.status === "streaming",
-  });
+  const [smoothText, { cursor, isStreaming: smoothing }] = useSmoothText(text);
+  const loaded = cursor === 0 && text.length > LOADED_TEXT_CHARS;
+  useEffect(() => {
+    if (loaded) remount();
+  }, [loaded, remount]);
+  // Shows the loaded text on the render it arrives, not only after the
+  // remount.
+  const visibleText = loaded ? text : smoothText;
+  const isStreaming = smoothing && !loaded;
 
   // A stopped reply isn't streaming, even while its status still says
   // pending (the server finishes it a moment later). The smoothed text can
@@ -175,7 +199,7 @@ export const AssistantMessage = memo(function AssistantMessage({
       </MessageContent>
     </Message>
   );
-});
+}
 
 export function ThinkingMessage() {
   return (
