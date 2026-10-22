@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { usePaginatedQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { ArchiveIcon, ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
@@ -31,10 +30,9 @@ const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 /** The user's archived threads, each with Unarchive and Delete. */
 export function ArchivedThreadList() {
-  const { isAuthenticated } = useConvexAuth();
   const { results, status, loadMore } = usePaginatedQuery(
     api.threads.list,
-    isAuthenticated ? { archived: true } : "skip",
+    { archived: true },
     { initialNumItems: PAGE_SIZE },
   );
   const setThreadArchived = useSetThreadArchived();

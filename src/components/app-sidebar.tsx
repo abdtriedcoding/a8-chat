@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   ArchiveIcon,
@@ -29,11 +28,7 @@ import { api } from "../../convex/_generated/api";
 export function AppSidebar() {
   const closeOnMobile = useCloseSidebarOnMobile();
   const pathname = usePathname();
-  const { isAuthenticated } = useConvexAuth();
-  const unreadRuns = useQuery(
-    api.scheduledPrompts.unreadCount,
-    isAuthenticated ? {} : "skip",
-  );
+  const unreadRuns = useQuery(api.scheduledPrompts.unreadCount, {});
   return (
     <Sidebar>
       <SidebarHeader className="gap-3">

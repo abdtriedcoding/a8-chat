@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import {
@@ -49,8 +48,7 @@ type CurrentUser = NonNullable<
 >;
 
 export function NavUser() {
-  const { isAuthenticated } = useConvexAuth();
-  const user = useQuery(api.auth.getCurrentUser, isAuthenticated ? {} : "skip");
+  const user = useQuery(api.auth.getCurrentUser, {});
   const billingEnabled = useQuery(api.billing.enabled);
   const { isMobile } = useSidebar();
   const openShortcutsHelp = useOpenShortcutsHelp();

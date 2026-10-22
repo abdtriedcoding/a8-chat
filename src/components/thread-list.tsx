@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { usePaginatedQuery, useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import {
@@ -104,16 +103,12 @@ function ThreadSection({
 }
 
 export function ThreadList() {
-  const { isAuthenticated } = useConvexAuth();
   const { results, status, loadMore } = usePaginatedQuery(
     api.threads.list,
-    isAuthenticated ? {} : "skip",
+    {},
     { initialNumItems: PAGE_SIZE },
   );
-  const pinned = useQuery(
-    api.threads.listPinned,
-    isAuthenticated ? {} : "skip",
-  );
+  const pinned = useQuery(api.threads.listPinned, {});
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();

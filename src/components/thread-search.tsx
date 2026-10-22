@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { SearchIcon } from "lucide-react";
@@ -96,10 +95,9 @@ function ThreadSearch({ onSelect }: { onSelect: (threadId: string) => void }) {
   const query = input.trim();
   const debounced = useDebouncedValue(query, DEBOUNCE_MS);
   const serverQuery = query ? debounced : "";
-  const { isAuthenticated } = useConvexAuth();
   const results = useQuery(
     api.threads.search,
-    isAuthenticated && serverQuery ? { query: serverQuery } : "skip",
+    serverQuery ? { query: serverQuery } : "skip",
   );
   // Keep showing the last results while the next ones load, so the list
   // doesn't blank out on every keystroke.

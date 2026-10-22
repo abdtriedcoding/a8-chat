@@ -1,4 +1,3 @@
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { api } from "../../convex/_generated/api";
 import { planIncludes, type Model } from "../../convex/lib/models";
@@ -9,7 +8,6 @@ import { planIncludes, type Model } from "../../convex/lib/models";
  * is off.
  */
 export function useIsModelLocked(): (model: Model) => boolean {
-  const { isAuthenticated } = useConvexAuth();
-  const plan = useQuery(api.billing.plan, isAuthenticated ? {} : "skip");
+  const plan = useQuery(api.billing.plan, {});
   return (model) => plan !== undefined && !planIncludes(plan?.name ?? null, model);
 }

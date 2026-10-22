@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { useConvexAuth, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   CalendarClockIcon,
@@ -103,11 +103,7 @@ function LastRun({ row }: { row: ScheduledPrompt }) {
  * one.
  */
 export function ScheduledPromptList() {
-  const { isAuthenticated } = useConvexAuth();
-  const scheduledPrompts = useQuery(
-    api.scheduledPrompts.list,
-    isAuthenticated ? {} : "skip",
-  );
+  const scheduledPrompts = useQuery(api.scheduledPrompts.list, {});
   const [search, setSearch] = useState("");
   const pause = useMutation(api.scheduledPrompts.pause);
   const resume = useMutation(api.scheduledPrompts.resume);

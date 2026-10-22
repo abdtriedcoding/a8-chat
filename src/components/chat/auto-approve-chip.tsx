@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { useConvexAuth, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { ZapIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -31,11 +31,7 @@ export function AutoApproveChip({
   onChange: (on: boolean) => Promise<unknown> | void;
   disabled?: boolean;
 }) {
-  const { isAuthenticated } = useConvexAuth();
-  const seenWarning = useQuery(
-    api.autoApprove.hasSeenWarning,
-    isAuthenticated ? {} : "skip",
-  );
+  const seenWarning = useQuery(api.autoApprove.hasSeenWarning, {});
   const markWarningSeen = useMutation(api.autoApprove.markWarningSeen);
   const [dialog, confirm] = useConfirm();
 
