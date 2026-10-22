@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { ResetPasswordFormFromUrl } from "@/components/auth/reset-password-form";
+import {
+  ResetPasswordFormFallback,
+  ResetPasswordFormFromUrl,
+} from "@/components/auth/reset-password-form";
 
 export const metadata: Metadata = { title: "Reset password" };
 
 // Static. The token is in the URL, so the form renders in the browser.
 export default function ResetPasswordPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<ResetPasswordFormFallback />}>
       <ResetPasswordFormFromUrl />
     </Suspense>
   );

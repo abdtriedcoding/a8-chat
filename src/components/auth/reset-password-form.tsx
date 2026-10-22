@@ -44,6 +44,25 @@ export function ResetPasswordFormFromUrl() {
   );
 }
 
+/**
+ * The form's heading, for the static HTML. The form itself needs the URL's
+ * token, which only the browser reads.
+ */
+export function ResetPasswordFormFallback() {
+  return <ResetPasswordHeading />;
+}
+
+function ResetPasswordHeading() {
+  return (
+    <div className="flex flex-col gap-2">
+      <h1 className="text-3xl font-bold tracking-tight">Set a new password</h1>
+      <p className="text-muted-foreground">
+        Your other devices will be signed out.
+      </p>
+    </div>
+  );
+}
+
 export function ResetPasswordForm({
   token,
   linkError,
@@ -98,14 +117,7 @@ export function ResetPasswordForm({
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Set a new password
-        </h1>
-        <p className="text-muted-foreground">
-          Your other devices will be signed out.
-        </p>
-      </div>
+      <ResetPasswordHeading />
 
       <form method="post" noValidate onSubmit={form.handleSubmit(onSubmit)}>
         <FieldGroup>
