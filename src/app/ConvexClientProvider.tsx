@@ -4,6 +4,7 @@ import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
 import { decodeJwt } from "jose";
 import { use, useState, type ReactNode } from "react";
+import { preconnect } from "react-dom";
 import { authClient } from "@/lib/auth-client";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
@@ -24,6 +25,24 @@ const convex = new ConvexReactClient(convexUrl, {
   expectAuth: true,
   initialAuthTokenReuse: true,
 });
+
+// The client opens its WebSocket on first use, which would be the first query
+// after hydration. Reading the connection state opens it when this module
+// runs. Queries still wait for auth. On the server there's no window, so
+// nothing connects during server rendering.
+if (typeof window !== "undefined") convex.connectionState();
+
+/**
+ * Renders in the layout's shell, outside the Suspense boundary that waits for
+ * the token, so this module runs while the shell hydrates and the WebSocket
+ * opens without waiting for the server. The preconnect lets the browser look
+ * up and reach the deployment early. The call becomes a Link header, which the
+ * browser reads before the HTML. The tag puts the same hint in the HTML.
+ */
+export function ConvexPreconnect() {
+  preconnect(convex.url);
+  return <link rel="preconnect" href={convex.url} />;
+}
 
 export function ConvexClientProvider({
   children,
