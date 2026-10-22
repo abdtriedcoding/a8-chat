@@ -1,10 +1,11 @@
 "use client";
 
 import { cn } from "cn";
-import { SquarePenIcon } from "lucide-react";
+import { GhostIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ThreadTitleInput } from "@/components/thread-title-input";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -15,6 +16,18 @@ import {
 } from "@/components/ui/tooltip";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { threadTitle } from "@/lib/thread-title";
+
+/** A temporary thread's heading in the ChatHeader. */
+export function TemporaryHeading() {
+  return (
+    <h1 className="min-w-0 flex-1 px-2">
+      <Badge variant="secondary">
+        <GhostIcon data-icon="inline-start" />
+        Temporary
+      </Badge>
+    </h1>
+  );
+}
 
 /**
  * The bar above a chat. `children` go after the sidebar button, and `end`
