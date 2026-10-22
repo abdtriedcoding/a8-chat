@@ -65,7 +65,8 @@ const USAGE = `Usage: bun scripts/check-connectors.ts [options]
   --no-write        Run the checks but leave convex/lib/connectorChecks.ts
                     as it is.
 
-Reads the key from AI_GATEWAY_API_KEY.`;
+Reads the key from AI_GATEWAY_API_KEY. With ANTHROPIC_BYOK_API_KEY set, Claude
+requests use that Anthropic key instead of the gateway's credits.`;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CHECKS_FILE = join(ROOT, "convex/lib/connectorChecks.ts");
@@ -93,7 +94,14 @@ const COST_RETRY_MS = 2_000;
  * The gateway's options for a call (gatewayOptions in convex/lib/gateway.ts).
  * Copied, since gateway.ts reads the Convex env when it loads.
  */
-const CLAUDE_OPTIONS = { gateway: { only: ["anthropic"] } };
+// TEMPORARY: revert the BYOK key once spec #334 is done.
+const BYOK_KEY = process.env.ANTHROPIC_BYOK_API_KEY;
+const CLAUDE_OPTIONS = {
+  gateway: {
+    only: ["anthropic"],
+    ...(BYOK_KEY && { byok: { anthropic: [{ apiKey: BYOK_KEY }] } }),
+  },
+};
 const OTHER_OPTIONS = { gateway: { caching: "auto" } };
 
 /**

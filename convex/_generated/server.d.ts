@@ -31,6 +31,7 @@ type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
   readonly AI_GATEWAY_API_KEY: string;
+  readonly ANTHROPIC_BYOK_API_KEY: string | undefined;
   readonly BETTER_AUTH_SECRET: string;
   readonly BILLING_ENABLED: string | undefined;
   readonly CONNECTION_ENCRYPTION_KEY: string;

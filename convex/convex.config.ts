@@ -19,6 +19,13 @@ const app = defineApp({
     // The one model key. Every model, Claude included, goes through Vercel AI
     // Gateway (ADR 0015).
     AI_GATEWAY_API_KEY: v.string(),
+    // Optional, for dev deployments only. An Anthropic key the gateway uses
+    // for Claude requests (request-scoped BYOK), so testing doesn't spend
+    // gateway credits. A request that fails on it falls back to the
+    // gateway's own credentials, which does spend them.
+    // TEMPORARY: revert once spec #334 (instant app) is done, along with
+    // its uses in convex/lib/gateway.ts, convex/usage.ts and scripts/.
+    ANTHROPIC_BYOK_API_KEY: v.optional(v.string()),
     // Optional. Without it, the model gets no web search tool.
     TAVILY_API_KEY: v.optional(v.string()),
     // Base64-encoded 32-byte key that encrypts connection tokens. Generate

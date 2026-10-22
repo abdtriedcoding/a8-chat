@@ -28,10 +28,22 @@ const USAGE = `Usage: bun scripts/probe-gateway.ts [options]
 
   --model <id>  The gateway model to probe. Defaults to ${DEFAULT_MODEL}.
 
-Reads the key from AI_GATEWAY_API_KEY.`;
+Reads the key from AI_GATEWAY_API_KEY. With ANTHROPIC_BYOK_API_KEY set, requests
+use that Anthropic key instead of the gateway's credits.`;
 
-/** Sends every request to Anthropic, so a pass can't come from another host. */
-const PIN_TO_ANTHROPIC = { gateway: { only: ["anthropic"] } };
+// TEMPORARY: revert the BYOK key once spec #334 is done.
+const BYOK_KEY = process.env.ANTHROPIC_BYOK_API_KEY;
+/**
+ * Sends every request to Anthropic, so a pass can't come from another host.
+ * Uses ANTHROPIC_BYOK_API_KEY when it's set, as gatewayOptions in
+ * convex/lib/gateway.ts does.
+ */
+const PIN_TO_ANTHROPIC = {
+  gateway: {
+    only: ["anthropic"],
+    ...(BYOK_KEY && { byok: { anthropic: [{ apiKey: BYOK_KEY }] } }),
+  },
+};
 
 /**
  * The breakpoint a8 sends (CACHE_BREAKPOINT in convex/lib/replyTools.ts).

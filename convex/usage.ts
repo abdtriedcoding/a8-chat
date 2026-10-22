@@ -69,9 +69,11 @@ export const recordGenerationCost = internalAction({
   handler: async (ctx, { generationId, event, attempt = 1 }): Promise<null> => {
     let costUsd: number;
     try {
-      ({ totalCost: costUsd } = await gateway.getGenerationInfo({
-        id: generationId,
-      }));
+      // On a call made with a BYOK key, the gateway charges nothing
+      // (totalCost 0) and reports what Anthropic charged the key instead.
+      // TEMPORARY: revert to totalCost once spec #334 is done.
+      const info = await gateway.getGenerationInfo({ id: generationId });
+      costUsd = info.isByok ? info.upstreamInferenceCost : info.totalCost;
     } catch (error) {
       if (attempt >= COST_LOOKUP_ATTEMPTS) {
         console.error(`No cost for generation ${generationId}`, event, error);
