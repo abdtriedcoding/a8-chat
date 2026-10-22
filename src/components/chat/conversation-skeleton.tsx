@@ -1,4 +1,19 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChatHeader } from "./chat-header";
+import { ComposerSkeleton } from "./composer-skeleton";
+
+/** A thread page in outline: the header, a conversation and the Composer. */
+export function ThreadSkeleton() {
+  return (
+    <>
+      <ChatHeader />
+      <ConversationSkeleton />
+      <div className="shrink-0 px-4 pb-4">
+        <ComposerSkeleton className="mx-auto max-w-3xl" />
+      </div>
+    </>
+  );
+}
 
 /** A prompt and a reply in outline, while a chat's messages load. */
 export function ConversationSkeleton() {

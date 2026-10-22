@@ -102,6 +102,27 @@ function ThreadSection({
   );
 }
 
+/** The thread list as it looks while its first page loads. */
+export function ThreadListSkeleton() {
+  return (
+    <ThreadSection label="Chats">
+      <ThreadRowsSkeleton />
+    </ThreadSection>
+  );
+}
+
+function ThreadRowsSkeleton() {
+  return (
+    <SidebarMenu aria-hidden="true">
+      {SKELETON_WIDTHS.map((width) => (
+        <SidebarMenuItem key={width} className="flex h-8 items-center px-2">
+          <Skeleton className="h-4" style={{ width }} />
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  );
+}
+
 export function ThreadList() {
   const { results, status, loadMore } = usePaginatedQuery(
     api.threads.list,
@@ -287,16 +308,7 @@ export function ThreadList() {
       {!(chatsEmpty && hasPins) && (
         <ThreadSection label="Chats">
           {loading ? (
-            <SidebarMenu aria-hidden="true">
-              {SKELETON_WIDTHS.map((width) => (
-                <SidebarMenuItem
-                  key={width}
-                  className="flex h-8 items-center px-2"
-                >
-                  <Skeleton className="h-4" style={{ width }} />
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+            <ThreadRowsSkeleton />
           ) : chatsEmpty ? (
             <Empty className="p-4">
               <EmptyDescription>

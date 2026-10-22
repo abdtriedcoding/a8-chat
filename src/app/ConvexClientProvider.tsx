@@ -3,7 +3,7 @@
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
 import { decodeJwt } from "jose";
-import { useState, type ReactNode } from "react";
+import { use, useState, type ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
@@ -27,12 +27,16 @@ const convex = new ConvexReactClient(convexUrl, {
 
 export function ConvexClientProvider({
   children,
-  initialToken,
+  tokenPromise,
 }: {
   children: ReactNode;
-  initialToken: string;
+  /**
+   * The layout's token read. This suspends until it settles. It gives null
+   * when the server has no token.
+   */
+  tokenPromise: Promise<string | null>;
 }) {
-  const auth = useSessionAuth(initialToken);
+  const auth = useSessionAuth(use(tokenPromise));
   return (
     <ConvexProviderWithAuth client={convex} useAuth={() => auth}>
       {/* Keeps a query subscribed for 5 minutes after the last component
@@ -50,7 +54,7 @@ export function ConvexClientProvider({
  * hook changes it only when the session ID changes to a different ID.
  * Delete it once convex/better-auth#398 is fixed (PR #431).
  */
-function useSessionAuth(initialToken: string) {
+function useSessionAuth(initialToken: string | null) {
   const { data: session, isPending } = authClient.useSession();
   const sessionId = session?.session.id;
   // Read once, from the first render. A refresh of the layout passes a new
@@ -73,8 +77,9 @@ function useSessionAuth(initialToken: string) {
     });
   }
   return {
-    // The layout renders only with a token, so Convex can authenticate on
-    // the first render without waiting for the session.
+    // Convex authenticates on the first render without waiting for the
+    // session. With no initial token, the first call fetches one. With no
+    // session, that gives null, and SessionGuard sends the user to /sign-in.
     isLoading: false,
     isAuthenticated: isPending || session !== null,
     fetchAccessToken: tokenSource.fetchAccessToken,
@@ -103,7 +108,8 @@ function tokenFetcher(initialToken: string | null) {
 }
 
 /** The Better Auth session a Convex token was issued for, from its claims. */
-function sessionIdOf(token: string): string | undefined {
+function sessionIdOf(token: string | null): string | undefined {
+  if (!token) return undefined;
   try {
     const { sessionId } = decodeJwt(token);
     return typeof sessionId === "string" ? sessionId : undefined;
