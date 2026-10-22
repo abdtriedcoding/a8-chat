@@ -9,7 +9,10 @@ import { TemporaryThreadProvider } from "@/components/temporary-thread";
 import { ThreadSearchProvider } from "@/components/thread-search";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { getToken } from "@/lib/auth-server";
-import { ConvexClientProvider } from "../ConvexClientProvider";
+import {
+  ConvexClientProvider,
+  ConvexPreconnect,
+} from "../ConvexClientProvider";
 
 export default async function ChatLayout({
   children,
@@ -35,6 +38,7 @@ export default async function ChatLayout({
     // Outside the boundary, so the sidebar stays open or closed as the user
     // left it in the skeleton.
     <SidebarProvider defaultOpen={defaultOpen} className="h-svh">
+      <ConvexPreconnect />
       <Suspense fallback={<AppLayoutSkeleton />}>
         <ConvexClientProvider tokenPromise={tokenPromise}>
           <SessionGuard />
