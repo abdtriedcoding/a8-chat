@@ -1,6 +1,6 @@
 "use client";
 
-import { useConvexAuth, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { CopyIcon, Share2Icon } from "lucide-react";
 import { useState } from "react";
@@ -42,11 +42,7 @@ export function ShareButton({
   threadId: string;
   title?: string;
 }) {
-  const { isAuthenticated } = useConvexAuth();
-  const status = useQuery(
-    api.sharedSnapshots.getShareStatus,
-    isAuthenticated ? { threadId } : "skip",
-  );
+  const status = useQuery(api.sharedSnapshots.getShareStatus, { threadId });
   const [open, setOpen] = useState(false);
   if (!status?.hasFinishedTurns && !status?.link) return null;
   return (

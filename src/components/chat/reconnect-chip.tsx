@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { ReconnectButton } from "@/components/connectors/reconnect-button";
 import { Button } from "@/components/ui/button";
@@ -14,11 +13,9 @@ import type { ConnectorView } from "../../../convex/lib/connectorView";
  * so old replies stop asking once the user reconnects or disconnects.
  */
 export function ReconnectChip({ connector }: { connector: ConnectorView }) {
-  const { isAuthenticated } = useConvexAuth();
-  const status = useQuery(
-    api.connectors.list,
-    isAuthenticated ? {} : "skip",
-  )?.find(({ id }) => id === connector.id)?.status;
+  const status = useQuery(api.connectors.list, {})?.find(
+    ({ id }) => id === connector.id,
+  )?.status;
   if (status !== "needs_reconnect") return null;
 
   return (

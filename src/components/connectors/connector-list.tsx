@@ -1,6 +1,6 @@
 "use client";
 
-import { useAction, useConvexAuth } from "convex/react";
+import { useAction } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -49,11 +49,7 @@ function takeCallbackFromHash(): Callback | null {
 }
 
 export function ConnectorList() {
-  const { isAuthenticated } = useConvexAuth();
-  const connections = useQuery(
-    api.connectors.list,
-    isAuthenticated ? {} : "skip",
-  );
+  const connections = useQuery(api.connectors.list, {});
   useFinishSignIn();
   const [search, setSearch] = useState("");
 
@@ -122,17 +118,16 @@ export function ConnectorList() {
 
 /**
  * Finishes the sign-in the callback sent the user back with, or shows why
- * it ended early. Waits for Convex auth, since finishConnect only finishes
- * a sign-in for the signed-in user who started it. A sign-in started on
- * another page goes back there once it connects (ConnectReturn).
+ * it ended early. finishConnect only finishes a sign-in for the signed-in
+ * user who started it, and the Convex client holds the call until it sends
+ * the user's token. A sign-in started on another page goes back there once
+ * it connects (ConnectReturn).
  */
 function useFinishSignIn() {
-  const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
     // Taking the fragment clears it, so a second run, like React's in
     // development, finds nothing and can't call finishConnect twice.
     const callback = takeCallbackFromHash();
@@ -154,5 +149,5 @@ function useFinishSignIn() {
           router.replace(started.path);
         }
       });
-  }, [isAuthenticated, router, finishConnect]);
+  }, [router, finishConnect]);
 }

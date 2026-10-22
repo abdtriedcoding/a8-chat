@@ -1,4 +1,3 @@
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { useUIMessages } from "@/hooks/use-ui-messages";
 import { api } from "../../convex/_generated/api";
@@ -20,14 +19,10 @@ export function useThreadQueries(
   threadId: string,
   { stream }: { stream: boolean },
 ) {
-  const { isAuthenticated } = useConvexAuth();
-  const thread = useQuery(
-    api.threads.get,
-    isAuthenticated ? { threadId } : "skip",
-  );
+  const thread = useQuery(api.threads.get, { threadId });
   // A thread that's missing or someone else's loads nothing more. The rest
   // start while the thread is still loading, alongside it.
-  const threadArgs = isAuthenticated && thread !== null ? { threadId } : "skip";
+  const threadArgs = thread !== null ? { threadId } : "skip";
   const messages = useUIMessages(
     api.chat.messages.listThreadMessages,
     threadArgs,

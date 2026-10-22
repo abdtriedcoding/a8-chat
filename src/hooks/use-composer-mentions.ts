@@ -1,4 +1,3 @@
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   useId,
@@ -50,8 +49,7 @@ export function useComposerMentions({
   text: string;
   setText: (text: string) => void;
 }) {
-  const { isAuthenticated } = useConvexAuth();
-  const statuses = useQuery(api.connectors.list, isAuthenticated ? {} : "skip");
+  const statuses = useQuery(api.connectors.list, {});
   const connectors = statuses && withStatus(statuses);
   const [mention, setMention] = useState<MentionQuery>();
   // The start of a mention Esc closed, so its menu stays closed while the

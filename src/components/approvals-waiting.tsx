@@ -1,6 +1,5 @@
 "use client";
 
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
@@ -46,11 +45,7 @@ export function NeedsApprovalMarker() {
  * one waits.
  */
 export function ApprovalsWaiting() {
-  const { isAuthenticated } = useConvexAuth();
-  const waiting = useQuery(
-    api.pendingActions.listMine,
-    isAuthenticated ? {} : "skip",
-  );
+  const waiting = useQuery(api.pendingActions.listMine, {});
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   if (!waiting || waiting.length === 0) return null;

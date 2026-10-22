@@ -1,4 +1,3 @@
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
@@ -15,11 +14,7 @@ const DOT_COLOR = "#fbbf24";
  * result after load shows no toasts, so a reload doesn't repeat them.
  */
 export function useApprovalAlerts() {
-  const { isAuthenticated } = useConvexAuth();
-  const waiting = useQuery(
-    api.pendingActions.listMine,
-    isAuthenticated ? {} : "skip",
-  );
+  const waiting = useQuery(api.pendingActions.listMine, {});
   const pathname = usePathname();
   const router = useRouter();
   // The thread ids in the last result, or null before the first one.

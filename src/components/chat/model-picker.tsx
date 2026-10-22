@@ -1,7 +1,6 @@
 "use client";
 
 import { cn } from "cn";
-import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   BrainIcon,
@@ -142,11 +141,7 @@ export function ModelPicker({
   attachmentKinds?: AttachmentKind[];
   disabled?: boolean;
 }) {
-  const { isAuthenticated } = useConvexAuth();
-  const defaultModelId = useQuery(
-    api.models.defaultModel,
-    isAuthenticated ? {} : "skip",
-  );
+  const defaultModelId = useQuery(api.models.defaultModel, {});
   const billingEnabled = useQuery(api.billing.enabled) === true;
   const isLocked = useIsModelLocked();
   const setDefaultModel = useSetDefaultModel();
