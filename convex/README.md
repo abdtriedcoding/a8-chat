@@ -8,13 +8,13 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 
 - `convex.config.ts`: the app's components (Better Auth, Agent, rate limiter, Resend, Polar) and every env var the backend reads. The root [`README.md`](../README.md) explains each one.
 - `schema.ts`: a8's own tables. Threads, messages and users live in the Agent and Better Auth components.
-- `auth.config.ts`: tells Convex to trust Better Auth's tokens.
+- `auth.config.ts`: tells Convex to trust Better Auth's tokens, with the public keys inline when `JWKS` is set.
 - `http.ts`: the HTTP routes, Better Auth's, the connector OAuth callback and, when billing is on, Polar's webhooks.
 - `crons.ts`: the cleanup jobs. Attachments that were never sent, expired upload grants and orphaned storage go daily, and expired connector sign-ins go hourly.
 
 ### Accounts
 
-- `auth.ts`: Better Auth's options, `getCurrentUser`, and `purgeAccount`, which deletes a user's data when they delete their account.
+- `auth.ts`: Better Auth's options, `getCurrentUser`, `getLatestJwks`, which returns the signing key for the `JWKS` env var, and `purgeAccount`, which deletes a user's data when they delete their account.
 - `emails.ts`: queues verification, password reset and scheduled run emails through Resend.
 - `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, and the action that cancels a deleted user's subscription.
 - `usage.ts`: the cost recorder, and the lookup of each model call's cost on AI Gateway. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.

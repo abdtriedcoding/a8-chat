@@ -1,6 +1,7 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";

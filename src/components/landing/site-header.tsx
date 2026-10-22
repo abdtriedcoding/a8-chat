@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { GitHubIcon } from "@/components/icons/github-icon";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { useVisitor } from "./visitor";
 import { GITHUB_URL } from "@/lib/site";
 
-export function SiteHeader({ signedIn }: { signedIn: boolean }) {
+export function SiteHeader() {
+  const { signedIn } = useVisitor();
   return (
     <header className="sticky top-0 z-40 border-b bg-card/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">

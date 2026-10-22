@@ -1,6 +1,7 @@
 "use client";
 
-import { useConvexAuth, usePaginatedQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { usePaginatedQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { ArchiveIcon, ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";

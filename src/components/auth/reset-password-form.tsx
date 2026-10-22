@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { Controller, useForm } from "react-hook-form";
 import * as z from "zod";
@@ -29,6 +29,39 @@ const formSchema = z.object({
 });
 
 const LINK_PROBLEM = "This reset link is invalid, expired, or already used.";
+
+/**
+ * ResetPasswordForm with the token from the email's link, or the error
+ * Better Auth puts there when the token was bad.
+ */
+export function ResetPasswordFormFromUrl() {
+  const searchParams = useSearchParams();
+  return (
+    <ResetPasswordForm
+      token={searchParams.get("token") ?? undefined}
+      linkError={searchParams.get("error") ?? undefined}
+    />
+  );
+}
+
+/**
+ * The form's heading, for the static HTML. The form itself needs the URL's
+ * token, which only the browser reads.
+ */
+export function ResetPasswordFormFallback() {
+  return <ResetPasswordHeading />;
+}
+
+function ResetPasswordHeading() {
+  return (
+    <div className="flex flex-col gap-2">
+      <h1 className="text-3xl font-bold tracking-tight">Set a new password</h1>
+      <p className="text-muted-foreground">
+        Your other devices will be signed out.
+      </p>
+    </div>
+  );
+}
 
 export function ResetPasswordForm({
   token,
@@ -84,14 +117,7 @@ export function ResetPasswordForm({
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Set a new password
-        </h1>
-        <p className="text-muted-foreground">
-          Your other devices will be signed out.
-        </p>
-      </div>
+      <ResetPasswordHeading />
 
       <form method="post" noValidate onSubmit={form.handleSubmit(onSubmit)}>
         <FieldGroup>

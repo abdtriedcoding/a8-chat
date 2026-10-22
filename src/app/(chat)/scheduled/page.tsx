@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ScheduledPromptList } from "@/components/scheduled/scheduled-prompt-list";
-import { requireSignedIn } from "@/lib/auth-server";
 
 export const metadata: Metadata = { title: "Scheduled tasks" };
 
-export default async function ScheduledPage() {
-  await requireSignedIn();
+export default function ScheduledPage() {
   return (
     <>
       <ChatHeader>

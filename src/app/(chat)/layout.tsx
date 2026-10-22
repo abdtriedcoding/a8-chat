@@ -16,8 +16,9 @@ export default async function ChatLayout({
 }: {
   children: ReactNode;
 }) {
-  // Every page in this group is signed-in only. This is the one place that
-  // fetches the Convex token, so the landing and auth pages never do.
+  // Every page in this group is signed-in only. The layout renders on a full
+  // page load, not on navigation between chat pages, so this fetches the
+  // Convex token once. proxy.ts checks the session cookie on every request.
   const token = await getToken();
   if (!token) redirect("/sign-in");
   const defaultOpen =

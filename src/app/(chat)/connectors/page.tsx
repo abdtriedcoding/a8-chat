@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ConnectorList } from "@/components/connectors/connector-list";
-import { requireSignedIn } from "@/lib/auth-server";
 
 export const metadata: Metadata = { title: "Connectors" };
 
-export default async function ConnectorsPage() {
-  await requireSignedIn();
+export default function ConnectorsPage() {
   return (
     <>
       <ChatHeader>

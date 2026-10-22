@@ -1,4 +1,3 @@
-import { getSessionCookie } from "better-auth/cookies";
 import { cn } from "cn";
 import {
   ArrowRightIcon,
@@ -12,7 +11,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ChatDemo } from "@/components/landing/chat-demo";
@@ -23,9 +21,7 @@ import { Highlight } from "@/components/landing/highlight";
 import { Pricing } from "@/components/landing/pricing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { fetchAuthQuery } from "@/lib/auth-server";
 import { GITHUB_URL } from "@/lib/site";
-import { api } from "../../../convex/_generated/api";
 
 export const metadata: Metadata = {
   title: { absolute: "a8: the AI chat that does the work in your apps" },
@@ -41,8 +37,7 @@ const APPS: { icon: LucideIcon; name: string; handle: string }[] = [
   { icon: SquareKanbanIcon, name: "Linear", handle: "linear" },
 ];
 
-export default async function LandingPage() {
-  const currentPlan = await visitorPlan();
+export default function LandingPage() {
   return (
     <>
       <Hero />
@@ -60,7 +55,7 @@ export default async function LandingPage() {
         title="Pricing"
         description="Start free. Upgrade when a8 becomes part of your day."
       >
-        <Pricing currentPlan={currentPlan} />
+        <Pricing />
         <p className="mt-8 text-center text-sm text-muted-foreground">
           A credit is one US cent of model cost. A typical reply on a cheap
           model uses about one credit.
@@ -72,19 +67,6 @@ export default async function LandingPage() {
       <FinalCta />
     </>
   );
-}
-
-/**
- * The signed-in visitor's plan, for the pricing cards. Null when signed out
- * or billing is off. Only a signed-in visitor costs a Convex call.
- */
-async function visitorPlan() {
-  if (getSessionCookie(await headers()) === null) return null;
-  try {
-    return (await fetchAuthQuery(api.billing.plan))?.name ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function Hero() {

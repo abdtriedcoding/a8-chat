@@ -1,5 +1,6 @@
+import "server-only";
 import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
-import { redirect } from "next/navigation";
+import { isUnauthenticated } from "@/lib/errors";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
@@ -14,22 +15,20 @@ export const {
   handler,
   isAuthenticated,
   getToken,
-  preloadAuthQuery,
   fetchAuthQuery,
-  fetchAuthMutation,
   fetchAuthAction,
-} = convexBetterAuthNextJs({ convexUrl, convexSiteUrl });
-
-// Page-level checks. proxy.ts redirects first, but every page checks again
-// so a matcher gap or a skipped proxy can't expose it. Both reuse the
-// request's cached token, so the repeat check costs nothing.
-
-/** Sends signed-out visitors to /sign-in. */
-export async function requireSignedIn() {
-  if (!(await isAuthenticated())) redirect("/sign-in");
-}
-
-/** Sends signed-in users to /chat, for pages only signed-out visitors need. */
-export async function requireSignedOut() {
-  if (await isAuthenticated()) redirect("/chat");
-}
+} = convexBetterAuthNextJs({
+  convexUrl,
+  convexSiteUrl,
+  // Reuses the token in the convex_jwt cookie until it expires. With no
+  // cookie or an expired one, it fetches a new one. The library's default
+  // reuses a token up to 60s past expiry, and 0 fetches as soon as it
+  // expires. A call that fails with the cookie's token is retried once with a
+  // fresh token, unless the error is UNAUTHENTICATED. Then the session is
+  // gone, and a new token can't fix that.
+  jwtCache: {
+    enabled: true,
+    isAuthError: isUnauthenticated,
+    expirationToleranceSeconds: 0,
+  },
+});

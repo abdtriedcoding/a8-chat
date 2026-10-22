@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { ArchivedThreadList } from "@/components/archived-thread-list";
 import { ChatHeader } from "@/components/chat/chat-header";
-import { requireSignedIn } from "@/lib/auth-server";
 
 export const metadata: Metadata = { title: "Archived chats" };
 
-export default async function ArchivedChatsPage() {
-  await requireSignedIn();
+export default function ArchivedChatsPage() {
   return (
     <>
       <ChatHeader>

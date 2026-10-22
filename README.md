@@ -63,6 +63,7 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 | `DEEPGRAM_API_KEY` | No | A [Deepgram](https://deepgram.com) API key with the Member role or higher. Set it to turn on dictation. |
 | `CONNECTION_ENCRYPTION_KEY` | Yes | A base64-encoded 32-byte key that encrypts connection tokens and OAuth client secrets. Generate one with `openssl rand -base64 32`. Don't change it once connections exist, because a8 can't rewrite stored secrets under a new key yet. See [the encryption key](docs/connectors/README.md#the-encryption-key). |
 | `BETTER_AUTH_SECRET` | Yes | The secret Better Auth signs sessions with. Generate one with `openssl rand -base64 32`. |
+| `JWKS` | No | Better Auth's signing key, for faster token checks. See [Static JWKS](#static-jwks). |
 | `SITE_URL` | Yes | The app's URL, like `http://localhost:3000`. Better Auth uses it as its base URL and trusted origin, and a connector sign-in returns the browser to `<SITE_URL>/connectors`. |
 | `TRUSTED_ORIGINS` | No | Comma-separated origins besides `SITE_URL` that may call the auth API, such as a preview or staging domain. |
 | `GOOGLE_CLIENT_ID` | Yes | The client ID of a Google OAuth client, for "Sign in with Google". |
@@ -79,6 +80,16 @@ Set these with `bunx convex env set NAME value`, or on the deployment's settings
 | `DAILY_SPEND_CEILING_USD` | No | With billing, the most a8 spends on models across all users in a UTC day, in dollars, like `50`. Once the day's spend reaches it, a8 refuses every send until 00:00 UTC. Unset, it's $20. You can raise it as revenue grows without a deploy. |
 
 Convex sets `CONVEX_SITE_URL` itself. A connector's OAuth redirect URI is `<CONVEX_SITE_URL>/connectors/callback`.
+
+### Static JWKS
+
+Without `JWKS`, Convex fetches Better Auth's public keys over HTTP each time it checks a token that arrives over HTTP, such as a server-side query from Next.js. With `JWKS` set, `convex/auth.config.ts` gives Convex the keys inline, and Better Auth signs tokens with the key from the variable instead of reading its `jwks` table. Set it once per deployment, after the functions are pushed:
+
+```bash
+bunx convex run auth:getLatestJwks | bunx convex env set JWKS
+```
+
+Add `--prod` to both commands for the production deployment. The value holds the private key, encrypted with `BETTER_AUTH_SECRET`, so treat it as a secret. If you rotate Better Auth's keys, run the command again. Until you do, Better Auth keeps signing with the key in `JWKS`. To go back to fetching the keys, run `bunx convex env remove JWKS`.
 
 ### Billing
 
@@ -106,7 +117,7 @@ Only the hosted a8 sets these up. In the Polar organization (use [sandbox.polar.
 | `MCP_TOKEN` | `bun run probe` | An access token for the vendor's MCP server, so the probe can list its tools. |
 | `E2E_EMAIL`, `E2E_PASSWORD_HASH` | `scripts/worktree-setup.ts` | A test login that the setup script creates in each git worktree's dev deployment, so browser checks can sign in. Optional. |
 
-`scripts/worktree-setup.ts` gives each linked git worktree its own dev deployment, port and `.env.local`. It copies `.env.local` from the main checkout, and it needs `AI_GATEWAY_API_KEY`, `BETTER_AUTH_SECRET` and `CONNECTION_ENCRYPTION_KEY` set as the project's dev env defaults with `bunx convex env default set --type dev NAME value`.
+`scripts/worktree-setup.ts` gives each linked git worktree its own dev deployment, port and `.env.local`. It copies `.env.local` from the main checkout, and it needs `AI_GATEWAY_API_KEY`, `BETTER_AUTH_SECRET` and `CONNECTION_ENCRYPTION_KEY` set as the project's dev env defaults with `bunx convex env default set --type dev NAME value`. It sets `JWKS` on the new deployment itself.
 
 ## Scripts
 

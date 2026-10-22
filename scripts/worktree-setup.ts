@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 
-const run = (cmd: string[], cwd: string) => {
+const run = (cmd: string[], cwd: string, input?: string) => {
   // Bun loads the worktree's .env.local into process.env. Drop CONVEX_DEPLOYMENT
   // so the Convex CLI reads the deployment from the cwd's .env.local instead.
   const env = { ...process.env };
@@ -12,7 +12,8 @@ const run = (cmd: string[], cwd: string) => {
   const p = spawnSync(cmd[0], cmd.slice(1), {
     cwd,
     env,
-    stdio: ["inherit", "pipe", "inherit"],
+    input,
+    stdio: [input === undefined ? "inherit" : "pipe", "pipe", "inherit"],
   });
   if (p.status !== 0) throw new Error(`${cmd.join(" ")} failed`);
   return p.stdout.toString();
@@ -59,6 +60,13 @@ env += `\nNEXT_PUBLIC_SITE_URL=${siteUrl}\nPORT=${port}\n`;
 writeFileSync(envPath, env);
 
 convex("dev", "--once");
+
+// Convex checks tokens against the JWKS env var instead of fetching Better
+// Auth's keys over HTTP. The action creates the deployment's first key, so it
+// runs after the push. Setting the var makes Convex reload auth.config.ts.
+// The value goes through stdin to keep the encrypted private key out of argv.
+const jwks = convex("run", ...target, "auth:getLatestJwks");
+run(["bunx", "convex", "env", "set", ...target, "JWKS"], worktree, jwks);
 
 // Seed the shared e2e login so agents sign in instead of signing up each time.
 // E2E_EMAIL and E2E_PASSWORD_HASH come from the main checkout's .env.local,

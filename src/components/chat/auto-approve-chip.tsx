@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "cn";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import { ZapIcon } from "lucide-react";
 import { toast } from "sonner";
 import { InputGroupButton } from "@/components/ui/input-group";

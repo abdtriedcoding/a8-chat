@@ -1,20 +1,15 @@
-import { getSessionCookie } from "better-auth/cookies";
-import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/landing/site-footer";
 import { SiteHeader } from "@/components/landing/site-header";
+import { VisitorProvider } from "@/components/landing/visitor";
 
-export default async function MarketingLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const signedIn = getSessionCookie(await headers()) !== null;
+// Static. The parts that depend on the visitor load in the browser.
+export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
-    <>
-      <SiteHeader signedIn={signedIn} />
+    <VisitorProvider>
+      <SiteHeader />
       <main className="flex flex-1 flex-col bg-muted dark:bg-background">{children}</main>
       <SiteFooter />
-    </>
+    </VisitorProvider>
   );
 }

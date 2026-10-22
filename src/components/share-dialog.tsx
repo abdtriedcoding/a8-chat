@@ -1,6 +1,7 @@
 "use client";
 
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
 import { CopyIcon, Share2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";

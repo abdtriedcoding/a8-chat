@@ -1,6 +1,7 @@
 "use client";
 
-import { useConvexAuth, usePaginatedQuery, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArchiveIcon,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ApprovalsWaiting,
@@ -52,6 +53,7 @@ import { useRemoveThread } from "@/hooks/use-remove-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useSetThreadPinned } from "@/hooks/use-set-thread-pinned";
+import { useThreadQueries } from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
@@ -60,6 +62,18 @@ type Thread = FunctionReturnType<typeof api.threads.list>["page"][number];
 
 const PAGE_SIZE = 30;
 const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
+// How long the pointer stays on a thread before it starts loading. A pointer
+// moving down the list stays on each thread for less.
+const PREFETCH_HOVER_MS = 100;
+
+/**
+ * Subscribes to a thread's queries before it opens, and renders nothing.
+ * After it unmounts, the query cache keeps them for the thread view.
+ */
+function PrefetchThread({ threadId }: { threadId: string }) {
+  useThreadQueries(threadId, { stream: false });
+  return null;
+}
 
 /** A sidebar section whose label shows and hides its threads. */
 function ThreadSection({
@@ -110,6 +124,33 @@ export function ThreadList() {
   const removeThread = useRemoveThread();
   const setThreadArchived = useSetThreadArchived();
   const setThreadPinned = useSetThreadPinned();
+  const [prefetchId, setPrefetchId] = useState<string | null>(null);
+  const prefetchTimer = useRef<number | undefined>(undefined);
+  // Opening a page ends the prefetch. A thread opened with the keyboard
+  // fires no pointerleave, so its prefetch would otherwise stay mounted.
+  const [prefetchPage, setPrefetchPage] = useState(activeId);
+  if (prefetchPage !== activeId) {
+    setPrefetchPage(activeId);
+    setPrefetchId(null);
+  }
+
+  function prefetchSoon(threadId: string) {
+    window.clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = window.setTimeout(
+      () => setPrefetchId(threadId),
+      PREFETCH_HOVER_MS,
+    );
+  }
+
+  function prefetchNow(threadId: string) {
+    window.clearTimeout(prefetchTimer.current);
+    setPrefetchId(threadId);
+  }
+
+  function stopPrefetch() {
+    window.clearTimeout(prefetchTimer.current);
+    setPrefetchId(null);
+  }
 
   function setPinned(thread: Thread, pinned: boolean) {
     setThreadPinned({ threadId: thread._id, pinned }).catch((error: unknown) =>
@@ -174,6 +215,9 @@ export function ThreadList() {
             href={`/c/${thread._id}`}
             aria-current={active ? "page" : undefined}
             onClick={closeOnMobile}
+            onPointerEnter={() => prefetchSoon(thread._id)}
+            onPointerLeave={stopPrefetch}
+            onNavigate={() => prefetchNow(thread._id)}
           >
             <span className="truncate">{threadTitle(thread)}</span>
             {/* A waiting action card outranks the dot for an unread scheduled run. */}
@@ -236,6 +280,7 @@ export function ThreadList() {
   return (
     <>
       <ApprovalsWaiting />
+      {prefetchId && <PrefetchThread key={prefetchId} threadId={prefetchId} />}
       {hasPins && (
         <ThreadSection label="Pinned">
           <SidebarMenu>

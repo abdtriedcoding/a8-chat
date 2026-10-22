@@ -10,6 +10,10 @@ const app = defineApp({
   env: {
     SITE_URL: v.string(),
     BETTER_AUTH_SECRET: v.string(),
+    // Optional. Better Auth's signing keys as JSON, from
+    // `bunx convex run auth:getLatestJwks`. With it, Convex checks tokens
+    // without fetching the public keys over HTTP. Unset, it fetches them.
+    JWKS: v.optional(v.string()),
     GOOGLE_CLIENT_ID: v.string(),
     GOOGLE_CLIENT_SECRET: v.string(),
     // The one model key. Every model, Claude included, goes through Vercel AI

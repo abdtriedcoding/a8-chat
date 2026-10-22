@@ -1,6 +1,6 @@
 "use client";
 
-import { usePaginatedQuery, useQuery } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { LinkIcon } from "lucide-react";
 import { useEffect, useRef } from "react";

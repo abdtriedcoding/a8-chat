@@ -138,6 +138,9 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     plugins: [
       convex({
         authConfig,
+        // Signs tokens with these keys instead of the jwks table's. Unset, it
+        // reads the table, as auth.config.ts falls back to the JWKS URL.
+        jwks: env.JWKS,
         jwt: {
           definePayload: ({ user }) => ({
             name: user.name,
@@ -152,6 +155,17 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth(createAuthOptions(ctx));
+
+/**
+ * Returns Better Auth's newest signing key, for the JWKS env var. It creates
+ * one if the jwks table is empty. Set it with
+ * `bunx convex run auth:getLatestJwks | bunx convex env set JWKS`. If the
+ * keys rotate, set JWKS again. See "Static JWKS" in the README.
+ */
+export const getLatestJwks = internalAction({
+  args: {},
+  handler: async (ctx) => await createAuth(ctx).api.getLatestJwks(),
+});
 
 /**
  * Deletes everything a8 holds for a deleted user, except what Better Auth

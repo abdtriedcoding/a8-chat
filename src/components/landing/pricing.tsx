@@ -26,7 +26,7 @@ import {
   type BillingInterval,
 } from "@/lib/plans";
 import { GITHUB_URL } from "@/lib/site";
-import type { PlanTerms } from "../../../convex/lib/billing";
+import { useVisitor } from "./visitor";
 
 type PricingPlan = {
   name: string;
@@ -75,14 +75,11 @@ const INTERVAL_NOTES: Record<BillingInterval, string> = {
 };
 
 /**
- * The plans. `currentPlan` is the signed-in visitor's plan, or null when
- * signed out or billing is off. Then the plan buttons go to sign-up.
+ * The plans. With no current plan (signed out, or billing off) the plan
+ * buttons go to sign-up.
  */
-export function Pricing({
-  currentPlan,
-}: {
-  currentPlan: PlanTerms["name"] | null;
-}) {
+export function Pricing() {
+  const currentPlan = useVisitor().plan;
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [opening, setOpening] = useState(false);
   usePageRestored(() => setOpening(false));

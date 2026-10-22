@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
-import { ResetPasswordForm } from "@/components/auth/reset-password-form";
+import { Suspense } from "react";
+import {
+  ResetPasswordFormFallback,
+  ResetPasswordFormFromUrl,
+} from "@/components/auth/reset-password-form";
 
 export const metadata: Metadata = { title: "Reset password" };
 
-export default async function ResetPasswordPage(
-  props: PageProps<"/reset-password">,
-) {
-  const { token, error } = await props.searchParams;
+// Static. The token is in the URL, so the form renders in the browser.
+export default function ResetPasswordPage() {
   return (
-    <ResetPasswordForm
-      token={typeof token === "string" ? token : undefined}
-      linkError={typeof error === "string" ? error : undefined}
-    />
+    <Suspense fallback={<ResetPasswordFormFallback />}>
+      <ResetPasswordFormFromUrl />
+    </Suspense>
   );
 }

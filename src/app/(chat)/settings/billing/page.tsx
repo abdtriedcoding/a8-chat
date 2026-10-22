@@ -3,14 +3,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { PlanCard } from "@/components/settings/plan-card";
-import { requireSignedIn } from "@/lib/auth-server";
 import { api } from "../../../../../convex/_generated/api";
 
 export const metadata: Metadata = { title: "Billing" };
 
 // Self-hosted a8 has no plans, so it has no Billing page.
 export default async function BillingSettingsPage() {
-  await requireSignedIn();
   if (!(await fetchQuery(api.billing.enabled))) notFound();
   return (
     <>

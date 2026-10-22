@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { SignInForm } from "@/components/auth/sign-in-form";
-import { requireSignedOut } from "@/lib/auth-server";
+import { Suspense } from "react";
+import { SignInForm, SignInFormFromUrl } from "@/components/auth/sign-in-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function SignInPage(props: PageProps<"/sign-in">) {
-  await requireSignedOut();
-  const { error } = await props.searchParams;
-  return <SignInForm oauthError={typeof error === "string" ? error : undefined} />;
+// Static. proxy.ts sends signed-in users to /chat. The static HTML has the
+// form with no error, and the browser reads the URL's error once it loads.
+export default function SignInPage() {
+  return (
+    <Suspense fallback={<SignInForm />}>
+      <SignInFormFromUrl />
+    </Suspense>
+  );
 }
