@@ -16,13 +16,20 @@ export function languageModelFor(model: Model) {
 /**
  * The gateway's options for a call to the model, for `providerOptions`. A
  * Claude request goes to Anthropic only, so Anthropic's tool search and
- * cache breakpoints reach it. Other models get the gateway's automatic
- * caching, which caches where the lab supports it. The gateway's model
- * fallbacks stay off for every model, since a8 never moves a reply to
- * another model.
+ * cache breakpoints reach it. With ANTHROPIC_BYOK_API_KEY set, it uses that
+ * key, so Anthropic bills it instead of the gateway's credits. Other models
+ * get the gateway's automatic caching, which caches where the lab supports
+ * it. The gateway's model fallbacks stay off for every model, since a8
+ * never moves a reply to another model.
  */
 export function gatewayOptions(model: Model): ProviderOptions {
-  return isClaude(model)
-    ? { gateway: { only: ["anthropic"] } }
-    : { gateway: { caching: "auto" } };
+  if (!isClaude(model)) return { gateway: { caching: "auto" } };
+  // TEMPORARY: revert the BYOK key once spec #334 is done.
+  const apiKey = env.ANTHROPIC_BYOK_API_KEY;
+  return {
+    gateway: {
+      only: ["anthropic"],
+      ...(apiKey && { byok: { anthropic: [{ apiKey }] } }),
+    },
+  };
 }
