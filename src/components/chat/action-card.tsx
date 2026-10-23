@@ -8,11 +8,10 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { createContext, use, useState, type ReactNode } from "react";
-import { toast } from "sonner";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { errorMessage } from "@/lib/errors";
+import { useErrorToast } from "@/hooks/use-error-toast";
 import {
   isRecord,
   summarizeAction,
@@ -43,6 +42,7 @@ export const KnownItemsContext = createContext<KnownItems>(new Map());
 export function ActionCard({ call }: { call: ConnectorToolCall }) {
   const { decide: decideAction } = useThreadActionsContext();
   const [deciding, setDeciding] = useState<"approve" | "cancel">();
+  const showError = useErrorToast();
   const input = isRecord(call.input) ? call.input : {};
   const summary = summarizeAction(call.toolName, input, use(KnownItemsContext));
   // A destructive card that can't name its target opens on the arguments,
@@ -57,7 +57,7 @@ export function ActionCard({ call }: { call: ConnectorToolCall }) {
     try {
       await decideAction(call.approval.id, approve);
     } catch (error) {
-      toast.error(errorMessage(error));
+      showError(error);
     } finally {
       setDeciding(undefined);
     }
