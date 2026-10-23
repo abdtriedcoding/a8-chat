@@ -6,11 +6,10 @@
 import type { MCPClient } from "@ai-sdk/mcp";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalAction,
   internalMutation,
-  internalQuery,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
@@ -27,7 +26,6 @@ import {
 import { withAccessToken } from "./lib/connectionTokens";
 import { readAccountLabel } from "./lib/connectorTools";
 import { findConnector, type Connector } from "./lib/connectors";
-import schema from "./schema";
 
 /**
  * How long after a tool list refresh is scheduled before another can be.
@@ -44,19 +42,18 @@ export const vStoredToolList = v.object({
 
 /**
  * The stored tool lists of the connections. A connection with no stored
- * list is left out. A reply loads them for its `connected` connections
- * (createConnectorTools).
+ * list is left out. A reply reads them for its `connected` connections
+ * (getReplyStart), and builds its tools from them (createConnectorTools).
  */
-export const listToolLists = internalQuery({
-  args: { connectionIds: v.array(v.id("connections")) },
-  returns: v.array(schema.doc("connectionToolLists")),
-  handler: async (ctx, { connectionIds }) => {
-    const toolLists = await Promise.all(
-      connectionIds.map(async (id) => await findToolList(ctx, id)),
-    );
-    return toolLists.filter((toolList) => toolList !== null);
-  },
-});
+export async function readToolLists(
+  ctx: QueryCtx,
+  connectionIds: Id<"connections">[],
+): Promise<Doc<"connectionToolLists">[]> {
+  const toolLists = await Promise.all(
+    connectionIds.map(async (id) => await findToolList(ctx, id)),
+  );
+  return toolLists.filter((toolList) => toolList !== null);
+}
 
 /**
  * Schedules refreshToolList for the connection, unless one was scheduled

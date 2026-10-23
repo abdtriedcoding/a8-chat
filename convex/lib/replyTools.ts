@@ -119,8 +119,8 @@ export type ReplyTools = {
   /** The reply's log line. Feed it each step and each tool run. */
   log: Pick<ReplyToolLog, "addStep" | "addToolRun">;
   /**
-   * Prints the log and closes every MCP client the reply opened. Call it
-   * once, when the reply ends.
+   * Prints the log, waits for the reply's background writes, and closes
+   * every MCP client the reply opened. Call it once, when the reply ends.
    */
   close: () => Promise<void>;
 };
@@ -128,12 +128,18 @@ export type ReplyTools = {
 /**
  * The reply's tools and what goes with them. Building them sends nothing
  * to the vendors, so a reply that fails before close leaves nothing open.
- * A thread that first crosses TOOL_BUDGET_TOKENS here starts deferring
- * connector tools (defersTools).
+ *
+ * It also starts the writes that only later replies read, so the model
+ * request doesn't wait for them: tool list refresh requests
+ * (requestRefreshes), the thread's first crossing of TOOL_BUDGET_TOKENS
+ * (defersTools), and dropping found tools the reply no longer offers
+ * (keepOfferedFoundTools). close waits for them. A write that fails is
+ * logged, and the next reply tries it again.
  *
  * @param promptText The text of the prompt the reply answers, for its
  *   mentions.
  * @param connections The thread owner's connections, of any status.
+ * @param toolLists The stored tool lists of the `connected` connections.
  * @param threadDefersTools Whether the thread already defers connector
  *   tools.
  * @param temporary Whether the thread is temporary. It gets no scheduled
@@ -150,12 +156,13 @@ export type ReplyTools = {
  *   (threadFoundTools). Those the reply no longer offers drop out of the
  *   record.
  */
-export async function createReplyTools(
+export function createReplyTools(
   ctx: ActionCtx,
   {
     threadId,
     promptText,
     connections,
+    toolLists,
     threadDefersTools,
     temporary,
     timeZone,
@@ -168,6 +175,7 @@ export async function createReplyTools(
     threadId: string;
     promptText: string;
     connections: Doc<"connections">[];
+    toolLists: Doc<"connectionToolLists">[];
     threadDefersTools: boolean;
     temporary: boolean;
     timeZone: string;
@@ -177,20 +185,12 @@ export async function createReplyTools(
     model: Model;
     foundToolNames: string[];
   },
-): Promise<ReplyTools> {
+): ReplyTools {
   const claude = isClaude(model);
   const mentioned = findMentions(promptText);
-  const connectorTools = await createConnectorTools(ctx, connections);
-  const deferred = await defersTools(ctx, {
-    threadId,
-    threadDefers: threadDefersTools,
-    connectorTools,
-  });
-  const found = await keepOfferedFoundTools(ctx, {
-    threadId,
-    foundToolNames,
-    connectorTools,
-  });
+  const connectorTools = createConnectorTools(ctx, connections, toolLists);
+  const deferred = defersTools(threadDefersTools, connectorTools);
+  const found = keepOfferedFoundTools(foundToolNames, connectorTools);
   const scheduledPromptTools = temporary
     ? undefined
     : createScheduledPromptTools(timeZone);
@@ -201,6 +201,9 @@ export async function createReplyTools(
         create: (deferredTools) =>
           createFindTools(deferredTools, async (names) => {
             for (const name of names) found.add(name);
+            // After droppedFound lands, so it doesn't overwrite this
+            // newer list.
+            await droppedFound;
             await ctx.runMutation(internal.chat.reply.recordFoundTools, {
               threadId,
               toolNames: [...found],
@@ -228,6 +231,23 @@ export async function createReplyTools(
     connectorTools.groups,
   );
   const historyBudget = historyBudgetTokens(model.contextTokens);
+  // Started last, so nothing that could throw comes between them and the
+  // close that waits for them.
+  const droppedFound = settleWrites([
+    found.size < foundToolNames.length
+      ? ctx.runMutation(internal.chat.reply.recordFoundTools, {
+          threadId,
+          toolNames: [...found],
+        })
+      : undefined,
+  ]);
+  const backgroundWrites = settleWrites([
+    connectorTools.requestRefreshes(),
+    deferred && !threadDefersTools
+      ? ctx.runMutation(internal.chat.reply.deferThreadTools, { threadId })
+      : undefined,
+    droppedFound,
+  ]);
   return {
     tools,
     activeTools: () => loaded && [...new Set([...loaded, ...found])],
@@ -261,7 +281,7 @@ export async function createReplyTools(
     log,
     close: async () => {
       log.print();
-      await connectorTools.close();
+      await Promise.all([backgroundWrites, connectorTools.close()]);
     },
   };
 }
@@ -270,54 +290,44 @@ export async function createReplyTools(
  * Whether the reply defers connector tools (ADR 0006). The thread starts to
  * once a reply's connector tools pass TOOL_BUDGET_TOKENS, and keeps on after
  * that, so the tool list stays the same and the prompt cache keeps working.
- * Only that first crossing writes. `threadDefers` comes from getReplyStart.
+ * createReplyTools records that first crossing. `threadDefers` comes from
+ * getReplyStart.
  */
-async function defersTools(
-  ctx: ActionCtx,
-  {
-    threadId,
-    threadDefers,
-    connectorTools,
-  }: {
-    threadId: string;
-    threadDefers: boolean;
-    connectorTools: ConnectorTools;
-  },
-): Promise<boolean> {
+function defersTools(
+  threadDefers: boolean,
+  connectorTools: ConnectorTools,
+): boolean {
   if (connectorTools.groups.length === 0) return false;
-  if (threadDefers) return true;
-  if (connectorTools.estimatedTokens <= TOOL_BUDGET_TOKENS) return false;
-  await ctx.runMutation(internal.chat.reply.deferThreadTools, { threadId });
-  return true;
+  return threadDefers || connectorTools.estimatedTokens > TOOL_BUDGET_TOKENS;
 }
 
 /**
  * The tools a8's search found in the thread before that the reply still
  * offers, after a disconnect or an allowlist change. When some are gone,
- * the thread's record drops them. It returns a Set, which the reply's
- * searches add to.
+ * createReplyTools drops them from the thread's record. It returns a Set,
+ * which the reply's searches add to.
  */
-async function keepOfferedFoundTools(
-  ctx: ActionCtx,
-  {
-    threadId,
-    foundToolNames,
-    connectorTools,
-  }: {
-    threadId: string;
-    foundToolNames: string[];
-    connectorTools: ConnectorTools;
-  },
-): Promise<Set<string>> {
+function keepOfferedFoundTools(
+  foundToolNames: string[],
+  connectorTools: ConnectorTools,
+): Set<string> {
   const offered = new Set(
     connectorTools.groups.flatMap((group) => Object.keys(group.tools)),
   );
-  const kept = foundToolNames.filter((name) => offered.has(name));
-  if (kept.length < foundToolNames.length) {
-    await ctx.runMutation(internal.chat.reply.recordFoundTools, {
-      threadId,
-      toolNames: kept,
-    });
+  return new Set(foundToolNames.filter((name) => offered.has(name)));
+}
+
+/**
+ * Waits for every write to settle and logs each one that failed. It never
+ * rejects.
+ */
+async function settleWrites(
+  writes: (Promise<unknown> | undefined)[],
+): Promise<void> {
+  const results = await Promise.allSettled(writes);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Couldn't save a reply's background write", result.reason);
+    }
   }
-  return new Set(kept);
 }
