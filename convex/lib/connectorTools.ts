@@ -75,46 +75,40 @@ export type ConnectorTools = {
    * run at once.
    */
   toolApproval: Record<string, ToolApprovalStatus>;
+  /**
+   * Asks for a fresh tool list for each `connected` connection whose stored
+   * list is over a day old or missing, all at once.
+   */
+  requestRefreshes: () => Promise<void>;
   /** Closes every MCP client the reply opened. Call it once the reply ends. */
   close: () => Promise<void>;
 };
 
 /**
  * The reply's tools from the user's connections. Only `connected`
- * connections get tools, and only the ones offeredTools returns. Their
- * stored tool lists load in one query, which a reply with no `connected`
- * connection skips. A tool list over a day old is used as is, and a fresh
- * one is fetched in the background for later replies. A connection with no
- * stored list gets no tools until one is fetched. Each call counts against
- * the user's daily connector tool call limit first.
+ * connections get tools, and only the ones offeredTools returns. They're
+ * built from `toolLists`, the stored lists getReplyStart read. A tool list
+ * over a day old is used as is, and requestRefreshes asks for a fresh one
+ * for later replies. A connection with no stored list gets no tools until
+ * one is fetched. Each call counts against the user's daily connector tool
+ * call limit first.
  */
-export async function createConnectorTools(
+export function createConnectorTools(
   ctx: ActionCtx,
   connections: Doc<"connections">[],
-): Promise<ConnectorTools> {
+  toolLists: Doc<"connectionToolLists">[],
+): ConnectorTools {
   const groups: ConnectorToolGroup[] = [];
   const toolApproval: Record<string, ToolApprovalStatus> = {};
   const replyConnections: ReplyConnection[] = [];
+  const staleConnections: Doc<"connections">[] = [];
 
-  const connected = connections.flatMap((connection) => {
-    const connector = findConnector(connection.connectorId);
-    return connector && connection.status === "connected"
-      ? [{ connector, connection }]
-      : [];
-  });
-  const toolLists =
-    connected.length === 0
-      ? []
-      : await ctx.runQuery(internal.toolLists.listToolLists, {
-          connectionIds: connected.map(({ connection }) => connection._id),
-        });
-
-  for (const { connector, connection } of connected) {
+  for (const { connector, connection } of connectedConnections(connections)) {
     const toolList = toolLists.find(
       (list) => list.connectionId === connection._id,
     );
     if (!toolList || Date.now() - toolList.fetchedAt > TOOL_LIST_MAX_AGE_MS) {
-      await scheduleToolListRefresh(ctx, connection);
+      staleConnections.push(connection);
     }
     if (!toolList) continue;
     const replyConnection = new ReplyConnection(ctx, connector, connection);
@@ -179,12 +173,34 @@ export async function createConnectorTools(
       0,
     ),
     toolApproval,
+    requestRefreshes: async () => {
+      await Promise.all(
+        staleConnections.map(
+          async (connection) => await scheduleToolListRefresh(ctx, connection),
+        ),
+      );
+    },
     close: async () => {
       await Promise.allSettled(
         replyConnections.map(async (connection) => await connection.close()),
       );
     },
   };
+}
+
+/**
+ * The connections that get tools, each with its connector: the `connected`
+ * ones whose connector is still in the catalog.
+ */
+export function connectedConnections(
+  connections: Doc<"connections">[],
+): { connector: Connector; connection: Doc<"connections"> }[] {
+  return connections.flatMap((connection) => {
+    const connector = findConnector(connection.connectorId);
+    return connector && connection.status === "connected"
+      ? [{ connector, connection }]
+      : [];
+  });
 }
 
 type CallToolRequest = Parameters<MCPClient["callTool"]>[0];

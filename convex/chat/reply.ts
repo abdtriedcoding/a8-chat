@@ -16,6 +16,7 @@ import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
 import { replaceUnreadableAttachments } from "../lib/attachments";
+import { connectedConnections } from "../lib/connectorTools";
 import { gatewayOptions, languageModelFor } from "../lib/gateway";
 import { replyInstructions } from "../lib/instructions";
 import { isClaude, modelOrDefault } from "../lib/models";
@@ -32,6 +33,7 @@ import {
   type ReplyTools,
 } from "../lib/replyTools";
 import schema from "../schema";
+import { readToolLists } from "../toolLists";
 import { canSearchWeb } from "../tools/webSearch";
 import { getStoppedReply } from "./stop";
 import { getContinuedTurn, listTurnUpTo } from "./turns";
@@ -105,10 +107,10 @@ export const streamReply = internalAction({
         { threadId, promptMessageId, order, continuing },
       );
       if (!start) return;
-      const { modelId, ...toolStart } = start;
+      const { modelId, userId, ...toolStart } = start;
       const model = modelOrDefault(modelId);
       const claude = isClaude(model);
-      replyTools = await createReplyTools(ctx, {
+      replyTools = createReplyTools(ctx, {
         threadId,
         ...toolStart,
         timeZone,
@@ -119,7 +121,8 @@ export const streamReply = internalAction({
       const { log, fitHistory, maxSteps, activeTools } = replyTools;
       const result = await chatAgent.streamText(
         ctx,
-        { threadId },
+        // With the thread's user, the Agent doesn't look up the thread.
+        { threadId, userId },
         {
           promptMessageId,
           model: languageModelFor(model),
@@ -288,11 +291,13 @@ const vReplyStart = v.union(
   v.object({
     promptText: v.string(),
     connections: v.array(schema.doc("connections")),
+    toolLists: v.array(schema.doc("connectionToolLists")),
     threadDefersTools: v.boolean(),
     foundToolNames: v.array(v.string()),
     temporary: v.boolean(),
     autoApprove: v.boolean(),
     modelId: v.string(),
+    userId: v.optional(v.string()),
   }),
 );
 
@@ -300,7 +305,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
 
 /**
  * Everything streamReply reads before it builds tools, in one query. The
- * fields other than `modelId` go to createReplyTools as they are.
+ * fields other than `modelId` and `userId` go to createReplyTools as they
+ * are.
  *
  * Null if streamReply shouldn't call the model. That's when the user pressed
  * Stop before the runner started, or the prompt is gone. A regenerate or an
@@ -317,6 +323,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  * - `connections`: the thread owner's connections, tokens included, without
  *   their tool lists. The reply runs from the scheduler with no signed-in
  *   user, so the thread names the user.
+ * - `toolLists`: the stored tool lists of the connections that get tools
+ *   (connectedConnections, readToolLists).
  * - `threadDefersTools`: whether the thread already defers connector tools
  *   (deferThreadTools).
  * - `foundToolNames`: the tools a8's own search found in the thread before
@@ -329,6 +337,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   can't use its model anymore (resolveReplyModel). Read at every start
  *   too, so a reply continuing after action cards and a queued prompt use
  *   the model the thread has then.
+ * - `userId`: the thread owner, for the Agent. Undefined for a thread with
+ *   no user.
  */
 export const getReplyStart = internalQuery({
   args: {
@@ -367,14 +377,20 @@ export const getReplyStart = internalQuery({
       userId ? readUserConnections(ctx, userId) : [],
       resolveReplyModel(ctx, { threadId, userId }),
     ]);
+    const toolLists = await readToolLists(
+      ctx,
+      connectedConnections(connections).map(({ connection }) => connection._id),
+    );
     return {
       promptText: prompt?.text ?? "",
       connections,
+      toolLists,
       threadDefersTools: deferredToolThread !== null,
       foundToolNames: foundTools?.toolNames ?? [],
       temporary: temporaryThread !== null,
       autoApprove: isAutoApproveOn(autoApproveThread, scheduledPrompt),
       modelId: model.id,
+      userId,
     };
   },
 });
