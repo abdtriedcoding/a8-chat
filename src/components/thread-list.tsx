@@ -147,6 +147,9 @@ export function ThreadList() {
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  // A rename closed with Enter or Esc leaves focus nowhere. This thread's
+  // "More options" button takes it when the row comes back.
+  const refocusMenuThreadId = useRef<string | null>(null);
   const [sharing, setSharing] = useState<Thread | null>(null);
   const [deleteDialog, confirmDelete] = useDeleteThread();
   const router = useRouter();
@@ -218,7 +221,11 @@ export function ThreadList() {
           <ThreadTitleInput
             title={thread.title}
             onSave={(title) => renameThread({ threadId: thread._id, title })}
-            onClose={() => setRenamingId(null)}
+            onClose={(byKey) => {
+              // A stale row has no menu button to come back to.
+              if (byKey && !stale) refocusMenuThreadId.current = thread._id;
+              setRenamingId(null);
+            }}
             className="bg-background shadow-none"
           />
         </SidebarMenuItem>
@@ -252,7 +259,15 @@ export function ThreadList() {
         {!stale && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <SidebarMenuAction showOnHover>
+              <SidebarMenuAction
+                showOnHover
+                ref={(button) => {
+                  if (button && refocusMenuThreadId.current === thread._id) {
+                    refocusMenuThreadId.current = null;
+                    button.focus();
+                  }
+                }}
+              >
                 <MoreHorizontalIcon />
                 <span className="sr-only">
                   More options for {threadTitle(thread)}
