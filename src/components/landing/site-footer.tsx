@@ -27,6 +27,12 @@ export function SiteFooter() {
             <a href={GITHUB_URL}>GitHub</a>
           </Button>
           <Button asChild variant="ghost">
+            <Link href="/privacy">Privacy</Link>
+          </Button>
+          <Button asChild variant="ghost">
+            <Link href="/terms">Terms</Link>
+          </Button>
+          <Button asChild variant="ghost">
             <Link href="/sign-in">Sign in</Link>
           </Button>
         </nav>

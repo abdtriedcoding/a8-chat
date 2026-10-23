@@ -163,6 +163,10 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
               Don&apos;t have an account?{" "}
               <Link href="/sign-up">Sign up</Link>
             </FieldDescription>
+            <FieldDescription>
+              By continuing you agree to the <Link href="/terms">Terms</Link>{" "}
+              and <Link href="/privacy">Privacy Policy</Link>.
+            </FieldDescription>
           </Field>
         </FieldGroup>
       </form>
