@@ -256,6 +256,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
             }
             stopped={stopped}
             replyStatus={replyStatus}
+            stale={stale}
           />
         </ThreadActionsProvider>
       )}

@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { GhostIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ThreadTitleInput } from "@/components/thread-title-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,9 @@ export function ThreadHeading({
   title?: string;
 }) {
   const [editing, setEditing] = useState(false);
+  // Set when a rename closes with Enter or Esc, which leaves focus nowhere.
+  // The title button takes it back when it mounts.
+  const refocusTitle = useRef(false);
   const renameThread = useRenameThread();
 
   return (
@@ -102,7 +105,10 @@ export function ThreadHeading({
         <ThreadTitleInput
           title={title}
           onSave={(next) => renameThread({ threadId, title: next })}
-          onClose={() => setEditing(false)}
+          onClose={(byKey) => {
+            refocusTitle.current = byKey;
+            setEditing(false);
+          }}
           className="max-w-md"
         />
       ) : (
@@ -110,6 +116,12 @@ export function ThreadHeading({
           <TooltipTrigger asChild>
             <button
               type="button"
+              ref={(button) => {
+                if (button && refocusTitle.current) {
+                  refocusTitle.current = false;
+                  button.focus();
+                }
+              }}
               onClick={() => setEditing(true)}
               className="block h-8 max-w-full truncate rounded-md border border-transparent px-2 text-left outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >

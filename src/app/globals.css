@@ -75,7 +75,9 @@
   --secondary: oklch(0.9684 0.0068 247.8951);
   --secondary-foreground: oklch(0.32 0.03 260);
   --muted: oklch(0.9684 0.0068 247.8951);
-  --muted-foreground: oklch(0.5547 0.0407 257.4404);
+  /* Darker than slate-500, so it passes AA on muted at 5.2:1 and on the
+     sidebar's active row at 4.7:1. */
+  --muted-foreground: oklch(0.51 0.04 257.44);
   --accent: oklch(0.9684 0.0068 247.8951);
   --accent-foreground: oklch(0.32 0.03 260);
   /* The marker behind highlighted words and @mentions. */
@@ -90,7 +92,8 @@
   --sidebar: oklch(0.9838 0.0035 247.8583);
   --sidebar-foreground: oklch(0.32 0.03 260);
   --sidebar-accent: oklch(0.929 0.0126 255.5317);
-  --sidebar-accent-foreground: oklch(0.546 0.2153 262.8719);
+  /* Blue-700 on the active row is 5.5:1. Blue-600 was only 4.2:1. */
+  --sidebar-accent-foreground: oklch(0.4878 0.217 264.3876);
   --sidebar-border: oklch(0.929 0.0126 255.5317);
   --sidebar-ring: oklch(0.546 0.2153 262.8719);
   /* The day sky behind a new chat, taken from the sky photo's blues. It

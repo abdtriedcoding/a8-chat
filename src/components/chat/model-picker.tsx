@@ -496,7 +496,7 @@ function ModelRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-medium">{model.name}</span>
           {model.isNew && (
-            <span className="shrink-0 text-[0.625rem] font-medium text-primary uppercase">
+            <span className="shrink-0 text-[0.625rem] font-medium text-link uppercase">
               New
             </span>
           )}

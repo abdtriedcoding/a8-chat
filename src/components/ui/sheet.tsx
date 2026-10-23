@@ -5,6 +5,7 @@ import { cn } from "cn"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import { useReturnFocus } from "@/hooks/use-return-focus"
 import { XIcon } from "lucide-react"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -50,11 +51,15 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  // Changed from shadcn's version, which sends focus back only to a trigger.
+  const returnFocus = useReturnFocus({ onOpenAutoFocus, onCloseAutoFocus })
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -66,6 +71,7 @@ function SheetContent({
           className
         )}
         {...props}
+        {...returnFocus}
       >
         {children}
         {showCloseButton && (
