@@ -2,7 +2,7 @@
 
 a8 is an open-source AI workspace where a person chats with a model that can act across their apps. A user writes prompts in threads and attaches images and PDFs, and the model can search the web while it replies. Connectors link a8 to apps like Notion and Linear through each vendor's own MCP server. a8 labels each catalog tool a read or an action. Reads run without asking, and every action waits for the user to approve it on an action card.
 
-The app is Next.js in `src/` and a Convex backend in `convex/`. Sign-in uses Better Auth, replies come from Anthropic's models, and Resend sends the sign-up, password reset and scheduled run emails.
+The app is Next.js in `src/` and a Convex backend in `convex/`. Sign-in uses Better Auth, replies come from the models on Vercel AI Gateway, and Resend sends the sign-up, password reset and scheduled run emails.
 
 ## Running a8
 

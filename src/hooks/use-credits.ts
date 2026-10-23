@@ -1,14 +1,12 @@
 import { useQuery } from "convex-helpers/react/cache/hooks";
-import type { FunctionReturnType } from "convex/server";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import type { PlanTerms } from "../../convex/lib/billing";
 import {
   creditPeriodAt,
   type CreditPeriod,
 } from "../../convex/lib/creditPeriod";
 import { monthlyPeriod } from "../../convex/lib/monthlyPeriod";
-
-export type PlanTerms = NonNullable<FunctionReturnType<typeof api.billing.plan>>;
 
 const MINUTE_MS = 60_000;
 

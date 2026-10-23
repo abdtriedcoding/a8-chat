@@ -18,13 +18,13 @@ import { errorMessage } from "@/lib/errors";
 type ConfirmOptions = {
   title: string;
   description: ReactNode;
-  confirmLabel?: string;
+  confirmLabel: string;
   destructive?: boolean;
   /**
    * Runs on confirm. The dialog stays open with a spinner until it finishes.
    * If it throws, the dialog shows the error as a toast and stays open.
    */
-  onConfirm?: () => Promise<unknown>;
+  onConfirm: () => Promise<unknown>;
 };
 
 /**
@@ -52,10 +52,9 @@ export function useConfirm() {
   }
 
   async function handleConfirm() {
-    if (!options?.onConfirm) return settle(true);
     setPending(true);
     try {
-      await options.onConfirm();
+      await options?.onConfirm();
       settle(true);
     } catch (error) {
       toast.error(errorMessage(error));
@@ -90,7 +89,7 @@ export function useConfirm() {
             }}
           >
             {pending && <Spinner data-icon="inline-start" />}
-            {options?.confirmLabel ?? "Confirm"}
+            {options?.confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

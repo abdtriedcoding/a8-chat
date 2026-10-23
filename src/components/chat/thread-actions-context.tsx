@@ -3,17 +3,16 @@
 import { createContext, use, type ReactNode } from "react";
 
 /** Approves or cancels the action waiting on the card with this approval ID. */
-export type DecideAction = (
+type DecideAction = (
   approvalId: string,
   approve: boolean,
 ) => Promise<void>;
 
 /**
  * What a thread's messages can do to it, and whether the last prompt's
- * editor is open. A shared snapshot's page sets no actions, so its messages
- * are read-only.
+ * editor is open.
  */
-export type ThreadActions = {
+type ThreadActions = {
   /** Unset where nobody can decide on action cards. */
   decide?: DecideAction;
   /** Replaces the last reply. Unset while the last turn can't be redone. */
@@ -22,6 +21,15 @@ export type ThreadActions = {
   edit?: (prompt: string) => Promise<void>;
   editingLastPrompt: boolean;
   setEditingLastPrompt: (editing: boolean) => void;
+};
+
+/**
+ * For messages that can't be edited, regenerated or approved: a shared
+ * snapshot's, and a new thread's first prompt before the server saves it.
+ */
+export const READ_ONLY_ACTIONS: ThreadActions = {
+  editingLastPrompt: false,
+  setEditingLastPrompt: () => {},
 };
 
 const ThreadActionsContext = createContext<ThreadActions | null>(null);

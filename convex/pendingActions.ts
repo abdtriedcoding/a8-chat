@@ -11,8 +11,7 @@ const UNTITLED = "Untitled chat";
 
 /**
  * The user's threads with action cards waiting in their last turn, the one
- * waiting longest first, with how many cards wait in each. For the sidebar
- * and the alerts. Skips archived, temporary and deleted threads. Empty when
+ * waiting longest first. For the sidebar and the alerts. Skips archived, temporary and deleted threads. Empty when
  * signed out.
  */
 export const listMine = query({
@@ -21,8 +20,6 @@ export const listMine = query({
     v.object({
       threadId: v.string(),
       title: v.string(),
-      count: v.number(),
-      since: v.number(),
     }),
   ),
   handler: async (ctx) => {
@@ -30,8 +27,8 @@ export const listMine = query({
     if (!user) return [];
 
     const temporary = await listTemporaryThreadIds(ctx, user._id);
-    // A row's creation time is its `since`, so the index reads the
-    // longest-waiting rows first. The cap counts only threads it returns,
+    // A row's creation time is when its thread started waiting, so the
+    // index reads the longest-waiting rows first. The cap counts only threads it returns,
     // so archived ones can't push an active one out.
     const rows = ctx.db
       .query("pendingActions")
@@ -44,8 +41,6 @@ export const listMine = query({
       waiting.push({
         threadId: row.threadId,
         title: thread.title || UNTITLED,
-        count: row.count,
-        since: row.since,
       });
       if (waiting.length === MAX_PENDING_THREADS) break;
     }

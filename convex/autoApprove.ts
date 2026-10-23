@@ -19,7 +19,7 @@ export const setAutoApprove = mutation({
   args: { threadId: v.string(), on: v.boolean() },
   returns: v.null(),
   handler: async (ctx, { threadId, on }) => {
-    const user = await authorizeThreadAccess(ctx, threadId);
+    await authorizeThreadAccess(ctx, threadId);
     if (await findThreadScheduledPrompt(ctx, threadId)) {
       throw appError(
         ERROR_CODES.SCHEDULED_THREAD,
@@ -28,7 +28,7 @@ export const setAutoApprove = mutation({
     }
     const row = await findAutoApproveThread(ctx, threadId);
     if (on && !row) {
-      await ctx.db.insert("autoApproveThreads", { userId: user._id, threadId });
+      await ctx.db.insert("autoApproveThreads", { threadId });
     } else if (!on && row) {
       await ctx.db.delete("autoApproveThreads", row._id);
     }

@@ -15,8 +15,7 @@ import {
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { useConfirm } from "@/hooks/use-confirm";
-import { useRemoveThread } from "@/hooks/use-remove-thread";
+import { useDeleteThread } from "@/hooks/use-delete-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
@@ -36,28 +35,12 @@ export function ArchivedThreadList() {
     { initialNumItems: PAGE_SIZE },
   );
   const setThreadArchived = useSetThreadArchived();
-  const removeThread = useRemoveThread();
-  const [confirmDialog, confirm] = useConfirm();
+  const [deleteDialog, deleteThread] = useDeleteThread();
 
   function unarchiveThread(thread: Thread) {
     setThreadArchived({ threadId: thread._id, archived: false }).catch(
       (error: unknown) => toast.error(errorMessage(error)),
     );
-  }
-
-  async function deleteThread(thread: Thread) {
-    await confirm({
-      title: "Delete this chat?",
-      description: (
-        <>
-          &ldquo;{threadTitle(thread)}&rdquo; and all its messages will be
-          deleted. You can&apos;t undo this.
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-      onConfirm: () => removeThread({ threadId: thread._id }),
-    });
   }
 
   if (status === "LoadingFirstPage") {
@@ -138,7 +121,7 @@ export function ArchivedThreadList() {
           Load more
         </Button>
       )}
-      {confirmDialog}
+      {deleteDialog}
     </div>
   );
 }

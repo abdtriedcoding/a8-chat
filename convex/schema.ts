@@ -21,7 +21,6 @@ export const vOAuthClientRegistration = v.object({
   connectorId: v.string(),
   clientId: v.string(),
   encryptedClientSecret: v.optional(v.string()),
-  clientIdIssuedAt: v.optional(v.number()),
   // Seconds since the epoch (RFC 7591). 0 means the secret never expires.
   clientSecretExpiresAt: v.optional(v.number()),
   // The authorization server it registered with. Unset on rows from before
@@ -137,17 +136,16 @@ export default defineSchema({
     .index("by_threadId", ["threadId"]),
   // One row per thread with action cards waiting in its last turn
   // (lib/pendingActions.ts), for the sidebar and the alerts. The thread's
-  // messages hold the cards (ADR 0002), and this row only counts them. A
-  // reply that pauses on cards adds it. A decision, a new prompt, a
-  // regenerate, an edit, a Stop and deleting the thread update or delete
+  // messages hold the cards (ADR 0002), and this row only marks the thread.
+  // A reply that pauses on cards adds it. A decision on the last card, a new
+  // prompt, a regenerate, an edit, a Stop and deleting the thread delete
   // it. Archiving keeps it, and the lists skip archived threads.
   pendingActions: defineTable({
     userId: v.string(),
     threadId: v.string(),
-    // How many cards are waiting.
-    count: v.number(),
-    // When the thread started waiting on the user.
-    since: v.number(),
+    // Unused. migrations:dropUnusedFields unsets them, then they go.
+    count: v.optional(v.number()),
+    since: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_threadId", ["threadId"]),
@@ -165,7 +163,8 @@ export default defineSchema({
   // startThread adds it with the thread. Deleting the thread deletes it.
   // Archiving, pinning and sharing keep it.
   autoApproveThreads: defineTable({
-    userId: v.string(),
+    // Unused. migrations:dropUnusedFields unsets it, then it goes.
+    userId: v.optional(v.string()),
     threadId: v.string(),
   }).index("by_threadId", ["threadId"]),
   // One row per thread with the model its replies use (lib/threadModels.ts).
@@ -173,7 +172,8 @@ export default defineSchema({
   // convex/models.ts) change it. A thread with no row, like a scheduled
   // prompt's, uses the user's default model. Deleting the thread deletes it.
   threadModels: defineTable({
-    userId: v.string(),
+    // Unused. migrations:dropUnusedFields unsets it, then it goes.
+    userId: v.optional(v.string()),
     threadId: v.string(),
     // An id from the model list (lib/models.ts). It can be one that left
     // the list.
@@ -265,7 +265,8 @@ export default defineSchema({
   // deleting the thread deletes the row.
   sharedSnapshots: defineTable({
     threadId: v.string(),
-    userId: v.string(),
+    // Unused. migrations:dropUnusedFields unsets it, then it goes.
+    userId: v.optional(v.string()),
     // The token in the link. Random, so it can't be guessed from the
     // thread ID.
     publicId: v.string(),
@@ -433,8 +434,9 @@ export default defineSchema({
   // deployment, shared by every user. Notion orphans earlier grants when a
   // client registers again, so a8 only registers again after the vendor
   // rejects this client or its secret expires.
-  oauthClientRegistrations: defineTable(vOAuthClientRegistration).index(
-    "by_connectorId",
-    ["connectorId"],
-  ),
+  oauthClientRegistrations: defineTable({
+    ...vOAuthClientRegistration.fields,
+    // Unused. migrations:dropUnusedFields unsets it, then it goes.
+    clientIdIssuedAt: v.optional(v.number()),
+  }).index("by_connectorId", ["connectorId"]),
 });

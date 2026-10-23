@@ -30,7 +30,7 @@ const TOOL_PILL =
 export type ConnectorToolCall = {
   id: string;
   /** The tool's model name, like `gmail__create_draft`. */
-  toolName?: string;
+  toolName: string;
   /** The connector, or a8 for a scheduled prompt tool. */
   app: ToolApp;
   /** The connector, unset for a scheduled prompt tool. */
@@ -117,7 +117,7 @@ export function isAutoApproved(call: ConnectorToolCall): boolean {
 }
 
 /** Whether a call is an action whose card is waiting for the user. */
-export function isWaitingForApproval(call: ConnectorToolCall): boolean {
+function isWaitingForApproval(call: ConnectorToolCall): boolean {
   return call.state === "approval-requested" && !isAutoApproved(call);
 }
 

@@ -2,7 +2,7 @@ import { cn } from "cn";
 import {
   ArrowRightIcon,
   CalendarDaysIcon,
-  HashIcon,
+  ListTodoIcon,
   LockKeyholeIcon,
   MailIcon,
   NotebookPenIcon,
@@ -26,15 +26,15 @@ import { GITHUB_URL } from "@/lib/site";
 export const metadata: Metadata = {
   title: { absolute: "a8: the AI chat that does the work in your apps" },
   description:
-    "Connect Gmail, Slack, Google Calendar, Notion and Linear, pick any AI model, and ask. a8 does the task and waits for your OK before anything is sent. Open source.",
+    "Connect Gmail, Google Calendar, Notion, Linear and more, pick any AI model, and ask. a8 does the task and waits for your OK before it changes anything. Open source.",
 };
 
 const APPS: { icon: LucideIcon; name: string; handle: string }[] = [
   { icon: MailIcon, name: "Gmail", handle: "gmail" },
   { icon: CalendarDaysIcon, name: "Google Calendar", handle: "calendar" },
-  { icon: HashIcon, name: "Slack", handle: "slack" },
   { icon: NotebookPenIcon, name: "Notion", handle: "notion" },
   { icon: SquareKanbanIcon, name: "Linear", handle: "linear" },
+  { icon: ListTodoIcon, name: "Todoist", handle: "todoist" },
 ];
 
 export default function LandingPage() {
@@ -83,7 +83,7 @@ function Hero() {
           The AI chat that <Highlight>does the work</Highlight> in your apps
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-pretty text-muted-foreground sm:text-xl">
-          a8 goes into your Gmail, Slack, Google Calendar, Notion and Linear
+          a8 goes into your Gmail, Google Calendar, Notion, Linear and more,
           and does the task for you.{" "}
           <strong className="font-semibold text-foreground">
             You just approve it.
@@ -131,7 +131,7 @@ function WorksWith() {
             </li>
           ))}
           <li className="flex h-10 items-center rounded-lg border border-dashed border-input px-3 text-sm font-medium text-muted-foreground">
-            Any MCP server
+            Drive, Docs, Sheets, Trello and more
           </li>
         </ul>
       </div>
@@ -147,9 +147,9 @@ function WithoutSwitchingTabs() {
           <Highlight>Without switching tabs:</Highlight>
         </h2>
         <p className="mt-8 flex flex-col gap-2 text-3xl font-semibold tracking-tight sm:text-5xl">
-          <span className="text-muted-foreground/70">catch up on #launch.</span>
+          <span className="text-muted-foreground/70">check what&apos;s left for launch.</span>
           <span className="text-muted-foreground">write the client update.</span>
-          <span className="text-foreground">approve it, and it&apos;s sent.</span>
+          <span className="text-foreground">approve it, and it&apos;s drafted.</span>
         </p>
         <Button asChild size="xl" className="mt-12 w-full max-w-sm">
           <Link href="/sign-up">
@@ -167,7 +167,7 @@ function OpenSource() {
     {
       icon: ServerIcon,
       title: "Self-host for free",
-      text: "Every feature, on your own server, with one OpenRouter key.",
+      text: "Every feature, on your own server, with your own Convex and AI Gateway accounts.",
     },
     {
       icon: LockKeyholeIcon,
@@ -235,11 +235,14 @@ function Terminal() {
           cd a8-chat
           {"\n"}
           <Prompt />
-          cp .env.example .env{" "}
-          <span className="text-background/50"># add your OpenRouter key</span>
+          bun install
           {"\n"}
           <Prompt />
-          docker compose up
+          bun run dev:convex{" "}
+          <span className="text-background/50"># then set the keys in the README</span>
+          {"\n"}
+          <Prompt />
+          bun run dev
         </code>
       </pre>
     </div>

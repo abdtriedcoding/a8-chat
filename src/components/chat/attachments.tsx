@@ -22,6 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { ComposerAttachment } from "@/hooks/use-composer-attachments";
+import { BYTES_PER_MB } from "../../../convex/lib/attachments";
 
 /** A file in the composer, with its upload status and a remove button. */
 export function ComposerAttachmentChip({
@@ -126,7 +127,6 @@ export function SentPdfChip({
 }
 
 const BYTES_PER_KB = 1024;
-const BYTES_PER_MB = 1024 * 1024;
 
 /** "820 KB", "2.4 MB". */
 function formatFileSize(sizeInBytes: number): string {

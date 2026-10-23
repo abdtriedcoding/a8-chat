@@ -51,7 +51,7 @@ export const setThreadModel = mutation({
   handler: async (ctx, { threadId, modelId }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
     requireModelPick(await getPlanTerms(ctx, user._id), modelId);
-    await setThreadModelRow(ctx, { threadId, userId: user._id, modelId });
+    await setThreadModelRow(ctx, { threadId, modelId });
     return null;
   },
 });

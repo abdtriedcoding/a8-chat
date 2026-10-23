@@ -20,16 +20,12 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
 import { GoogleButton } from "./google-button";
-import { PasswordInput } from "./password-input";
+import { newPassword, PasswordInput } from "./password-input";
 
 const formSchema = z.object({
   name: z.string().trim().min(1, "Enter your name."),
   email: z.email("Enter a valid email address."),
-  // Better Auth's default password length limits.
-  password: z
-    .string()
-    .min(8, "Use at least 8 characters.")
-    .max(128, "Use at most 128 characters."),
+  password: newPassword,
 });
 
 export function SignUpForm() {

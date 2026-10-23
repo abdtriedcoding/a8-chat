@@ -5,7 +5,10 @@ import type { FunctionReturnType } from "convex/server";
 import { LinkIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { AssistantMessage } from "@/components/chat/assistant-message";
-import { ThreadActionsProvider } from "@/components/chat/thread-actions-context";
+import {
+  READ_ONLY_ACTIONS,
+  ThreadActionsProvider,
+} from "@/components/chat/thread-actions-context";
 import { UserMessage } from "@/components/chat/user-message";
 import {
   Empty,
@@ -25,12 +28,6 @@ const PAGE_SIZE = 20;
 type SharedRow = FunctionReturnType<
   typeof api.sharedSnapshots.listSharedMessages
 >["page"][number];
-
-/** Messages here can't be edited, regenerated or approved. */
-const READ_ONLY = {
-  editingLastPrompt: false,
-  setEditingLastPrompt: () => {},
-};
 
 /**
  * A shared snapshot's page: the thread's title and its copied messages,
@@ -58,7 +55,7 @@ export function SharedSnapshotView({ publicId }: { publicId: string }) {
           <h1 className="text-xl font-semibold tracking-tight text-balance">
             {threadTitle(snapshot)}
           </h1>
-          <ThreadActionsProvider actions={READ_ONLY}>
+          <ThreadActionsProvider actions={READ_ONLY_ACTIONS}>
             {results.map(toThreadMessage).map((message) =>
               message.role === "user" ? (
                 <UserMessage

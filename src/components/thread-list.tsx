@@ -47,8 +47,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
-import { useConfirm } from "@/hooks/use-confirm";
-import { useRemoveThread } from "@/hooks/use-remove-thread";
+import { useDeleteThread } from "@/hooks/use-delete-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useSetThreadPinned } from "@/hooks/use-set-thread-pinned";
@@ -135,9 +134,8 @@ export function ThreadList() {
   const renameThread = useRenameThread();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [sharing, setSharing] = useState<Thread | null>(null);
-  const [confirmDialog, confirm] = useConfirm();
+  const [deleteDialog, confirmDelete] = useDeleteThread();
   const router = useRouter();
-  const removeThread = useRemoveThread();
   const setThreadArchived = useSetThreadArchived();
   const setThreadPinned = useSetThreadPinned();
   const [prefetchId, setPrefetchId] = useState<string | null>(null);
@@ -195,18 +193,7 @@ export function ThreadList() {
   }
 
   async function deleteThread(thread: Thread) {
-    const confirmed = await confirm({
-      title: "Delete this chat?",
-      description: (
-        <>
-          &ldquo;{threadTitle(thread)}&rdquo; and all its messages will be
-          deleted. You can&apos;t undo this.
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-      onConfirm: () => removeThread({ threadId: thread._id }),
-    });
+    const confirmed = await confirmDelete(thread);
     if (confirmed && thread._id === activeId) router.replace("/chat");
   }
 
@@ -334,7 +321,7 @@ export function ThreadList() {
           )}
         </ThreadSection>
       )}
-      {confirmDialog}
+      {deleteDialog}
       {sharing && (
         <ShareDialog
           threadId={sharing._id}

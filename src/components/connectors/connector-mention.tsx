@@ -1,4 +1,3 @@
-import { cn } from "cn";
 import type { ConnectorView } from "../../../convex/lib/connectorView";
 import { ConnectorLogo } from "./connector-logo";
 
@@ -8,18 +7,11 @@ import { ConnectorLogo } from "./connector-logo";
  */
 export function ConnectorMention({
   connector,
-  className,
 }: {
   connector: Pick<ConnectorView, "logo" | "name">;
-  className?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md bg-background/70 py-px pr-1.5 pl-0.5 align-bottom font-medium ring-1 ring-foreground/10",
-        className,
-      )}
-    >
+    <span className="inline-flex items-center gap-1 rounded-md bg-background/70 py-px pr-1.5 pl-0.5 align-bottom font-medium ring-1 ring-foreground/10">
       <ConnectorLogo connector={connector} size="xs" />
       {connector.name}
     </span>

@@ -5,7 +5,7 @@
  * then goes back to `path`. `draft` is the composer's text when the sign-in
  * started, and the composer at `path` puts it back.
  */
-export type ConnectReturn = {
+type ConnectReturn = {
   connectorId: string;
   path: string;
   draft?: string;

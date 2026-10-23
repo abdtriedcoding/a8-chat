@@ -97,7 +97,6 @@ export const share = mutation({
       publicId = newPublicId();
       snapshotId = await ctx.db.insert("sharedSnapshots", {
         threadId,
-        userId: user._id,
         publicId,
         version: 0,
         copying: true,

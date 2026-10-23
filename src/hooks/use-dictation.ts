@@ -94,7 +94,7 @@ export type DictationState =
   | "stopping"
   | "error";
 
-export type DictationCallbacks = {
+type DictationCallbacks = {
   /** A dictation starts. The words that follow belong to it. */
   onStart: () => void;
   /**

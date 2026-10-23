@@ -14,7 +14,7 @@ export function AuthShowcase() {
         </p>
         <div aria-hidden="true" inert className="mt-10 flex flex-col gap-4 text-sm">
           <UserMessage>
-            <Mention>@gmail</Mention> send the client a quick launch update
+            <Mention>@gmail</Mention> draft a quick launch update for the client
           </UserMessage>
           <ApprovalCard />
         </div>

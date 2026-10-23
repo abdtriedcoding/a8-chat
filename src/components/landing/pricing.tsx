@@ -53,18 +53,18 @@ const FREE: PricingPlan = {
 const PRO_FEATURES = [
   "800 credits a month",
   "All connectors",
-  "Every model on OpenRouter",
+  "Every model on AI Gateway",
 ];
 
 const SELF_HOST: PricingPlan = {
   name: "Self-host",
   price: "Free",
-  note: "You pay OpenRouter directly",
+  note: "You pay for models directly",
   description: "For running it on your own server.",
   features: [
     "Every feature",
-    "Your own OpenRouter key",
-    "Your own Google and Slack app setup",
+    "Your own AI Gateway key",
+    "Your own Google app setup",
   ],
   cta: { label: "Get the code", href: GITHUB_URL, external: true },
 };
