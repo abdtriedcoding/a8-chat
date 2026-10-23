@@ -2,7 +2,6 @@
 
 import { cn } from "cn";
 import { useMutation } from "convex/react";
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import { ZapIcon } from "lucide-react";
 import { toast } from "sonner";
 import { InputGroupButton } from "@/components/ui/input-group";
@@ -12,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useConfirm } from "@/hooks/use-confirm";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import { MAX_AUTO_APPROVED_ACTIONS } from "../../../convex/lib/autoApprove";
@@ -31,7 +31,12 @@ export function AutoApproveChip({
   onChange: (on: boolean) => Promise<unknown> | void;
   disabled?: boolean;
 }) {
-  const seenWarning = useQuery(api.autoApprove.hasSeenWarning, {});
+  // A copy from the device that says it's seen still shows the warning, in
+  // case it was reset.
+  const { data: seenWarning, stale: seenStale } = useQueryWithLocalCopy(
+    api.autoApprove.hasSeenWarning,
+    {},
+  );
   const markWarningSeen = useMutation(api.autoApprove.markWarningSeen);
   const [dialog, confirm] = useConfirm();
 
@@ -45,7 +50,7 @@ export function AutoApproveChip({
 
   async function toggle() {
     // Shown while the answer is still loading too, so it's never skipped.
-    if (on || seenWarning === true) return change(!on);
+    if (on || (seenWarning === true && !seenStale)) return change(!on);
     await confirm({
       title: "Auto-approve actions in this chat?",
       description: `An email or page a8 reads could tell it to take an action you didn't ask for, and with auto-approve on, nothing stops that call. Actions in this chat will run without asking you. After ${MAX_AUTO_APPROVED_ACTIONS} in one reply, the rest ask again.`,

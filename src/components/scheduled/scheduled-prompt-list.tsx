@@ -2,7 +2,6 @@
 
 import { cn } from "cn";
 import { useMutation } from "convex/react";
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   CalendarClockIcon,
   MoreHorizontalIcon,
@@ -42,6 +41,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/hooks/use-confirm";
 import { useErrorToast } from "@/hooks/use-error-toast";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import { describeSchedule } from "../../../convex/lib/scheduleText";
@@ -103,7 +103,11 @@ function LastRun({ row }: { row: ScheduledPrompt }) {
  * one.
  */
 export function ScheduledPromptList() {
-  const scheduledPrompts = useQuery(api.scheduledPrompts.list, {});
+  // Until they load, the device's copy shows, with the menus turned off.
+  const { data: scheduledPrompts, stale } = useQueryWithLocalCopy(
+    api.scheduledPrompts.list,
+    {},
+  );
   const [search, setSearch] = useState("");
   const pause = useMutation(api.scheduledPrompts.pause);
   const resume = useMutation(api.scheduledPrompts.resume);
@@ -257,7 +261,12 @@ export function ScheduledPromptList() {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" className="shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="shrink-0"
+                    disabled={stale}
+                  >
                     <MoreHorizontalIcon />
                     <span className="sr-only">
                       More options for {row.title}

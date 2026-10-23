@@ -72,7 +72,7 @@ function Reply({
   lastTurn = false,
   remount,
 }: AssistantMessageProps & { remount: () => void }) {
-  const { regenerate } = useThreadActionsContext();
+  const { regenerate, offline } = useThreadActionsContext();
   const text = replyText(message);
   const toolCalls = connectorToolCalls(message);
   const waitingActions = replyWaitingActions(toolCalls, stopped);
@@ -169,9 +169,10 @@ function Reply({
         {waitingActions.map((call) => (
           <ActionCard key={call.id} call={call} />
         ))}
-        {reconnects.map((connector) => (
-          <ReconnectChip key={connector.id} connector={connector} />
-        ))}
+        {!offline &&
+          reconnects.map((connector) => (
+            <ReconnectChip key={connector.id} connector={connector} />
+          ))}
         {runningSearch && (
           <SearchingMarker query={runningSearch.input?.query} />
         )}

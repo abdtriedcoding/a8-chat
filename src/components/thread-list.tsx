@@ -1,6 +1,5 @@
 "use client";
 
-import { usePaginatedQuery, useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArchiveIcon,
@@ -14,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { type ReactNode, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ApprovalsWaiting,
@@ -48,12 +47,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useConfirm } from "@/hooks/use-confirm";
+import {
+  queryCopyKey,
+  usePaginatedQueryWithLocalCopy,
+  useQueryWithLocalCopy,
+} from "@/hooks/use-query-with-local-copy";
 import { useRemoveThread } from "@/hooks/use-remove-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useSetThreadPinned } from "@/hooks/use-set-thread-pinned";
 import { useThreadQueries } from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
+import { useLocalCopy } from "@/lib/local-copy";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
 
@@ -111,6 +116,74 @@ export function ThreadListSkeleton() {
   );
 }
 
+/**
+ * The thread list from the device's copy (lib/local-copy), for the app's
+ * skeleton before the Convex client starts. Its rows open their threads and
+ * have no menus. With no copy, it's ThreadListSkeleton.
+ */
+export function ThreadListPreview() {
+  const chats = useLocalCopy<Thread[]>(queryCopyKey(api.threads.list, {}), {
+    beforeSignIn: true,
+  });
+  const pinned = useLocalCopy<Thread[]>(
+    queryCopyKey(api.threads.listPinned, {}),
+    { beforeSignIn: true },
+  );
+  const { threadId: activeId } = useParams<{ threadId?: string }>();
+  if (chats === undefined) return <ThreadListSkeleton />;
+  const rows = (threads: Thread[]) => (
+    <SidebarMenu>
+      {threads.map((thread) => (
+        <SidebarMenuItem key={thread._id}>
+          <ThreadLink thread={thread} active={thread._id === activeId} />
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
+  );
+  return (
+    <>
+      {pinned && pinned.length > 0 && (
+        <ThreadSection label="Pinned">{rows(pinned)}</ThreadSection>
+      )}
+      {chats.length > 0 && (
+        <ThreadSection label="Chats">{rows(chats)}</ThreadSection>
+      )}
+    </>
+  );
+}
+
+/** A sidebar row's link to its thread, with its approval mark or unread dot. */
+function ThreadLink({
+  thread,
+  active,
+  ...props
+}: {
+  thread: Thread;
+  active: boolean;
+} & Omit<ComponentProps<typeof Link>, "href">) {
+  return (
+    <SidebarMenuButton asChild isActive={active}>
+      <Link
+        href={`/c/${thread._id}`}
+        aria-current={active ? "page" : undefined}
+        {...props}
+      >
+        <span className="truncate">{threadTitle(thread)}</span>
+        {/* A waiting action card outranks the dot for an unread scheduled run. */}
+        {thread.needsApproval ? (
+          <NeedsApprovalMarker />
+        ) : (
+          thread.unread && (
+            <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
+              <span className="sr-only">Unread</span>
+            </span>
+          )
+        )}
+      </Link>
+    </SidebarMenuButton>
+  );
+}
+
 function ThreadRowsSkeleton() {
   return (
     <SidebarMenu aria-hidden="true">
@@ -124,12 +197,23 @@ function ThreadRowsSkeleton() {
 }
 
 export function ThreadList() {
-  const { results, status, loadMore } = usePaginatedQuery(
+  // Until the first page loads, the device's copy of it shows, stale.
+  const {
+    results,
+    status,
+    loadMore,
+    stale: chatsStale,
+  } = usePaginatedQueryWithLocalCopy(
     api.threads.list,
     {},
     { initialNumItems: PAGE_SIZE },
   );
-  const pinned = useQuery(api.threads.listPinned, {});
+  const { data: pinned, stale: pinnedStale } = useQueryWithLocalCopy(
+    api.threads.listPinned,
+    {},
+  );
+  // A row from the copy opens its thread, but its menu waits for live data.
+  const stale = chatsStale || pinnedStale;
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();
@@ -226,71 +310,62 @@ export function ThreadList() {
     const active = thread._id === activeId;
     return (
       <SidebarMenuItem key={thread._id}>
-        <SidebarMenuButton asChild isActive={active}>
-          <Link
-            href={`/c/${thread._id}`}
-            aria-current={active ? "page" : undefined}
-            onClick={closeOnMobile}
-            onPointerEnter={() => prefetchSoon(thread._id)}
-            onPointerLeave={stopPrefetch}
-            onNavigate={() => prefetchNow(thread._id)}
-          >
-            <span className="truncate">{threadTitle(thread)}</span>
-            {/* A waiting action card outranks the dot for an unread scheduled run. */}
-            {thread.needsApproval ? (
-              <NeedsApprovalMarker />
-            ) : (
-              thread.unread && (
-                <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
-                  <span className="sr-only">Unread</span>
+        <ThreadLink
+          thread={thread}
+          active={active}
+          onClick={closeOnMobile}
+          onPointerEnter={() => prefetchSoon(thread._id)}
+          onPointerLeave={stopPrefetch}
+          onNavigate={() => prefetchNow(thread._id)}
+        />
+        {!stale && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuAction showOnHover>
+                <MoreHorizontalIcon />
+                <span className="sr-only">
+                  More options for {threadTitle(thread)}
                 </span>
-              )
-            )}
-          </Link>
-        </SidebarMenuButton>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuAction showOnHover>
-              <MoreHorizontalIcon />
-              <span className="sr-only">
-                More options for {threadTitle(thread)}
-              </span>
-            </SidebarMenuAction>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => setPinned(thread, !isPinned)}>
-                {isPinned ? <PinOffIcon /> : <PinIcon />}
-                {isPinned ? "Unpin" : "Pin"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setSharing(thread)}>
-                <Share2Icon />
-                Share
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setRenamingId(thread._id)}>
-                <PencilIcon />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void archiveThread(thread)}>
-                <ArchiveIcon />
-                Archive
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => void deleteThread(thread)}
-              >
-                <Trash2Icon />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              </SidebarMenuAction>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => setPinned(thread, !isPinned)}>
+                  {isPinned ? <PinOffIcon /> : <PinIcon />}
+                  {isPinned ? "Unpin" : "Pin"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setSharing(thread)}>
+                  <Share2Icon />
+                  Share
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setRenamingId(thread._id)}>
+                  <PencilIcon />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void archiveThread(thread)}>
+                  <ArchiveIcon />
+                  Archive
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => void deleteThread(thread)}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </SidebarMenuItem>
     );
   }
 
-  const loading = status === "LoadingFirstPage" || pinned === undefined;
-  const chatsEmpty = results.length === 0 && status === "Exhausted";
+  const loading =
+    (status === "LoadingFirstPage" && !chatsStale) || pinned === undefined;
+  // A copy is saved empty only when the list was.
+  const chatsEmpty =
+    results.length === 0 && (status === "Exhausted" || chatsStale);
   const hasPins = pinned !== undefined && pinned.length > 0;
 
   return (
@@ -318,7 +393,7 @@ export function ThreadList() {
           ) : (
             <SidebarMenu>
               {results.map((thread) => renderThread(thread, false))}
-              {status !== "Exhausted" && (
+              {!stale && status !== "Exhausted" && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     className="text-muted-foreground"

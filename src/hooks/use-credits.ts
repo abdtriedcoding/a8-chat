@@ -1,6 +1,6 @@
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect, useState } from "react";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { api } from "../../convex/_generated/api";
 import {
   creditPeriodAt,
@@ -23,8 +23,13 @@ export function useCredits():
   | { plan: PlanTerms; period: CreditPeriod }
   | null
   | undefined {
-  const plan = useQuery(api.billing.plan);
-  const latestCredits = useQuery(api.billing.latestCredits);
+  // From the device's copy until they load. They're only shown, and the
+  // server checks credits on every Send.
+  const { data: plan } = useQueryWithLocalCopy(api.billing.plan, {});
+  const { data: latestCredits } = useQueryWithLocalCopy(
+    api.billing.latestCredits,
+    {},
+  );
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), MINUTE_MS);

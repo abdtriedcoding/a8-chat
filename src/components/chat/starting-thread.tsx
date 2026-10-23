@@ -8,8 +8,8 @@ import {
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { ChatHeader, TemporaryHeading } from "./chat-header";
 import { Composer } from "./composer";
-import { ThreadSkeleton } from "./conversation-skeleton";
 import { MessageList } from "./message-list";
+import { ThreadCopyPreview } from "./thread-copy-preview";
 import {
   ThreadActionsProvider,
   type ThreadActions,
@@ -42,15 +42,35 @@ export function StartingThreadMessages({ prompt }: { prompt: ThreadMessage }) {
 
 /**
  * The thread page while the router loads it. A thread the new-chat page
- * just started shows as the new-chat page left it, and any other thread
- * shows the skeleton. The Composer is a real one, turned off, so its chips
- * match the new-chat page's and the thread view's.
+ * just started shows as the new-chat page left it, a thread opened before
+ * shows from the device's copy, and any other thread shows the skeleton.
+ * The Composer is a real one, turned off, so its chips match the new-chat
+ * page's and the thread view's.
  */
 export function ThreadPageLoading() {
   const { threadId } = useParams<{ threadId: string }>();
   const starting = useStartingThread(threadId);
   useClearStartingThreadOnLeave(threadId);
-  if (!starting) return <ThreadSkeleton />;
+  if (!starting) {
+    return (
+      <ThreadCopyPreview
+        threadId={threadId}
+        composer={({ thread }) => (
+          <Composer
+            onSend={async () => {}}
+            sendDisabled
+            autoApprove={thread.autoApprove === true}
+            onAutoApproveChange={
+              thread.scheduledPromptId ? undefined : () => {}
+            }
+            modelId={thread.modelId}
+            onModelChange={() => {}}
+            className="mx-auto max-w-3xl"
+          />
+        )}
+      />
+    );
+  }
   return (
     <>
       <ChatHeader>{starting.temporary && <TemporaryHeading />}</ChatHeader>

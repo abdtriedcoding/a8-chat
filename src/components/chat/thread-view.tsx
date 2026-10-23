@@ -41,7 +41,7 @@ import { useStableMessages } from "@/hooks/use-stable-messages";
 import { useStopReply } from "@/hooks/use-stop-reply";
 import {
   MESSAGES_PAGE_SIZE,
-  useThreadQueries,
+  useThreadWithLocalCopy,
 } from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
 import {
@@ -66,7 +66,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
     thread,
     messages: { results: rawMessages, status, loadMore },
     queue,
-  } = useThreadQueries(threadId, { stream: true });
+    copy,
+  } = useThreadWithLocalCopy(threadId);
 
   // After a reload, marks the thread again, so leaving still deletes it.
   const openTemporaryThread = useOpenTemporaryThread();
@@ -96,9 +97,17 @@ export function ThreadView({ threadId }: { threadId: string }) {
     if (thread === null || !loading) clearStartingThread(threadId);
   }, [thread, loading, threadId]);
   useClearStartingThreadOnLeave(threadId);
+  // Until then, a thread opened before shows from the device's copy. It's
+  // stale, so nothing that acts on the thread works until live data is in.
+  const stale = !showStartingThread && copy !== undefined;
+  const shownThread = thread ?? (stale ? copy.thread : undefined);
 
   const messages = useStableMessages(
-    showStartingThread ? [startingThread.prompt] : rawMessages,
+    showStartingThread
+      ? [startingThread.prompt]
+      : stale
+        ? copy.messages
+        : rawMessages,
   );
   const stopped = stoppedTurns(messages);
   const replyStatus = useReplyStatus(messages, stopped);
@@ -127,7 +136,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const setAutoApprove = useSetAutoApprove();
   const setThreadModel = useSetThreadModel();
   // A stopped turn counts as done, and so does a reply that timed out.
-  const canRedoLastTurn = messages.length > 0 && !replyInProgress;
+  const canRedoLastTurn = !stale && messages.length > 0 && !replyInProgress;
   const copyableText = lastReplyText(messages, stopped);
 
   // Whether the last prompt's editor is open. It closes when the prompt
@@ -150,11 +159,12 @@ export function ThreadView({ threadId }: { threadId: string }) {
   }
 
   useThreadShortcuts({
-    stopReply: replyInProgress
-      ? () => {
-          stop().catch((error: unknown) => toast.error(errorMessage(error)));
-        }
-      : undefined,
+    stopReply:
+      replyInProgress && !stale
+        ? () => {
+            stop().catch((error: unknown) => toast.error(errorMessage(error)));
+          }
+        : undefined,
     editLastPrompt: canRedoLastTurn
       ? () => changeEditingLastPrompt(true, true)
       : undefined,
@@ -200,27 +210,27 @@ export function ThreadView({ threadId }: { threadId: string }) {
         {(thread?.temporary ?? startingThread?.temporary) && (
           <TemporaryHeading />
         )}
-        {thread && !thread.temporary && (
+        {shownThread && !shownThread.temporary && (
           <>
-            <ThreadHeading threadId={threadId} title={thread.title} />
-            {thread.scheduledPromptId && (
+            <ThreadHeading threadId={threadId} title={shownThread.title} />
+            {shownThread.scheduledPromptId && (
               <Badge variant="secondary" asChild>
-                <Link href={`/scheduled#${thread.scheduledPromptId}`}>
+                <Link href={`/scheduled#${shownThread.scheduledPromptId}`}>
                   <CalendarClockIcon data-icon="inline-start" />
                   Scheduled
                 </Link>
               </Badge>
             )}
-            <ShareButton threadId={threadId} title={thread.title} />
+            <ShareButton threadId={threadId} title={shownThread.title} />
           </>
         )}
       </ChatHeader>
-      {loading && !showStartingThread ? (
+      {loading && !showStartingThread && !stale ? (
         <ConversationSkeleton />
       ) : (
         <ThreadActionsProvider
           actions={{
-            decide,
+            decide: stale ? undefined : decide,
             regenerate: canRedoLastTurn ? regenerate : undefined,
             edit: canRedoLastTurn ? edit : undefined,
             editingLastPrompt,
@@ -229,7 +239,9 @@ export function ThreadView({ threadId }: { threadId: string }) {
         >
           <MessageList
             messages={messages}
-            status={status}
+            status={
+              stale ? (copy.hasEarlier ? "CanLoadMore" : "Exhausted") : status
+            }
             onLoadEarlier={() => loadMore(MESSAGES_PAGE_SIZE)}
             stopped={stopped}
             replyStatus={replyStatus}
@@ -237,7 +249,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
         </ThreadActionsProvider>
       )}
       <div className="shrink-0 px-4 pb-4">
-        {thread?.archived && <ArchivedNotice threadId={threadId} />}
+        {shownThread?.archived && <ArchivedNotice threadId={threadId} />}
         {queuedPrompts.length > 0 && (
           <QueueStack
             prompts={queuedPrompts}
@@ -260,23 +272,28 @@ export function ThreadView({ threadId }: { threadId: string }) {
         )}
         <Composer
           onSend={send}
-          onStop={replyInProgress ? stop : undefined}
+          onStop={replyInProgress && !stale ? stop : undefined}
           disabled={startingComposer !== undefined}
-          sendDisabled={queueFull}
+          sendDisabled={queueFull || stale}
           autoApprove={
-            (thread?.autoApprove ?? startingComposer?.autoApprove) === true
+            (shownThread?.autoApprove ?? startingComposer?.autoApprove) === true
           }
-          // Scheduled runs always stop on their cards (ADR 0013).
+          // Scheduled runs always stop on their cards (ADR 0013). While the
+          // thread shows from its copy, the chips show but change nothing.
           onAutoApproveChange={
             thread && !thread.scheduledPromptId
               ? (on) => setAutoApprove({ threadId, on })
-              : startingComposer && (() => {})
+              : (stale && !copy.thread.scheduledPromptId) || startingComposer
+                ? () => {}
+                : undefined
           }
-          modelId={thread?.modelId ?? startingComposer?.modelId}
+          modelId={shownThread?.modelId ?? startingComposer?.modelId}
           onModelChange={
             thread
               ? (modelId) => setThreadModel({ threadId, modelId })
-              : startingComposer && (() => {})
+              : stale || startingComposer
+                ? () => {}
+                : undefined
           }
           autoFocus
           textareaRef={composerRef}
