@@ -14,7 +14,7 @@ const QUESTIONS = [
   {
     question: "Is it safe to connect my email?",
     answer:
-      "a8 can't send, change or delete anything until you tap Approve. Your app tokens are encrypted, every action is logged, and anyone can read the code to check how it all works.",
+      "a8 can't send, change or delete anything until you tap Approve. Your app tokens are encrypted, every action stays in the chat, and anyone can read the code to check how it all works.",
   },
   {
     question: "How is this different from other open-source chat apps?",
@@ -24,7 +24,7 @@ const QUESTIONS = [
   {
     question: "What's a credit?",
     answer:
-      "One credit is one US cent of model cost. A typical reply on a cheap model uses about one credit, and the bigger models use a few. Self-hosting doesn't use credits at all, since you pay OpenRouter directly.",
+      "One credit is one US cent of model cost. A typical reply on a cheap model uses about one credit, and the bigger models use a few. Self-hosting doesn't use credits at all, since you pay Vercel AI Gateway directly.",
   },
   {
     question: "Do I have to self-host?",

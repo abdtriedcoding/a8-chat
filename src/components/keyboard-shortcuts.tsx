@@ -33,13 +33,13 @@ type Shortcut =
   | "help";
 
 /** What the dictation keys do in the message box on screen. */
-export type DictationShortcuts = {
+type DictationShortcuts = {
   toggle?: () => void;
   /** Set while dictation is on, so Esc stops it before the reply. */
   stop?: () => void;
 };
 
-export type ThreadShortcuts = {
+type ThreadShortcuts = {
   stopReply?: () => void;
   editLastPrompt?: () => void;
   copyLastReply?: () => void;

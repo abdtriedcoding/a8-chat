@@ -11,15 +11,10 @@ import { Composer } from "./composer";
 import { MessageList } from "./message-list";
 import { ThreadCopyPreview } from "./thread-copy-preview";
 import {
+  READ_ONLY_ACTIONS,
   ThreadActionsProvider,
-  type ThreadActions,
 } from "./thread-actions-context";
 
-// The server hasn't saved the prompt, so it can't be edited yet.
-const NO_ACTIONS: ThreadActions = {
-  editingLastPrompt: false,
-  setEditingLastPrompt: () => {},
-};
 const NO_STOPPED_TURNS = new Set<number>();
 
 /**
@@ -28,7 +23,7 @@ const NO_STOPPED_TURNS = new Set<number>();
  */
 export function StartingThreadMessages({ prompt }: { prompt: ThreadMessage }) {
   return (
-    <ThreadActionsProvider actions={NO_ACTIONS}>
+    <ThreadActionsProvider actions={READ_ONLY_ACTIONS}>
       <MessageList
         messages={[prompt]}
         status="Exhausted"

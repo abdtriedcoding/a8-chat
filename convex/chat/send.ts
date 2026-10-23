@@ -177,13 +177,9 @@ export const startThread = mutation({
       await ctx.db.insert("temporaryThreads", { userId: user._id, threadId });
     }
     if (autoApprove) {
-      await ctx.db.insert("autoApproveThreads", { userId: user._id, threadId });
+      await ctx.db.insert("autoApproveThreads", { threadId });
     }
-    await setThreadModelRow(ctx, {
-      threadId,
-      userId: user._id,
-      modelId: model.id,
-    });
+    await setThreadModelRow(ctx, { threadId, modelId: model.id });
     await sendPrompt(ctx, {
       threadId,
       message,
@@ -211,7 +207,7 @@ export const sendMessage = mutation({
     modelId: v.optional(v.string()),
   },
   returns: v.union(
-    v.object({ status: v.union(v.literal("sent"), v.literal("queued")) }),
+    v.null(),
     vSendLimited,
     vAttachmentNotFound,
     vQueueFull,
@@ -257,12 +253,7 @@ export const sendMessage = mutation({
     if ("code" in prepared) return prepared;
     const { text, message, attachments } = prepared;
     await setThreadStatus(ctx, threadId, "active");
-    await saveSendModel(ctx, {
-      threadId,
-      userId: user._id,
-      ...sendModel,
-      userSend: true,
-    });
+    await saveSendModel(ctx, { threadId, ...sendModel, userSend: true });
     if (shouldQueue) {
       // Leaves the last turn's actions as they are. startNextPrompt starts
       // nothing while a card waits.
@@ -273,7 +264,7 @@ export const sendMessage = mutation({
         attachmentFileIds: attachments.fileIds,
         timeZone,
       });
-      return { status: "queued" as const };
+      return null;
     }
     // Nothing above writes to the thread's messages, so lastTurn is still
     // current.
@@ -284,7 +275,7 @@ export const sendMessage = mutation({
       attachmentFileIds: attachments.fileIds,
       timeZone,
     });
-    return { status: "sent" as const };
+    return null;
   },
 });
 

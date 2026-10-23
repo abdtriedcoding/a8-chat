@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { useCredits, type PlanTerms } from "@/hooks/use-credits";
+import { useCredits } from "@/hooks/use-credits";
 import { usePageRestored } from "@/hooks/use-page-restored";
 import { formatCredits, formatDate } from "@/lib/credits";
 import { errorMessage } from "@/lib/errors";
@@ -25,6 +25,7 @@ import {
   type BillingInterval,
 } from "@/lib/plans";
 import { api } from "../../../convex/_generated/api";
+import type { PlanTerms } from "../../../convex/lib/billing";
 import {
   creditsLeft,
   type CreditPeriod,

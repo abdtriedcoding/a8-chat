@@ -1,6 +1,5 @@
 "use client";
 
-import { cn } from "cn";
 import { MicIcon, SquareIcon } from "lucide-react";
 import { useRef } from "react";
 import { InputGroupButton } from "@/components/ui/input-group";
@@ -28,13 +27,11 @@ export function DictationButton({
   level,
   onToggle,
   onWarmUp,
-  className,
 }: {
   state: DictationState;
   level: number;
   onToggle: () => void;
   onWarmUp: () => void;
-  className?: string;
 }) {
   const connecting = state === "connecting";
   const listening = state === "listening";
@@ -51,7 +48,7 @@ export function DictationButton({
             variant="outline"
             size="icon-sm"
             aria-pressed={connecting || listening}
-            className={cn("relative", className)}
+            className="relative"
             onPointerDown={(event) => {
               if (event.pointerType !== "mouse" || event.button !== 0) return;
               pressedRef.current = true;

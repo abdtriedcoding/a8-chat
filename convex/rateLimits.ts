@@ -138,8 +138,6 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
 export const vRateLimited = v.object({
   code: v.literal(ERROR_CODES.RATE_LIMITED),
   message: v.string(),
-  // Milliseconds until a Send would go through.
-  retryAfter: v.number(),
 });
 
 export type RateLimited = Infer<typeof vRateLimited>;
@@ -156,8 +154,6 @@ export const vSendLimited = v.object({
     v.literal(ERROR_CODES.DAILY_SPEND_CEILING),
   ),
   message: v.string(),
-  // Milliseconds until a Send would go through.
-  retryAfter: v.number(),
 });
 
 export type SendLimited = Infer<typeof vSendLimited>;
@@ -184,7 +180,7 @@ export async function limitSend(
   const user = await rateLimiter.check(ctx, "userSends", { key: userId });
   if (!user.ok) {
     const seconds = Math.ceil(user.retryAfter / 1000);
-    return rateLimited(`Slow down: try again in ${seconds}s.`, user.retryAfter);
+    return rateLimited(`Slow down: try again in ${seconds}s.`);
   }
   if (billingEnabled) {
     const refused = await checkSpend(ctx, userId, plan);
@@ -197,19 +193,13 @@ export async function limitSend(
     key: userId,
   });
   if (!userDaily.ok) {
-    return rateLimited(
-      "You hit your daily limit. It resets at 00:00 UTC.",
-      userDaily.retryAfter,
-    );
+    return rateLimited("You hit your daily limit. It resets at 00:00 UTC.");
   }
   // A check and a limit on dailySends can pick different shards, so this
   // counts it in one go. limit() counts nothing when it refuses.
   const daily = await rateLimiter.limit(ctx, "dailySends");
   if (!daily.ok) {
-    return rateLimited(
-      "a8 hit today's limit. It resets at 00:00 UTC.",
-      daily.retryAfter,
-    );
+    return rateLimited("a8 hit today's limit. It resets at 00:00 UTC.");
   }
   // Both checks passed in this transaction, so neither of these can fail.
   await rateLimiter.limit(ctx, "userSends", { key: userId, throws: true });
@@ -249,14 +239,12 @@ export async function checkSpend(
         plan.name === "free"
           ? "You're out of credits. Upgrade to Pro, or wait for them to reset."
           : "You're out of credits until they reset.",
-      retryAfter: period.periodEnd - now,
     };
   }
   if ((await getDailySpend(ctx, now)) >= dailySpendCeilingUsd) {
     return {
       code: ERROR_CODES.DAILY_SPEND_CEILING,
       message: "a8 is at capacity for today. It resets at 00:00 UTC.",
-      retryAfter: DAY - (now % DAY),
     };
   }
   return null;
@@ -447,7 +435,6 @@ export async function checkDictationStart(
     const minutes = Math.ceil(user.retryAfter / MINUTE);
     return rateLimited(
       `You hit the dictation limit. Try again in ${minutes} min.`,
-      user.retryAfter,
     );
   }
   const userDaily = await rateLimiter.check(
@@ -458,14 +445,12 @@ export async function checkDictationStart(
   if (!userDaily.ok) {
     return rateLimited(
       "You hit your daily dictation limit. It resets at 00:00 UTC.",
-      userDaily.retryAfter,
     );
   }
   const daily = await rateLimiter.check(ctx, "dailyDictationStarts");
   if (!daily.ok) {
     return rateLimited(
       "a8 hit today's dictation limit. It resets at 00:00 UTC.",
-      daily.retryAfter,
     );
   }
   return null;
@@ -522,6 +507,6 @@ export async function resetUserLimits(
   });
 }
 
-function rateLimited(message: string, retryAfter: number): RateLimited {
-  return { code: ERROR_CODES.RATE_LIMITED, message, retryAfter };
+function rateLimited(message: string): RateLimited {
+  return { code: ERROR_CODES.RATE_LIMITED, message };
 }

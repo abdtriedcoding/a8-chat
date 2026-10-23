@@ -1,5 +1,6 @@
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { patchThread } from "@/lib/optimistic-threads";
 
 /**
  * Sets a thread's model from the picker. The chip changes right away, and
@@ -8,14 +9,7 @@ import { api } from "../../convex/_generated/api";
 export function useSetThreadModel() {
   return useMutation(api.models.setThreadModel).withOptimisticUpdate(
     (store, { threadId, modelId }) => {
-      const thread = store.getQuery(api.threads.get, { threadId });
-      if (thread) {
-        store.setQuery(
-          api.threads.get,
-          { threadId },
-          { ...thread, modelId, modelSwitch: null },
-        );
-      }
+      patchThread(store, threadId, { modelId, modelSwitch: null });
     },
   );
 }

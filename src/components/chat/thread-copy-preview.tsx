@@ -9,14 +9,9 @@ import { ChatHeader, StaticThreadHeading } from "./chat-header";
 import { ThreadSkeleton } from "./conversation-skeleton";
 import { MessageList } from "./message-list";
 import {
+  READ_ONLY_ACTIONS,
   ThreadActionsProvider,
-  type ThreadActions,
 } from "./thread-actions-context";
-
-const NO_ACTIONS: ThreadActions = {
-  editingLastPrompt: false,
-  setEditingLastPrompt: () => {},
-};
 
 /**
  * A thread from the device's copy (lib/local-copy), while the router loads
@@ -49,7 +44,7 @@ function Preview({
       <ChatHeader>
         <StaticThreadHeading title={copy.thread.title} />
       </ChatHeader>
-      <ThreadActionsProvider actions={NO_ACTIONS}>
+      <ThreadActionsProvider actions={READ_ONLY_ACTIONS}>
         <MessageList
           messages={copy.messages}
           status={copy.hasEarlier ? "CanLoadMore" : "Exhausted"}

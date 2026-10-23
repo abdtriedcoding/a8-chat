@@ -10,6 +10,9 @@
  * (developers.google.com/workspace/calendar/api/v3/reference/mcp), and
  * Notion's and Todoist's are in the stored tool lists.
  */
+
+import { browserTimeZone } from "../../../convex/lib/timeZone";
+
 export type ActionSummary = {
   /** Like "Create a Notion page". */
   headline: string;
@@ -206,11 +209,11 @@ const SUMMARIES: Record<string, Summarize> = {
  * `known` holds the items the thread's earlier results named.
  */
 export function summarizeAction(
-  toolName: string | undefined,
+  toolName: string,
   input: Record<string, unknown>,
   known: KnownItems = new Map(),
 ): ActionSummary | undefined {
-  const summarize = toolName ? SUMMARIES[toolName] : undefined;
+  const summarize = SUMMARIES[toolName];
   if (!summarize) return undefined;
   // The model writes the input, so a field of the wrong type shouldn't
   // break the card. The card falls back to the plain argument list.
@@ -422,7 +425,7 @@ function eventTime(input: Record<string, unknown>): string | undefined {
   if (allDay) range += " (all day)";
   // Name the zone when it isn't the user's own.
   const zone = from.timeZone;
-  return zone && zone !== localTimeZone() ? `${range} (${zone})` : range;
+  return zone && zone !== browserTimeZone() ? `${range} (${zone})` : range;
 }
 
 type Moment = {
@@ -483,10 +486,6 @@ function validTimeZone(value: unknown): string | undefined {
   }
 }
 
-function localTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

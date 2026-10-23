@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ChatHeader } from "@/components/chat/chat-header";
+import { PageShell } from "@/components/page-shell";
 import { DefaultModelCard } from "@/components/settings/default-model-card";
 import { DeleteAccountCard } from "@/components/settings/delete-account-card";
 import { PasswordCard } from "@/components/settings/password-card";
@@ -10,19 +10,12 @@ export const metadata: Metadata = { title: "Account" };
 
 export default function AccountSettingsPage() {
   return (
-    <>
-      <ChatHeader>
-        <h1 className="px-2 text-sm font-medium">Account</h1>
-      </ChatHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-8">
-          <ProfileCard />
-          <DefaultModelCard />
-          <PasswordCard />
-          <SessionsCard />
-          <DeleteAccountCard />
-        </div>
-      </div>
-    </>
+    <PageShell title="Account">
+      <ProfileCard />
+      <DefaultModelCard />
+      <PasswordCard />
+      <SessionsCard />
+      <DeleteAccountCard />
+    </PageShell>
   );
 }

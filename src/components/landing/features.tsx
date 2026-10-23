@@ -2,11 +2,11 @@ import { cn } from "cn";
 import {
   BoxesIcon,
   CheckIcon,
-  HashIcon,
   MailIcon,
   NotebookPenIcon,
   PlugIcon,
   ShieldCheckIcon,
+  SquareKanbanIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -32,10 +32,10 @@ const FEATURES: Feature[] = [
     icon: PlugIcon,
     title: "Connect apps in one click",
     description:
-      "Sign in to Gmail, Slack or Notion the way you normally would. No config files, no API keys, no servers to run.",
+      "Sign in to Gmail, Linear or Notion the way you normally would. No config files, no API keys, no servers to run.",
     points: [
-      "Gmail, Google Calendar, Slack, Notion and Linear",
-      "Paste an MCP server link to add any other app",
+      "Gmail, Google Calendar, Notion, Linear, Todoist and more",
+      "Type @ to point a chat at one app",
     ],
     picture: <ConnectionsPicture />,
   },
@@ -45,8 +45,8 @@ const FEATURES: Feature[] = [
     description:
       "Reading is instant. Anything that sends, changes or deletes shows up as a card first, with the recipient and the full text.",
     points: [
-      "Edit any field before you approve",
-      "Every action is saved to your activity log",
+      "Cancel it, and nothing changes",
+      "Turn on auto-approve in a chat you trust",
     ],
     picture: <ApprovalPicture />,
   },
@@ -54,9 +54,9 @@ const FEATURES: Feature[] = [
     icon: BoxesIcon,
     title: "Use any model you like",
     description:
-      "Pick from hundreds of models on OpenRouter, and switch whenever a better or cheaper one comes out.",
+      "Pick from hundreds of models on Vercel AI Gateway, and switch whenever a better or cheaper one comes out.",
     points: [
-      "Filter by price, vision and tool support",
+      "Filter by images, PDFs, reasoning and speed",
       "Not tied to one AI company",
     ],
     picture: <ModelsPicture />,
@@ -105,7 +105,7 @@ export function Features() {
 function ConnectionsPicture() {
   const apps = [
     { icon: MailIcon, name: "Gmail", connected: true },
-    { icon: HashIcon, name: "Slack", connected: true },
+    { icon: SquareKanbanIcon, name: "Linear", connected: true },
     { icon: NotebookPenIcon, name: "Notion", connected: false },
   ];
   return (
@@ -134,17 +134,17 @@ function ApprovalPicture() {
   return (
     <div className="flex w-full max-w-64 flex-col gap-2.5 rounded-xl border bg-card p-3 text-sm shadow-sm">
       <p className="flex items-center gap-2 font-semibold">
-        <HashIcon className="size-4 text-primary" />
-        Post to #launch
+        <SquareKanbanIcon className="size-4 text-primary" />
+        Create a Linear issue
       </p>
       <p className="text-muted-foreground">
-        Launch is Thursday. Demo video is down to 60 seconds.
+        Cut the demo video to 60 seconds before Thursday.
       </p>
       <div className="flex justify-end gap-1.5">
         <Button variant="ghost" size="xs">
           Cancel
         </Button>
-        <Button size="xs">Approve</Button>
+        <Button size="xs">Create issue</Button>
       </div>
     </div>
   );

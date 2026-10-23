@@ -11,7 +11,7 @@ import { countAutoApproved } from "../lib/autoApprove";
 import { getPlanTerms } from "../lib/billing";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess } from "../lib/guards";
-import { deletePendingActions, setPendingActions } from "../lib/pendingActions";
+import { addPendingActions, deletePendingActions } from "../lib/pendingActions";
 import { settleReplyModel } from "../lib/threadModels";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { getStoppedReply } from "./stop";
@@ -73,13 +73,10 @@ export const decideAction = mutation({
           approvalId,
           reason: ACTION_CANCELLED,
         });
-    // The check above found this card waiting, so one fewer waits now.
-    await setPendingActions(ctx, {
-      userId: user._id,
-      threadId,
-      count: waiting.length - 1,
-    });
+    // The check above found this card waiting. Once it was the last, none
+    // waits.
     if (waiting.length > 1) return null;
+    await deletePendingActions(ctx, threadId);
     // The continuing reply uses the thread's model as it is now. When the
     // thread can't use it anymore, this moves the thread off it, and the
     // composer says why.
@@ -204,7 +201,7 @@ export async function syncPendingActions(ctx: MutationCtx, threadId: string) {
     await deletePendingActions(ctx, threadId);
     return;
   }
-  await setPendingActions(ctx, { userId: thread.userId, threadId, count });
+  await addPendingActions(ctx, { userId: thread.userId, threadId });
 }
 
 /**

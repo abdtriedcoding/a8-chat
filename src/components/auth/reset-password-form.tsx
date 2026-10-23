@@ -18,41 +18,17 @@ import {
 } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
-import { PasswordInput } from "./password-input";
+import { newPassword, PasswordInput } from "./password-input";
 
-// Same rules as sign-up.
-const formSchema = z.object({
-  password: z
-    .string()
-    .min(8, "Use at least 8 characters.")
-    .max(128, "Use at most 128 characters."),
-});
+const formSchema = z.object({ password: newPassword });
 
 const LINK_PROBLEM = "This reset link is invalid, expired, or already used.";
-
-/**
- * ResetPasswordForm with the token from the email's link, or the error
- * Better Auth puts there when the token was bad.
- */
-export function ResetPasswordFormFromUrl() {
-  const searchParams = useSearchParams();
-  return (
-    <ResetPasswordForm
-      token={searchParams.get("token") ?? undefined}
-      linkError={searchParams.get("error") ?? undefined}
-    />
-  );
-}
 
 /**
  * The form's heading, for the static HTML. The form itself needs the URL's
  * token, which only the browser reads.
  */
-export function ResetPasswordFormFallback() {
-  return <ResetPasswordHeading />;
-}
-
-function ResetPasswordHeading() {
+export function ResetPasswordHeading() {
   return (
     <div className="flex flex-col gap-2">
       <h1 className="text-3xl font-bold tracking-tight">Set a new password</h1>
@@ -63,13 +39,14 @@ function ResetPasswordHeading() {
   );
 }
 
-export function ResetPasswordForm({
-  token,
-  linkError,
-}: {
-  token?: string;
-  linkError?: string;
-}) {
+/**
+ * Sets the new password with the token from the email's link, or shows the
+ * error Better Auth puts there when the token was bad.
+ */
+export function ResetPasswordForm() {
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
+  const linkError = searchParams.get("error");
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
 
@@ -79,8 +56,21 @@ export function ResetPasswordForm({
   });
   const pending = form.formState.isSubmitting || navigating;
 
-  async function onSubmit(data: z.infer<typeof formSchema>) {
-    if (!token) return;
+  if (!token || linkError) {
+    return (
+      <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">Link not valid</h1>
+          <p className="text-muted-foreground">{LINK_PROBLEM}</p>
+        </div>
+        <Button asChild size="lg">
+          <Link href="/forgot-password">Request a new link</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const onSubmit = async (data: z.infer<typeof formSchema>) => {
     const { error } = await authClient.resetPassword({
       newPassword: data.password,
       token,
@@ -97,21 +87,7 @@ export function ResetPasswordForm({
     startNavigation(() => {
       router.replace("/sign-in");
     });
-  }
-
-  if (!token || linkError) {
-    return (
-      <div className="flex flex-col gap-8">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight">Link not valid</h1>
-          <p className="text-muted-foreground">{LINK_PROBLEM}</p>
-        </div>
-        <Button asChild size="lg">
-          <Link href="/forgot-password">Request a new link</Link>
-        </Button>
-      </div>
-    );
-  }
+  };
 
   const rootError = form.formState.errors.root?.message;
 

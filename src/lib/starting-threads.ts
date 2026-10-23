@@ -7,7 +7,7 @@ import type { ThreadMessage } from "@/lib/stopped-turns";
  * page shows the prompt in place of a skeleton until its first page of
  * messages loads.
  */
-export type StartingThread = {
+type StartingThread = {
   prompt: ThreadMessage;
   temporary: boolean;
   autoApprove: boolean;

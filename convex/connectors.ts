@@ -92,7 +92,7 @@ const vConnectStart = v.union(
  * What connect returns. That's the vendor's authorize URL, or how turning
  * on a connector with no sign-in ended.
  */
-export type ConnectStart = Infer<typeof vConnectStart>;
+type ConnectStart = Infer<typeof vConnectStart>;
 
 const vDisconnectResult = v.object({ revoked: v.boolean() });
 

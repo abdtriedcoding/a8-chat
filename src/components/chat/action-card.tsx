@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage } from "@/lib/errors";
 import {
+  isRecord,
   summarizeAction,
   type ActionSummary,
   type KnownItems,
@@ -398,8 +399,4 @@ function argumentLabel(name: string): string {
     .trim()
     .toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

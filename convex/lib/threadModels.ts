@@ -174,11 +174,10 @@ export async function saveSendModel(
   ctx: MutationCtx,
   {
     threadId,
-    userId,
     model,
     switchedFrom,
     userSend,
-  }: ReplyModel & { threadId: string; userId: string; userSend: boolean },
+  }: ReplyModel & { threadId: string; userSend: boolean },
 ) {
   const row = await findThreadModel(ctx, threadId);
   if (switchedFrom && row) {
@@ -187,7 +186,7 @@ export async function saveSendModel(
       switchedFrom,
     });
   } else if (userSend) {
-    await setThreadModelRow(ctx, { threadId, userId, modelId: model.id });
+    await setThreadModelRow(ctx, { threadId, modelId: model.id });
   }
 }
 
@@ -211,7 +210,7 @@ export async function settleReplyModel(
   },
 ): Promise<Model> {
   const replyModel = await resolveReplyModel(ctx, { threadId, userId, plan });
-  await saveSendModel(ctx, { threadId, userId, ...replyModel, userSend });
+  await saveSendModel(ctx, { threadId, ...replyModel, userSend });
   return replyModel.model;
 }
 
@@ -261,11 +260,11 @@ export function requireModelPick(
  */
 export async function setThreadModelRow(
   ctx: MutationCtx,
-  { threadId, userId, modelId }: { threadId: string; userId: string; modelId: string },
+  { threadId, modelId }: { threadId: string; modelId: string },
 ) {
   const row = await findThreadModel(ctx, threadId);
   if (!row) {
-    await ctx.db.insert("threadModels", { userId, threadId, modelId });
+    await ctx.db.insert("threadModels", { threadId, modelId });
   } else if (row.modelId !== modelId || row.switchedFrom) {
     await ctx.db.patch("threadModels", row._id, {
       modelId,

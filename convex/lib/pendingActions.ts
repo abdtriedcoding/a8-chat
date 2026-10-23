@@ -1,8 +1,9 @@
 /**
- * Helpers for a thread's pendingActions row, which counts the action cards
- * waiting in its last turn (convex/schema.ts). syncPendingActions
- * (convex/chat/approval.ts) recounts them from the thread's messages, and
- * deleteThread (convex/threads.ts) deletes the row through here.
+ * Helpers for a thread's pendingActions row, which marks a thread with
+ * action cards waiting in its last turn (convex/schema.ts).
+ * syncPendingActions (convex/chat/approval.ts) recounts them from the
+ * thread's messages, and deleteThread (convex/threads.ts) deletes the row
+ * through here.
  */
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
@@ -15,33 +16,15 @@ export function findPendingActions(ctx: QueryCtx, threadId: string) {
 }
 
 /**
- * Saves how many cards wait in the thread. A count of 0 deletes the row. A
- * row that exists keeps its `since`, and an unchanged count writes nothing,
- * so the thread lists don't rerun.
+ * Marks the thread as having cards waiting. A thread already marked keeps
+ * its row, so the thread lists don't rerun.
  */
-export async function setPendingActions(
+export async function addPendingActions(
   ctx: MutationCtx,
-  {
-    userId,
-    threadId,
-    count,
-  }: { userId: string; threadId: string; count: number },
+  { userId, threadId }: { userId: string; threadId: string },
 ) {
   const row = await findPendingActions(ctx, threadId);
-  if (count <= 0) {
-    if (row) await ctx.db.delete("pendingActions", row._id);
-    return;
-  }
-  if (!row) {
-    await ctx.db.insert("pendingActions", {
-      userId,
-      threadId,
-      count,
-      since: Date.now(),
-    });
-  } else if (row.count !== count) {
-    await ctx.db.patch("pendingActions", row._id, { count });
-  }
+  if (!row) await ctx.db.insert("pendingActions", { userId, threadId });
 }
 
 /** Deletes the thread's pendingActions row, if any. */

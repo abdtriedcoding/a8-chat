@@ -3,7 +3,6 @@ import {
   ArrowUpIcon,
   CheckIcon,
   MailIcon,
-  PencilIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
@@ -35,9 +34,9 @@ export function ChatDemo({ className }: { className?: string }) {
   return (
     <figure className={cn("mx-auto w-full max-w-5xl", className)}>
       <figcaption className="sr-only">
-        An example chat. a8 reads the #launch channel in Slack and lists what
-        the team decided, then drafts an email to a client in Gmail and waits
-        for approval before sending it.
+        An example chat. a8 reads the launch issues in Linear and lists what&apos;s
+        left, then writes an email draft to a client in Gmail and waits for
+        approval before saving it.
       </figcaption>
       <div
         aria-hidden="true"
@@ -74,25 +73,25 @@ export function ChatDemo({ className }: { className?: string }) {
           <div className="flex min-w-0 flex-1 flex-col bg-muted/60 bg-dots">
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 text-left sm:px-8 sm:py-8">
               <UserMessage>
-                <Mention>@slack</Mention> what did the team decide in #launch
-                today?
+                <Mention>@linear</Mention> what&apos;s left before
+                Thursday&apos;s launch?
               </UserMessage>
 
-              <AssistantMessage step="Read 48 messages in #launch">
-                <p>The team settled three things:</p>
+              <AssistantMessage step="Read 12 issues in the Launch project">
+                <p>Three issues are still open:</p>
                 <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
-                  <li>Launch moves to Thursday.</li>
                   <li>Priya ships the pricing page by Wednesday.</li>
                   <li>The demo video gets cut to 60 seconds.</li>
+                  <li>Sam reviews the launch checklist on Thursday.</li>
                 </ul>
               </AssistantMessage>
 
               <UserMessage>
-                <Mention>@gmail</Mention> draft an update to the client with
-                those decisions
+                <Mention>@gmail</Mention> draft an update to the client about
+                the launch
               </UserMessage>
 
-              <AssistantMessage step="Drafted an email">
+              <AssistantMessage step="Wrote an email draft">
                 <ApprovalCard />
               </AssistantMessage>
             </div>
@@ -106,7 +105,7 @@ export function ChatDemo({ className }: { className?: string }) {
                 />
                 <InputGroupAddon align="block-end">
                   <Badge variant="secondary">
-                    @slack
+                    @linear
                     <XIcon data-icon="inline-end" />
                   </Badge>
                   <Badge variant="secondary">
@@ -165,8 +164,7 @@ export function ApprovalCard() {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-3">
         <p className="flex items-center gap-2 font-semibold whitespace-nowrap">
           <MailIcon className="size-4 text-primary" />
-          Send email
-          <span className="font-normal text-muted-foreground">in Gmail</span>
+          Write a Gmail draft
         </p>
         <Badge variant="secondary">Waiting for you</Badge>
       </div>
@@ -179,7 +177,7 @@ export function ApprovalCard() {
       <div className="flex flex-col gap-3 px-4 py-3">
         <p>Hi Maria,</p>
         <p>
-          Quick update on the launch. We&apos;re moving it to Thursday, the
+          Quick update on the launch. We&apos;re on track for Thursday, the
           pricing page goes live on Wednesday, and the demo video is down to 60
           seconds. I&apos;ll send you the final cut Wednesday night.
         </p>
@@ -193,13 +191,9 @@ export function ApprovalCard() {
         <Button variant="ghost" size="sm">
           Cancel
         </Button>
-        <Button variant="outline" size="sm">
-          <PencilIcon data-icon="inline-start" />
-          Edit
-        </Button>
         <Button size="sm">
           <CheckIcon data-icon="inline-start" />
-          Approve
+          Save draft
         </Button>
       </div>
     </div>

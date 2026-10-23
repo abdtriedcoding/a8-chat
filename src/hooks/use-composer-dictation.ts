@@ -3,13 +3,13 @@ import {
   useEffectEvent,
   useLayoutEffect,
   useRef,
-  useSyncExternalStore,
   type Dispatch,
   type SetStateAction,
 } from "react";
 import { toast } from "sonner";
 import { useDictationShortcuts } from "@/components/keyboard-shortcuts";
 import { useDictation } from "@/hooks/use-dictation";
+import { useInBrowser } from "@/hooks/use-in-browser";
 import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { api } from "../../convex/_generated/api";
 
@@ -52,11 +52,7 @@ export function useComposerDictation({
 }) {
   const configured =
     useQueryWithLocalCopy(api.dictation.available, {}).data === true;
-  const canRecord = useSyncExternalStore(
-    subscribeToNothing,
-    browserCanRecord,
-    () => false,
-  );
+  const canRecord = useInBrowser() && browserCanRecord();
   const draftRef = useRef<Draft | null>(null);
   // Where the caret goes once the box shows the last update.
   const caretRef = useRef<number | null>(null);
@@ -149,7 +145,6 @@ export function useComposerDictation({
     prewarm: (options?: { likely?: boolean }) => {
       if (available) dictation.prewarm(options);
     },
-    stop: dictation.stop,
     stopForTyping: () => {
       if (!active) return;
       dictation.cancel();
@@ -194,10 +189,6 @@ function joinWords(first: string, second: string) {
   if (first === "") return second;
   if (second === "") return first;
   return `${first} ${second}`;
-}
-
-function subscribeToNothing() {
-  return () => {};
 }
 
 function browserCanRecord() {
