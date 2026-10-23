@@ -102,13 +102,13 @@ export type ToolSearch =
   | { kind: "a8"; create: (deferredTools: ToolSet) => Tool };
 
 /**
- * The reply's tools. With `deferred` false, every connector tool loads,
- * the mentioned connectors' first. With `deferred` true, the first
- * MAX_LOADED_MENTIONS mentioned connectors and the `found` tools load, and
- * every other connector tool is deferred, its description starting with
- * the connector's name in brackets, so search can match terse names. When
- * no connector tool is left over, loading is `all`. Native tools always
- * load.
+ * The reply's tools. With `deferred` false, every connector tool loads, in
+ * the same order whatever the prompt mentions, so Claude reads them from
+ * the prompt cache. With `deferred` true, the first MAX_LOADED_MENTIONS
+ * mentioned connectors and the `found` tools load, and every other
+ * connector tool is deferred, its description starting with the
+ * connector's name in brackets, so search can match terse names. When no
+ * connector tool is left over, loading is `all`. Native tools always load.
  *
  * `loaded` is set for a8's search only. It names the tools the model sees
  * from the first step: the loaded ones and findTools. The deferred tools
@@ -133,23 +133,15 @@ export function arrangeReplyTools({
   found: ReadonlySet<string>;
   search: ToolSearch;
 }): { tools: ToolSet; loading: ToolLoading; loaded?: string[] } {
-  const isMentioned = (group: ConnectorToolGroup) =>
-    mentioned.some(({ id }) => id === group.connector.id);
-  const mentionedGroups = groups.filter(isMentioned);
-  const otherGroups = groups.filter((group) => !isMentioned(group));
   const toolsOf = (list: ConnectorToolGroup[]): ToolSet =>
     Object.assign({}, ...list.map((group) => group.tools));
 
   if (!deferred) {
-    return {
-      tools: {
-        ...toolsOf(mentionedGroups),
-        ...nativeTools,
-        ...toolsOf(otherGroups),
-      },
-      loading: "all",
-    };
+    return { tools: { ...nativeTools, ...toolsOf(groups) }, loading: "all" };
   }
+  const mentionedGroups = groups.filter((group) =>
+    mentioned.some(({ id }) => id === group.connector.id),
+  );
   const loadedGroups = mentionedGroups.slice(0, MAX_LOADED_MENTIONS);
   const leftOver = groups
     .filter((group) => !loadedGroups.includes(group))

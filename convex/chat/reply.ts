@@ -17,6 +17,7 @@ import { readUserConnections } from "../connections";
 import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
 import { replaceUnreadableAttachments } from "../lib/attachments";
 import { getPlanTerms } from "../lib/billing";
+import { connectedConnections } from "../lib/connectorTools";
 import { gatewayOptions, languageModelFor } from "../lib/gateway";
 import { replyInstructions } from "../lib/instructions";
 import { isClaude, modelOrDefault } from "../lib/models";
@@ -30,9 +31,11 @@ import {
   CACHE_BREAKPOINT,
   createReplyTools,
   withCacheBreakpoint,
+  withPromptNote,
   type ReplyTools,
 } from "../lib/replyTools";
 import schema from "../schema";
+import { readToolLists } from "../toolLists";
 import { canSearchWeb } from "../tools/webSearch";
 import { getStoppedReply } from "./stop";
 import { getContinuedTurn, listTurnUpTo } from "./turns";
@@ -106,10 +109,10 @@ export const streamReply = internalAction({
         { threadId, promptMessageId, order, continuing },
       );
       if (!start) return;
-      const { modelId, ...toolStart } = start;
+      const { modelId, userId, ...toolStart } = start;
       const model = modelOrDefault(modelId);
       const claude = isClaude(model);
-      replyTools = await createReplyTools(ctx, {
+      replyTools = createReplyTools(ctx, {
         threadId,
         ...toolStart,
         timeZone,
@@ -117,10 +120,12 @@ export const streamReply = internalAction({
         autoApprovedCount,
         model,
       });
-      const { log, fitHistory, maxSteps, activeTools } = replyTools;
+      const { log, fitHistory, maxSteps, activeTools, promptNote } =
+        replyTools;
       const result = await chatAgent.streamText(
         ctx,
-        { threadId },
+        // With the thread's user, the Agent doesn't look up the thread.
+        { threadId, userId },
         {
           promptMessageId,
           model: languageModelFor(model),
@@ -179,15 +184,20 @@ export const streamReply = internalAction({
           // before the new prompt, so the steps of this reply and the next
           // prompt read the history from the cache. An attachment from an
           // earlier turn that the model can't read goes as a note naming
-          // it.
+          // it. The note on the prompt's mentions goes on the prompt, not
+          // in the instructions, so a mention keeps the tools and
+          // instructions in the cache.
           contextHandler: async (
             _ctx,
             { search, recent, inputMessages, inputPrompt, existingResponses },
           ) => {
             const history = [...search, ...recent, ...inputMessages];
-            const messages = replaceUnreadableAttachments(
-              [...history, ...inputPrompt, ...existingResponses],
-              model.reads,
+            const messages = withPromptNote(
+              replaceUnreadableAttachments(
+                [...history, ...inputPrompt, ...existingResponses],
+                model.reads,
+              ),
+              promptNote,
             );
             return fitHistory(
               claude
@@ -289,11 +299,13 @@ const vReplyStart = v.union(
   v.object({
     promptText: v.string(),
     connections: v.array(schema.doc("connections")),
+    toolLists: v.array(schema.doc("connectionToolLists")),
     threadDefersTools: v.boolean(),
     foundToolNames: v.array(v.string()),
     temporary: v.boolean(),
     autoApprove: v.boolean(),
     modelId: v.string(),
+    userId: v.optional(v.string()),
   }),
 );
 
@@ -301,7 +313,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
 
 /**
  * Everything streamReply reads before it builds tools, in one query. The
- * fields other than `modelId` go to createReplyTools as they are.
+ * fields other than `modelId` and `userId` go to createReplyTools as they
+ * are.
  *
  * Null if streamReply shouldn't call the model. That's when the user pressed
  * Stop before the runner started, or the prompt is gone. A regenerate or an
@@ -318,6 +331,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  * - `connections`: the thread owner's connections, tokens included, without
  *   their tool lists. The reply runs from the scheduler with no signed-in
  *   user, so the thread names the user.
+ * - `toolLists`: the stored tool lists of the connections that get tools
+ *   (connectedConnections, readToolLists).
  * - `threadDefersTools`: whether the thread already defers connector tools
  *   (deferThreadTools).
  * - `foundToolNames`: the tools a8's own search found in the thread before
@@ -330,6 +345,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   can't use its model anymore (resolveReplyModel). Read at every start
  *   too, so a reply continuing after action cards and a queued prompt use
  *   the model the thread has then.
+ * - `userId`: the thread owner, for the Agent. Undefined for a thread with
+ *   no user.
  */
 export const getReplyStart = internalQuery({
   args: {
@@ -368,15 +385,23 @@ export const getReplyStart = internalQuery({
       userId ? readUserConnections(ctx, userId) : [],
       userId ? getPlanTerms(ctx, userId) : null,
     ]);
-    const { model } = await resolveReplyModel(ctx, { threadId, userId, plan });
+    const [{ model }, toolLists] = await Promise.all([
+      resolveReplyModel(ctx, { threadId, userId, plan }),
+      readToolLists(
+        ctx,
+        connectedConnections(connections).map(({ connection }) => connection._id),
+      ),
+    ]);
     return {
       promptText: prompt?.text ?? "",
       connections,
+      toolLists,
       threadDefersTools: deferredToolThread !== null,
       foundToolNames: foundTools?.toolNames ?? [],
       temporary: temporaryThread !== null,
       autoApprove: isAutoApproveOn(autoApproveThread, scheduledPrompt),
       modelId: model.id,
+      userId,
     };
   },
 });

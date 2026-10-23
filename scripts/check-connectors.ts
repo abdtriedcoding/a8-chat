@@ -535,7 +535,6 @@ function fakeReply(model: Model) {
         canSchedule: true,
         connectorText: connectorInstructions({
           connections: CONNECTIONS,
-          mentioned: [],
           loading,
           searchTool: claude ? TOOL_SEARCH_KEY : FIND_TOOLS_KEY,
         }),

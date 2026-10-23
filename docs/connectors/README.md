@@ -153,7 +153,7 @@ A tool added to the allowlist reaches a connection at its next refresh. A tool r
 
 ### A reply's tools
 
-`streamReply` in `convex/chat/reply.ts` runs one query, `getReplyStart`, for the prompt text, the thread owner's connections and whether the thread defers. It passes them and `stepsTaken` to `createReplyTools`, which returns:
+`streamReply` in `convex/chat/reply.ts` runs one query, `getReplyStart`, for the prompt text, the thread owner and their connections, the stored tool lists of the connected ones, and whether the thread defers. It passes the owner to the Agent, so the Agent doesn't look up the thread again. It passes the rest and `stepsTaken` to `createReplyTools`, which returns:
 
 - the tool set: native tools like web search, and the connector tools of every connection that's connected
 - the `toolApproval` map, which makes each action wait on an action card
@@ -161,11 +161,13 @@ A tool added to the allowlist reaches a connection at its next refresh. A tool r
 - the connector part of the system prompt, or none for a user with no connections
 - a history filter for the Agent's `contextHandler`, which drops tool search references to tools the reply no longer offers (ADR 0006)
 - the reply's log
-- `close`, which prints the log and closes every MCP client the reply opened
+- `close`, which prints the log, waits for the reply's background writes and closes every MCP client the reply opened
+
+`createReplyTools` also starts the writes that only later replies read: tool list refresh requests, the thread's first `deferredToolThreads` row, and dropping found tools the reply no longer offers. The model request doesn't wait for them. A write that fails is logged, and the next reply tries it again.
 
 Building the tools sends nothing to the vendors. Each server's MCP client opens on the first call to one of its tools, with the access token refreshed first if it expires within 5 minutes. Each tool call counts against the user's daily connector tool call limit. a8 wraps each result in an `<untrusted-data>` tag and cuts it at about 20 KB.
 
-Each reply adds up the stored estimates of the user's connections. At 35k tokens or under, every tool loads, mentioned connectors first (ADR 0009). Above that, the thread defers connector tools from then on, and the first reply to cross writes a `deferredToolThreads` row (ADR 0006). Up to 3 mentioned connectors still load, and every other connector tool is sent with Anthropic's `deferLoading` and a description that starts with the connector's name in brackets, like `[Linear]`. The model finds those with the `toolSearch` tool.
+Each reply adds up the stored estimates of the user's connections. At 35k tokens or under, every tool loads, in the same order whatever the prompt mentions (ADR 0009). Above that, the thread defers connector tools from then on, and the first reply to cross writes a `deferredToolThreads` row (ADR 0006). Up to 3 mentioned connectors still load, and every other connector tool is sent with Anthropic's `deferLoading` and a description that starts with the connector's name in brackets, like `[Linear]`. The model finds those with the `toolSearch` tool.
 
 Each reply logs a `reply tools` line with the number of the user's connections, whether the thread defers, the loading mode, each connector's estimate, the steps, each search's query and found tools, the tools called and connector errors.
 
