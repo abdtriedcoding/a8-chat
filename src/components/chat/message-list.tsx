@@ -1,7 +1,7 @@
 "use client";
 
 import type { PaginationStatus } from "convex/react";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   MessageScroller,
@@ -27,6 +27,7 @@ export function MessageList({
   onLoadEarlier,
   stopped,
   replyStatus,
+  stale = false,
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
@@ -38,6 +39,8 @@ export function MessageList({
    */
   stopped: Set<number>;
   replyStatus: ReplyStatus;
+  /** Set while the messages are the device's copy, not live data. */
+  stale?: boolean;
 }) {
   const lastPromptIndex = messages.findLastIndex(
     (message) => message.role === "user",
@@ -152,8 +155,74 @@ export function MessageList({
           </MessageScrollerViewport>
           <MessageScrollerButton />
           <ActionCardAnnouncer calls={waitingActions} />
+          <ReplyAnnouncer
+            replyStatus={replyStatus}
+            stale={stale}
+            last={messages.at(-1)}
+            stopped={stopped}
+            waitingForApproval={waitingActions.length > 0}
+          />
         </MessageScroller>
       </MessageScrollerProvider>
     </KnownItemsContext>
   );
+}
+
+/**
+ * Tells screen readers when the latest reply ends, and how. The message list
+ * stays quiet while a reply streams in, since reading every chunk would be
+ * too noisy.
+ */
+function ReplyAnnouncer({
+  replyStatus,
+  stale,
+  last,
+  stopped,
+  waitingForApproval,
+}: {
+  replyStatus: ReplyStatus;
+  /**
+   * The device's copy can be saved mid-reply. Counting that would announce
+   * a reply that ended while the user was away.
+   */
+  stale: boolean;
+  last: ThreadMessage | undefined;
+  stopped: Set<number>;
+  /** ActionCardAnnouncer reads the actions waiting for approval instead. */
+  waitingForApproval: boolean;
+}) {
+  const inProgress =
+    !stale &&
+    (replyStatus === "waiting" ||
+      replyStatus === "continuing" ||
+      replyStatus === "streaming");
+  const [wasInProgress, setWasInProgress] = useState(inProgress);
+  const [announcement, setAnnouncement] = useState("");
+  if (inProgress !== wasInProgress) {
+    setWasInProgress(inProgress);
+    // Cleared when the next reply starts, so the same words are read again.
+    setAnnouncement(
+      inProgress ? "" : replyEnd(replyStatus, last, stopped, waitingForApproval),
+    );
+  }
+  return (
+    <div role="status" className="sr-only">
+      {announcement}
+    </div>
+  );
+}
+
+function replyEnd(
+  replyStatus: ReplyStatus,
+  last: ThreadMessage | undefined,
+  stopped: Set<number>,
+  waitingForApproval: boolean,
+) {
+  if (replyStatus === "timedOut") return "No reply received. Try again.";
+  if (last && stopped.has(last.order)) return "Reply stopped.";
+  if (last?.role === "assistant" && last.status === "failed") {
+    const reason = last.metadata?.failureReason;
+    return `Couldn't get a reply.${reason ? ` ${reason}` : ""}`;
+  }
+  return waitingForApproval ? "" : "Reply finished.";
 }
