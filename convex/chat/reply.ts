@@ -16,6 +16,7 @@ import { chatAgent } from "../agents/chat";
 import { readUserConnections } from "../connections";
 import { findAutoApproveThread, isAutoApproveOn } from "../lib/autoApprove";
 import { replaceUnreadableAttachments } from "../lib/attachments";
+import { getPlanTerms } from "../lib/billing";
 import { connectedConnections } from "../lib/connectorTools";
 import { gatewayOptions, languageModelFor } from "../lib/gateway";
 import { replyInstructions } from "../lib/instructions";
@@ -380,14 +381,17 @@ export const getReplyStart = internalQuery({
     if (stopped) return null;
     const prompt = turn.find((message) => message.message?.role === "user");
     const userId = thread?.userId;
-    const [connections, { model }] = await Promise.all([
+    const [connections, plan] = await Promise.all([
       userId ? readUserConnections(ctx, userId) : [],
-      resolveReplyModel(ctx, { threadId, userId }),
+      userId ? getPlanTerms(ctx, userId) : null,
     ]);
-    const toolLists = await readToolLists(
-      ctx,
-      connectedConnections(connections).map(({ connection }) => connection._id),
-    );
+    const [{ model }, toolLists] = await Promise.all([
+      resolveReplyModel(ctx, { threadId, userId, plan }),
+      readToolLists(
+        ctx,
+        connectedConnections(connections).map(({ connection }) => connection._id),
+      ),
+    ]);
     return {
       promptText: prompt?.text ?? "",
       connections,
