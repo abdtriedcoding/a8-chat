@@ -50,11 +50,10 @@ export function ConvexPreconnect() {
  * The app under the Convex client, with `fallback` until the token is in.
  *
  * The server sends only `fallback`, and the boundary that waits for the
- * token starts once the page has hydrated. React never hydrates a Suspense
- * fallback the server sent, so a fallback inside one would stay static HTML
- * and couldn't show the device's copy of the user's data (lib/local-copy).
- * Convex queries don't run on the server, so its render of the app was
- * mostly skeletons anyway.
+ * token starts once the page has hydrated. Convex queries don't run on the
+ * server, so its render of the app was its loading skeletons, which showed
+ * until hydration. `fallback`'s placeholders wait a moment instead, and the
+ * app mounts with the device's copy of the user's data (lib/local-copy).
  */
 export function ConvexClientProvider({
   children,

@@ -11,8 +11,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppIcon } from "@/components/icons/app-icon";
-import { NavUser, NavUserPreview } from "@/components/nav-user";
-import { ThreadList, ThreadListPreview } from "@/components/thread-list";
+import { NavUser, NavUserSkeleton } from "@/components/nav-user";
+import { ThreadList, ThreadListSkeleton } from "@/components/thread-list";
 import { ThreadSearchButton } from "@/components/thread-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
-import {
-  queryCopyKey,
-  useQueryWithLocalCopy,
-} from "@/hooks/use-query-with-local-copy";
-import { useLocalCopy } from "@/lib/local-copy";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { api } from "../../convex/_generated/api";
 
 export function AppSidebar() {
@@ -48,14 +44,9 @@ export function AppSidebar() {
 
 /**
  * The sidebar before the app has its Convex token, the same size as
- * AppSidebar. Its links work, and search waits for the app. Chats, the badge
- * and the account come from the device's copy when it has one.
+ * AppSidebar. Its links work, and search waits for the app.
  */
 export function AppSidebarSkeleton() {
-  const unreadRuns = useLocalCopy<number>(
-    queryCopyKey(api.scheduledPrompts.unreadCount, {}),
-    { beforeSignIn: true },
-  );
   return (
     <SidebarFrame
       search={
@@ -64,9 +55,9 @@ export function AppSidebarSkeleton() {
           Search chats
         </Button>
       }
-      unreadRuns={unreadRuns ?? 0}
-      threads={<ThreadListPreview />}
-      user={<NavUserPreview />}
+      unreadRuns={0}
+      threads={<ThreadListSkeleton />}
+      user={<NavUserSkeleton />}
     />
   );
 }

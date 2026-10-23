@@ -10,10 +10,6 @@ import { useSyncExternalStore } from "react";
  * user clears it first. Sign-out and a lost session clear it
  * (clearLocalCopy).
  *
- * Before the app has the user's token, the layout's skeleton can show the
- * copy of the last user in this browser (`beforeSignIn`). Sign-out and every
- * sign-in page clear the copy, so that's the user the session belongs to.
- *
  * Values are kept in memory too. Writes to IndexedDB wait a moment, so a
  * value that changes on every streamed delta is written about once a second.
  */
@@ -118,9 +114,8 @@ function subscribe(listener: () => void) {
   };
 }
 
-function readable(beforeSignIn = false) {
-  if (owner === undefined) return false;
-  return user === owner || (beforeSignIn && user === undefined);
+function readable() {
+  return user !== undefined && user === owner;
 }
 
 /**
@@ -167,19 +162,12 @@ function cancelWrites() {
   pendingWrites.clear();
 }
 
-/**
- * The copied value under `key`, or undefined when there's none to show.
- * With `beforeSignIn`, it shows the last user's copy while the signed-in
- * user isn't known yet, for the skeleton outside the Convex client.
- */
-export function useLocalCopy<T>(
-  key: string | undefined,
-  { beforeSignIn = false }: { beforeSignIn?: boolean } = {},
-): T | undefined {
+/** The copied value under `key`, or undefined when there's none to show. */
+export function useLocalCopy<T>(key: string | undefined): T | undefined {
   return useSyncExternalStore(
     subscribe,
     () =>
-      key !== undefined && readable(beforeSignIn)
+      key !== undefined && readable()
         ? (entries.get(key)?.value as T | undefined)
         : undefined,
     () => undefined,

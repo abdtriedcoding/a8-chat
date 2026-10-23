@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { type ComponentProps, type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ApprovalsWaiting,
@@ -48,7 +48,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useConfirm } from "@/hooks/use-confirm";
 import {
-  queryCopyKey,
   usePaginatedQueryWithLocalCopy,
   useQueryWithLocalCopy,
 } from "@/hooks/use-query-with-local-copy";
@@ -58,7 +57,6 @@ import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useSetThreadPinned } from "@/hooks/use-set-thread-pinned";
 import { useThreadQueries } from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
-import { useLocalCopy } from "@/lib/local-copy";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../convex/_generated/api";
 
@@ -113,79 +111,6 @@ export function ThreadListSkeleton() {
     <ThreadSection label="Chats">
       <ThreadRowsSkeleton />
     </ThreadSection>
-  );
-}
-
-/**
- * The thread list from the device's copy (lib/local-copy), for the app's
- * skeleton before the Convex client starts. Its rows open their threads and
- * have no menus. With no copy, it's ThreadListSkeleton.
- */
-export function ThreadListPreview() {
-  const chats = useLocalCopy<Thread[]>(queryCopyKey(api.threads.list, {}), {
-    beforeSignIn: true,
-  });
-  const pinned = useLocalCopy<Thread[]>(
-    queryCopyKey(api.threads.listPinned, {}),
-    { beforeSignIn: true },
-  );
-  const { threadId: activeId } = useParams<{ threadId?: string }>();
-  const closeOnMobile = useCloseSidebarOnMobile();
-  if (chats === undefined) return <ThreadListSkeleton />;
-  const rows = (threads: Thread[]) => (
-    <SidebarMenu>
-      {threads.map((thread) => (
-        <SidebarMenuItem key={thread._id}>
-          <ThreadLink
-            thread={thread}
-            active={thread._id === activeId}
-            onClick={closeOnMobile}
-          />
-        </SidebarMenuItem>
-      ))}
-    </SidebarMenu>
-  );
-  return (
-    <>
-      {pinned && pinned.length > 0 && (
-        <ThreadSection label="Pinned">{rows(pinned)}</ThreadSection>
-      )}
-      {chats.length > 0 && (
-        <ThreadSection label="Chats">{rows(chats)}</ThreadSection>
-      )}
-    </>
-  );
-}
-
-/** A sidebar row's link to its thread, with its approval mark or unread dot. */
-function ThreadLink({
-  thread,
-  active,
-  ...props
-}: {
-  thread: Thread;
-  active: boolean;
-} & Omit<ComponentProps<typeof Link>, "href">) {
-  return (
-    <SidebarMenuButton asChild isActive={active}>
-      <Link
-        href={`/c/${thread._id}`}
-        aria-current={active ? "page" : undefined}
-        {...props}
-      >
-        <span className="truncate">{threadTitle(thread)}</span>
-        {/* A waiting action card outranks the dot for an unread scheduled run. */}
-        {thread.needsApproval ? (
-          <NeedsApprovalMarker />
-        ) : (
-          thread.unread && (
-            <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
-              <span className="sr-only">Unread</span>
-            </span>
-          )
-        )}
-      </Link>
-    </SidebarMenuButton>
   );
 }
 
@@ -315,14 +240,28 @@ export function ThreadList() {
     const active = thread._id === activeId;
     return (
       <SidebarMenuItem key={thread._id}>
-        <ThreadLink
-          thread={thread}
-          active={active}
-          onClick={closeOnMobile}
-          onPointerEnter={() => prefetchSoon(thread._id)}
-          onPointerLeave={stopPrefetch}
-          onNavigate={() => prefetchNow(thread._id)}
-        />
+        <SidebarMenuButton asChild isActive={active}>
+          <Link
+            href={`/c/${thread._id}`}
+            aria-current={active ? "page" : undefined}
+            onClick={closeOnMobile}
+            onPointerEnter={() => prefetchSoon(thread._id)}
+            onPointerLeave={stopPrefetch}
+            onNavigate={() => prefetchNow(thread._id)}
+          >
+            <span className="truncate">{threadTitle(thread)}</span>
+            {/* A waiting action card outranks the dot for an unread scheduled run. */}
+            {thread.needsApproval ? (
+              <NeedsApprovalMarker />
+            ) : (
+              thread.unread && (
+                <span className="ml-auto size-2 shrink-0 rounded-full bg-primary">
+                  <span className="sr-only">Unread</span>
+                </span>
+              )
+            )}
+          </Link>
+        </SidebarMenuButton>
         {!stale && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -22,11 +22,6 @@ export type ThreadActions = {
   edit?: (prompt: string) => Promise<void>;
   editingLastPrompt: boolean;
   setEditingLastPrompt: (editing: boolean) => void;
-  /**
-   * Set where the Convex client isn't running yet, in the app's skeleton, so
-   * messages leave out what reads from it: the reconnect chips.
-   */
-  offline?: boolean;
 };
 
 const ThreadActionsContext = createContext<ThreadActions | null>(null);

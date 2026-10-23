@@ -16,7 +16,7 @@ import { useEffect } from "react";
 import { saveLocalCopy, useLocalCopy } from "@/lib/local-copy";
 
 /** The local copy's key for a query's value, or a paginated query's first page. */
-export function queryCopyKey(
+function queryCopyKey(
   query: FunctionReference<"query">,
   args: Record<string, unknown>,
 ) {

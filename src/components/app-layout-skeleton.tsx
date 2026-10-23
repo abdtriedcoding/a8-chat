@@ -5,11 +5,11 @@ import { usePathname } from "next/navigation";
 import { AppSidebarSkeleton } from "@/components/app-sidebar";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ComposerSkeleton } from "@/components/chat/composer-skeleton";
+import { ThreadSkeleton } from "@/components/chat/conversation-skeleton";
 import {
   NEW_CHAT_COMPOSER_CLASS,
   NewChatFrame,
 } from "@/components/chat/new-chat-frame";
-import { ThreadCopyPreview } from "@/components/chat/thread-copy-preview";
 import { Button } from "@/components/ui/button";
 import { SidebarInset } from "@/components/ui/sidebar";
 
@@ -25,8 +25,8 @@ const PAGE_HEADINGS: Record<string, string> = {
 /**
  * The chat layout while it waits for the Convex token: the sidebar, and the
  * current page's header and message box in outline, where the app puts them.
- * The sidebar and a thread show from the device's copy when it has one,
- * and the placeholders show only if it hasn't filled them in by then.
+ * The placeholders show only after a moment, so a load where the app
+ * mounts quickly with the device's copy (lib/local-copy) never flashes them.
  * It renders inside the layout's SidebarProvider, so it opens or closes the
  * sidebar the same as the app.
  */
@@ -65,15 +65,7 @@ function PageSkeleton({ pathname }: { pathname: string }) {
       </NewChatFrame>
     );
   }
-  if (pathname.startsWith("/c/")) {
-    return (
-      <ThreadCopyPreview
-        threadId={pathname.slice("/c/".length)}
-        beforeSignIn
-        composer={() => <ComposerSkeleton className="mx-auto max-w-3xl" />}
-      />
-    );
-  }
+  if (pathname.startsWith("/c/")) return <ThreadSkeleton />;
   const heading = PAGE_HEADINGS[pathname];
   return (
     <ChatHeader>

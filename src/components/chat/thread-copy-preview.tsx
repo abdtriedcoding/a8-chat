@@ -17,39 +17,30 @@ const NO_ACTIONS: ThreadActions = {
   editingLastPrompt: false,
   setEditingLastPrompt: () => {},
 };
-const OFFLINE: ThreadActions = { ...NO_ACTIONS, offline: true };
 
 /**
- * A thread from the device's copy (lib/local-copy), where the thread view
- * can't show it yet: the app's skeleton before the Convex client starts
- * (`beforeSignIn`), and the thread page while the router loads it. Its
- * messages do nothing, and `composer` goes where the Composer does. With no
- * copy, it's ThreadSkeleton.
+ * A thread from the device's copy (lib/local-copy), while the router loads
+ * the thread page. Its messages do nothing, and `composer` goes where the
+ * Composer does. With no copy, it's ThreadSkeleton.
  */
 export function ThreadCopyPreview({
   threadId,
   composer,
-  beforeSignIn = false,
 }: {
   threadId: string;
   composer: (copy: ThreadCopy) => ReactNode;
-  beforeSignIn?: boolean;
 }) {
-  const copy = useLocalCopy<ThreadCopy>(threadCopyKey(threadId), {
-    beforeSignIn,
-  });
+  const copy = useLocalCopy<ThreadCopy>(threadCopyKey(threadId));
   if (!copy) return <ThreadSkeleton />;
-  return <Preview copy={copy} composer={composer} offline={beforeSignIn} />;
+  return <Preview copy={copy} composer={composer} />;
 }
 
 function Preview({
   copy,
   composer,
-  offline,
 }: {
   copy: ThreadCopy;
   composer: (copy: ThreadCopy) => ReactNode;
-  offline: boolean;
 }) {
   const stopped = stoppedTurns(copy.messages);
   const replyStatus = useReplyStatus(copy.messages, stopped);
@@ -58,7 +49,7 @@ function Preview({
       <ChatHeader>
         <StaticThreadHeading title={copy.thread.title} />
       </ChatHeader>
-      <ThreadActionsProvider actions={offline ? OFFLINE : NO_ACTIONS}>
+      <ThreadActionsProvider actions={NO_ACTIONS}>
         <MessageList
           messages={copy.messages}
           status={copy.hasEarlier ? "CanLoadMore" : "Exhausted"}
