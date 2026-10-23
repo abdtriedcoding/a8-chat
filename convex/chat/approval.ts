@@ -14,6 +14,7 @@ import { authorizeThreadAccess } from "../lib/guards";
 import { addPendingActions, deletePendingActions } from "../lib/pendingActions";
 import { settleReplyModel } from "../lib/threadModels";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
+import { limitSend, vSendLimited } from "../rateLimits";
 import { getStoppedReply } from "./stop";
 import { getLastTurn } from "./turns";
 
@@ -27,15 +28,23 @@ const ACTION_REPLACED =
 /** The reason the model gets for an approved action the user stopped. */
 const ACTION_STOPPED = "The user stopped the reply before this action ran.";
 
+/** The reply that ends a turn whose actions the user all cancelled. */
+const REPLY_CANCELLED = "Cancelled.";
+
 /**
  * Approves or cancels an action waiting on its card. Approve and Cancel on
- * the card call this. It isn't a Send, because it continues the same reply,
- * so the send limits don't count it.
+ * the card call this.
  *
  * The Agent saves the decision in the thread (ADR 0002), so every open tab
  * shows it. Once the user has decided on every action the step asked for,
  * the reply continues. An approved action runs first. A cancelled one tells
  * the model the user declined.
+ *
+ * The continuing reply calls the model, so the last decision counts as a
+ * Send (limitSend). When limitSend refuses it, this saves nothing and
+ * returns the refusal, like a Send, and the card keeps waiting. When the
+ * user cancelled every action in the step and none of its actions ran, the
+ * turn ends with a fixed reply and no model call, and nothing counts.
  *
  * The reply continues on the thread's model, or on the default model when
  * the thread can't use its model anymore (settleReplyModel).
@@ -50,7 +59,7 @@ export const decideAction = mutation({
     approve: v.boolean(),
     timeZone: vTimeZone,
   },
-  returns: v.null(),
+  returns: v.union(v.null(), vSendLimited),
   handler: async (ctx, { threadId, approvalId, approve, timeZone }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
     const turn = await getLastTurn(ctx, threadId);
@@ -66,6 +75,15 @@ export const decideAction = mutation({
         "This action was already approved or cancelled.",
       );
     }
+    // The check above found this card waiting. Once it's the last, none
+    // waits, and the reply continues.
+    const last = waiting.length === 1;
+    const callsModel = last && (approve || stepHasRunOrApproved(turn));
+    const plan = callsModel ? await getPlanTerms(ctx, user._id) : null;
+    if (callsModel) {
+      const refused = await limitSend(ctx, user._id, plan);
+      if (refused) return refused;
+    }
     const { messageId } = approve
       ? await chatAgent.approveToolCall(ctx, { threadId, approvalId })
       : await chatAgent.denyToolCall(ctx, {
@@ -73,9 +91,11 @@ export const decideAction = mutation({
           approvalId,
           reason: ACTION_CANCELLED,
         });
-    // The check above found this card waiting. Once it was the last, none
-    // waits.
-    if (waiting.length > 1) return null;
+    if (!last) return null;
+    if (!callsModel) {
+      await endCancelledTurn(ctx, { threadId, messageId, order });
+      return null;
+    }
     await deletePendingActions(ctx, threadId);
     // The continuing reply uses the thread's model as it is now. When the
     // thread can't use it anymore, this moves the thread off it, and the
@@ -83,7 +103,7 @@ export const decideAction = mutation({
     await settleReplyModel(ctx, {
       threadId,
       userId: user._id,
-      plan: await getPlanTerms(ctx, user._id),
+      plan,
       userSend: false,
     });
     await ctx.scheduler.runAfter(0, internal.chat.reply.streamReply, {
@@ -104,7 +124,62 @@ export const decideAction = mutation({
 });
 
 /**
- * Ends the last turn's actions that never ran, before a new prompt is saved.
+ * Whether the step that paused on action cards ran an action or has one
+ * approved, so the model has a result to answer. The step's tool results and
+ * the user's decisions come after its message from the model.
+ *
+ * @param turn The thread's last turn (getLastTurn), newest message first.
+ */
+function stepHasRunOrApproved(turn: MessageDoc[]): boolean {
+  for (const { message } of turn) {
+    if (message?.role === "assistant") return false;
+    if (message?.role !== "tool") continue;
+    const ranOrApproved = message.content.some(
+      (part) =>
+        part.type === "tool-result" ||
+        (part.type === "tool-approval-response" && part.approved),
+    );
+    if (ranOrApproved) return true;
+  }
+  return false;
+}
+
+/**
+ * Ends a turn whose actions the user all cancelled without calling the
+ * model. Each cancelled action gets its result (closeUnrunActions), and the
+ * reply gets REPLY_CANCELLED. Then it does what streamReply does once a
+ * reply ends: records the scheduled run and starts the next queued prompt.
+ *
+ * @param messageId The user's last decision, which the reply follows.
+ */
+async function endCancelledTurn(
+  ctx: MutationCtx,
+  {
+    threadId,
+    messageId,
+    order,
+  }: { threadId: string; messageId: string; order: number },
+) {
+  await closeUnrunActions(ctx, threadId, await getLastTurn(ctx, threadId));
+  await chatAgent.saveMessage(ctx, {
+    threadId,
+    promptMessageId: messageId,
+    message: { role: "assistant", content: REPLY_CANCELLED },
+    skipEmbeddings: true,
+  });
+  await ctx.runMutation(internal.scheduledPrompts.recordRunOutcome, {
+    threadId,
+    promptMessageId: messageId,
+    order,
+    continuing: true,
+    ending: "returned",
+  });
+  await ctx.runMutation(internal.chat.send.startNextPrompt, { threadId });
+}
+
+/**
+ * Ends the last turn's actions that never ran, before a new prompt is saved
+ * or when the user cancelled them all (endCancelledTurn).
  * A card left waiting is cancelled, so it can't be approved later (ADR
  * 0002). The Agent would only treat it as denied for the next model call.
  * An approved action whose reply the user stopped never runs either. No card
