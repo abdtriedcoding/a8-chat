@@ -25,6 +25,11 @@ type ConfirmOptions = {
    * If it throws, the dialog shows the error as a toast and stays open.
    */
   onConfirm: () => Promise<unknown>;
+  /**
+   * The element focus goes back to when the dialog closes. With no trigger,
+   * the dialog otherwise leaves focus on the page body.
+   */
+  returnFocus?: () => HTMLElement | null;
 };
 
 /**
@@ -70,7 +75,15 @@ export function useConfirm() {
         if (!open && !pending) settle(false);
       }}
     >
-      <AlertDialogContent size="sm">
+      <AlertDialogContent
+        size="sm"
+        onCloseAutoFocus={(event) => {
+          const target = options?.returnFocus?.();
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{options?.title}</AlertDialogTitle>
           <AlertDialogDescription>

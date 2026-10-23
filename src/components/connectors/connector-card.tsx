@@ -3,7 +3,7 @@
 import { useAction } from "convex/react";
 import { InfoIcon, MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Alert,
@@ -14,9 +14,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { useConfirm } from "@/hooks/use-confirm";
 import { useConnectConnector } from "@/hooks/use-connect-connector";
 import { isConnected } from "@/lib/connection-status";
-import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";
 import type { ConnectorView } from "../../../convex/lib/connectorView";
@@ -25,17 +25,16 @@ import { ReconnectButton } from "./reconnect-button";
 
 /**
  * One catalog entry on the Connectors page. Turning the toggle on sends the
- * browser to the vendor's sign-in, and turning it off disconnects. The
- * example prompt opens a new chat with that prompt in the composer, unsent.
- * A connection that needs reconnecting shows a Reconnect button, which
- * signs in again, and so does one missing a scope the user unticked at
- * sign-in. A connector the deployment hasn't set up has no toggle and
- * links to its setup guide. A catalog card note shows under the
+ * browser to the vendor's sign-in. Turning it off opens a confirm dialog,
+ * and Cancel there leaves the toggle on. Either way, focus goes back to the
+ * toggle. The example prompt opens a new chat with that prompt in the
+ * composer, unsent. A connection that needs reconnecting shows a Reconnect
+ * button, which signs in again, and so does one missing a scope the user
+ * unticked at sign-in. A connector the deployment hasn't set up has no
+ * toggle and links to its setup guide. A catalog card note shows under the
  * description.
  *
- * `connection` is undefined until the user's connections load. Key the card
- * by the connection's connectedAt, so a new connection, or none, starts it
- * with no disconnect pending.
+ * `connection` is undefined until the user's connections load.
  */
 export function ConnectorCard({
   connector,
@@ -51,31 +50,45 @@ export function ConnectorCard({
     connector;
   const { connecting, startConnect } = useConnectConnector(id);
   const disconnect = useAction(api.connectors.disconnect);
-  // The toggle shows off from the click until the list query drops the
-  // connection, which can land after the action returns. The card's key
-  // changes then, which clears this.
-  const [disconnecting, setDisconnecting] = useState(false);
-  const connected = isConnected(connection) && !disconnecting;
+  const [confirmDialog, confirm] = useConfirm();
+  // Called when the card unmounts, which a disconnect waits for.
+  const onUnmount = useRef<() => void>(null);
+  useEffect(() => () => onUnmount.current?.(), []);
+  const connected = isConnected(connection);
   const needsReconnect = connected && connection?.status === "needs_reconnect";
   const missingScopes =
     connected && !needsReconnect && connection?.missingScopes === true;
   const notSetUp = connection?.setUp === false;
+  // After a disconnect, focus goes to the remounted card's switch, which a
+  // ref to this one can't reach.
+  const switchId = `connector-switch-${id}`;
 
-  async function startDisconnect() {
-    setDisconnecting(true);
-    try {
-      const { revoked } = await disconnect({ connectorId: id });
-      if (revoked) {
-        toast.success(`${name} is disconnected.`);
-      } else {
-        toast.warning(
-          `${name} is disconnected, but a8 couldn't revoke its access in ${name}. You can remove a8 in ${name}'s connection settings.`,
-        );
-      }
-    } catch (error) {
-      toast.error(errorMessage(error));
-      setDisconnecting(false);
-    }
+  function confirmDisconnect() {
+    void confirm({
+      title: `Disconnect ${name}?`,
+      description:
+        "a8 will lose access, and scheduled tasks that use it will run without it.",
+      confirmLabel: "Disconnect",
+      destructive: true,
+      returnFocus: () => document.getElementById(switchId),
+      onConfirm: async () => {
+        const { revoked } = await disconnect({ connectorId: id });
+        if (revoked) {
+          toast.success(`${name} is disconnected.`);
+        } else {
+          toast.warning(
+            `${name} is disconnected, but a8 couldn't revoke its access in ${name}. You can remove a8 in ${name}'s connection settings.`,
+          );
+        }
+        // The dialog stays open until the list query drops the connection,
+        // which can land after the action returns. The card moves to
+        // Available then and remounts, taking the dialog with it. If it
+        // already has, this never resolves, and nothing is left to update.
+        await new Promise<void>((resolve) => {
+          onUnmount.current = resolve;
+        });
+      },
+    });
   }
 
   return (
@@ -100,17 +113,17 @@ export function ConnectorCard({
           )
         ) : (
           <Switch
+            id={switchId}
             checked={connected || connecting}
-            disabled={
-              connection === undefined || stale || connecting || disconnecting
-            }
+            disabled={connection === undefined || stale || connecting}
             onCheckedChange={(checked) => {
               if (checked) void startConnect();
-              else void startDisconnect();
+              else confirmDisconnect();
             }}
             aria-label={`${name} connection`}
           />
         )}
+        {confirmDialog}
       </CardHeader>
       <CardContent>
         {needsReconnect && (
