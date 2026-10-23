@@ -30,7 +30,8 @@ export function MessageList({
 }: {
   messages: ThreadMessage[];
   status: PaginationStatus;
-  onLoadEarlier: () => void;
+  /** Unset while earlier messages can't load yet, which turns the button off. */
+  onLoadEarlier?: () => void;
   /**
    * The orders of the turns the user stopped. A streaming reply carries no
    * metadata, so this keeps "Stopped" showing while the stream aborts.
@@ -73,7 +74,7 @@ export function MessageList({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={status === "LoadingMore"}
+                  disabled={status === "LoadingMore" || !onLoadEarlier}
                   onClick={onLoadEarlier}
                 >
                   {status === "LoadingMore" && (

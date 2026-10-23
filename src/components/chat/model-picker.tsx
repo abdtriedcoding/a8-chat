@@ -141,10 +141,8 @@ export function ModelPicker({
   attachmentKinds?: AttachmentKind[];
   disabled?: boolean;
 }) {
-  const { data: defaultModelId } = useQueryWithLocalCopy(
-    api.models.defaultModel,
-    {},
-  );
+  const { data: defaultModelId, stale: defaultModelStale } =
+    useQueryWithLocalCopy(api.models.defaultModel, {});
   const billingEnabled =
     useQueryWithLocalCopy(api.billing.enabled, {}).data === true;
   const isLocked = useIsModelLocked();
@@ -336,6 +334,8 @@ export function ModelPicker({
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start font-normal"
+                // The default from the device's copy may be out of date.
+                disabled={defaultModelStale}
                 onClick={() => void makeDefault()}
               >
                 <StarIcon />

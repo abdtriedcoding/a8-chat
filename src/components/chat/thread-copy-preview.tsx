@@ -5,8 +5,7 @@ import type { ThreadCopy } from "@/hooks/use-thread-queries";
 import { useReplyStatus } from "@/hooks/use-reply-status";
 import { threadCopyKey, useLocalCopy } from "@/lib/local-copy";
 import { stoppedTurns } from "@/lib/stopped-turns";
-import { threadTitle } from "@/lib/thread-title";
-import { ChatHeader } from "./chat-header";
+import { ChatHeader, StaticThreadHeading } from "./chat-header";
 import { ThreadSkeleton } from "./conversation-skeleton";
 import { MessageList } from "./message-list";
 import {
@@ -57,18 +56,12 @@ function Preview({
   return (
     <>
       <ChatHeader>
-        {/* Sized like ThreadHeading's rename button. */}
-        <h1 className="min-w-0 flex-1 text-sm font-medium">
-          <span className="block h-8 max-w-full truncate border border-transparent px-2 leading-[30px]">
-            {threadTitle(copy.thread)}
-          </span>
-        </h1>
+        <StaticThreadHeading title={copy.thread.title} />
       </ChatHeader>
       <ThreadActionsProvider actions={offline ? OFFLINE : NO_ACTIONS}>
         <MessageList
           messages={copy.messages}
           status={copy.hasEarlier ? "CanLoadMore" : "Exhausted"}
-          onLoadEarlier={() => {}}
           stopped={stopped}
           replyStatus={replyStatus}
         />

@@ -45,6 +45,9 @@ const listeners = new Set<() => void>();
 const db: Promise<IDBDatabase | null> =
   typeof indexedDB === "undefined" ? Promise.resolve(null) : openDb();
 
+/** Set by clearLocalCopy, so a read still in flight doesn't bring it back. */
+let clearedBeforeLoad = false;
+
 /** The copy loads once, when this module first runs in the browser. */
 const loaded = db.then(async (database) => {
   if (!database) return;
@@ -54,6 +57,7 @@ const loaded = db.then(async (database) => {
       request(store.getAllKeys()),
       request(store.getAll()),
     ]);
+    if (clearedBeforeLoad) return;
     keys.forEach((key, i) => {
       if (key === OWNER_KEY) owner = values[i] as string;
       else entries.set(String(key), values[i] as Entry);
@@ -147,6 +151,7 @@ export function setLocalCopyUser(userId: string | undefined) {
 
 /** Clears the copy, in memory and on the device, until a user is set again. */
 export async function clearLocalCopy() {
+  clearedBeforeLoad = true;
   cancelWrites();
   entries = new Map();
   earlySaves = new Map();

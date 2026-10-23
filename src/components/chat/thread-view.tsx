@@ -53,7 +53,12 @@ import { lastReplyText } from "@/lib/reply-text";
 import { stoppedTurns } from "@/lib/stopped-turns";
 import { api } from "../../../convex/_generated/api";
 import { MAX_QUEUED_PROMPTS } from "../../../convex/lib/queue";
-import { ChatHeader, TemporaryHeading, ThreadHeading } from "./chat-header";
+import {
+  ChatHeader,
+  StaticThreadHeading,
+  TemporaryHeading,
+  ThreadHeading,
+} from "./chat-header";
 import { Composer } from "./composer";
 import { ConversationSkeleton } from "./conversation-skeleton";
 import { MessageList } from "./message-list";
@@ -212,7 +217,11 @@ export function ThreadView({ threadId }: { threadId: string }) {
         )}
         {shownThread && !shownThread.temporary && (
           <>
-            <ThreadHeading threadId={threadId} title={shownThread.title} />
+            {stale ? (
+              <StaticThreadHeading title={shownThread.title} />
+            ) : (
+              <ThreadHeading threadId={threadId} title={shownThread.title} />
+            )}
             {shownThread.scheduledPromptId && (
               <Badge variant="secondary" asChild>
                 <Link href={`/scheduled#${shownThread.scheduledPromptId}`}>
@@ -242,14 +251,18 @@ export function ThreadView({ threadId }: { threadId: string }) {
             status={
               stale ? (copy.hasEarlier ? "CanLoadMore" : "Exhausted") : status
             }
-            onLoadEarlier={() => loadMore(MESSAGES_PAGE_SIZE)}
+            onLoadEarlier={
+              stale ? undefined : () => loadMore(MESSAGES_PAGE_SIZE)
+            }
             stopped={stopped}
             replyStatus={replyStatus}
           />
         </ThreadActionsProvider>
       )}
       <div className="shrink-0 px-4 pb-4">
-        {shownThread?.archived && <ArchivedNotice threadId={threadId} />}
+        {shownThread?.archived && (
+          <ArchivedNotice threadId={threadId} disabled={stale} />
+        )}
         {queuedPrompts.length > 0 && (
           <QueueStack
             prompts={queuedPrompts}
@@ -304,8 +317,17 @@ export function ThreadView({ threadId }: { threadId: string }) {
   );
 }
 
-/** Says the thread is archived, with a button to move it back. */
-function ArchivedNotice({ threadId }: { threadId: string }) {
+/**
+ * Says the thread is archived, with a button to move it back. `disabled`
+ * turns the button off, while the thread shows from the device's copy.
+ */
+function ArchivedNotice({
+  threadId,
+  disabled,
+}: {
+  threadId: string;
+  disabled: boolean;
+}) {
   const setThreadArchived = useSetThreadArchived();
   return (
     <Alert role="status" className="mx-auto mb-2 max-w-3xl pr-30">
@@ -318,6 +340,7 @@ function ArchivedNotice({ threadId }: { threadId: string }) {
         <Button
           variant="outline"
           size="sm"
+          disabled={disabled}
           onClick={() => {
             setThreadArchived({ threadId, archived: false }).catch(
               (error: unknown) => toast.error(errorMessage(error)),

@@ -130,12 +130,17 @@ export function ThreadListPreview() {
     { beforeSignIn: true },
   );
   const { threadId: activeId } = useParams<{ threadId?: string }>();
+  const closeOnMobile = useCloseSidebarOnMobile();
   if (chats === undefined) return <ThreadListSkeleton />;
   const rows = (threads: Thread[]) => (
     <SidebarMenu>
       {threads.map((thread) => (
         <SidebarMenuItem key={thread._id}>
-          <ThreadLink thread={thread} active={thread._id === activeId} />
+          <ThreadLink
+            thread={thread}
+            active={thread._id === activeId}
+            onClick={closeOnMobile}
+          />
         </SidebarMenuItem>
       ))}
     </SidebarMenu>
@@ -361,8 +366,10 @@ export function ThreadList() {
     );
   }
 
+  // Without a copy, Chats waits for the pins too, so Pinned doesn't push it
+  // down when it loads.
   const loading =
-    (status === "LoadingFirstPage" && !chatsStale) || pinned === undefined;
+    !chatsStale && (status === "LoadingFirstPage" || pinned === undefined);
   // A copy is saved empty only when the list was.
   const chatsEmpty =
     results.length === 0 && (status === "Exhausted" || chatsStale);
