@@ -13,7 +13,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useOpenShortcutsHelp } from "@/components/keyboard-shortcuts";
 import { useLeaveTemporaryThread } from "@/components/temporary-thread";
-import { ThemeSubmenu } from "@/components/theme-menu";
+import { InlineThemeGroup, ThemeSubmenu } from "@/components/theme-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -127,13 +127,19 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <ThemeSubmenu />
+              {!isMobile && <ThemeSubmenu />}
               <DropdownMenuItem onSelect={openShortcutsHelp}>
                 <KeyboardIcon />
                 Keyboard shortcuts
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            {isMobile && (
+              <>
+                <InlineThemeGroup />
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
                 <Link href="/settings/account" prefetch>
