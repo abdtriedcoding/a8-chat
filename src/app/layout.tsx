@@ -1,20 +1,10 @@
 import { cn } from "cn";
 import type { Metadata } from "next";
-import { Geist_Mono, Rubik } from "next/font/google";
+import { geistMono, rubik } from "./fonts";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-
-const rubik = Rubik({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: { default: "a8", template: "%s · a8" },
