@@ -127,7 +127,7 @@ function WorksWith() {
             >
               <app.icon className="size-4 text-muted-foreground" />
               {app.name}
-              <span className="text-primary">@{app.handle}</span>
+              <span className="text-link">@{app.handle}</span>
             </li>
           ))}
           <li className="flex h-10 items-center rounded-lg border border-dashed border-input px-3 text-sm font-medium text-muted-foreground">
@@ -147,7 +147,7 @@ function WithoutSwitchingTabs() {
           <Highlight>Without switching tabs:</Highlight>
         </h2>
         <p className="mt-8 flex flex-col gap-2 text-3xl font-semibold tracking-tight sm:text-5xl">
-          <span className="text-muted-foreground/70">check what&apos;s left for launch.</span>
+          <span className="text-muted-foreground/80">check what&apos;s left for launch.</span>
           <span className="text-muted-foreground">write the client update.</span>
           <span className="text-foreground">approve it, and it&apos;s drafted.</span>
         </p>
@@ -239,7 +239,7 @@ function Terminal() {
           {"\n"}
           <Prompt />
           bun run dev:convex{" "}
-          <span className="text-background/50"># then set the keys in the README</span>
+          <span className="text-background/70"># then set the keys in the README</span>
           {"\n"}
           <Prompt />
           bun run dev
@@ -250,7 +250,7 @@ function Terminal() {
 }
 
 function Prompt() {
-  return <span className="text-background/50 select-none">$ </span>;
+  return <span className="text-background/70 select-none">$ </span>;
 }
 
 function FinalCta() {
