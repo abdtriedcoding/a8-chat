@@ -13,6 +13,7 @@ import {
 } from "./_generated/server";
 import authConfig from "./auth.config";
 import { billingEnabled } from "./lib/billing";
+import { checkUserName } from "./lib/userName";
 import { limitSignIn, resetUserLimits } from "./rateLimits";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
@@ -122,6 +123,23 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       // Limits sign-ins by email, which works without a client IP and stops
       // one IP spreading guesses over many accounts.
       before: createAuthMiddleware(async (authCtx) => {
+        if (
+          authCtx.path === "/sign-up/email" ||
+          authCtx.path === "/update-user"
+        ) {
+          const name: unknown = authCtx.body?.name;
+          // Update-user can change other fields without the name.
+          if (name === undefined && authCtx.path === "/update-user") return;
+          let checked: string;
+          try {
+            checked = checkUserName(typeof name === "string" ? name : "");
+          } catch (error) {
+            throw new APIError("BAD_REQUEST", {
+              message: (error as Error).message,
+            });
+          }
+          return { context: { body: { ...authCtx.body, name: checked } } };
+        }
         if (authCtx.path !== "/sign-in/email") return;
         // Sign-ins arrive over HTTP, in an action. A query can't count.
         if (!("runMutation" in ctx)) return;
