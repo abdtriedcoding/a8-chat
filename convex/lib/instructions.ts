@@ -135,22 +135,21 @@ export function replyInstructions({
 /**
  * The connector part of a reply's instructions. Undefined for a user with
  * no connections, so the model isn't steered toward apps they never
- * connected.
+ * connected. The prompt's mentions go with the prompt instead
+ * (mentionNote), so the instructions stay the same from prompt to prompt
+ * and Claude reads them from the prompt cache.
  *
  * @param connections The user's connections, of any status.
- * @param mentioned The connectors the prompt mentions (findMentions).
  * @param loading How the reply offers connector tools (arrangeReplyTools).
  * @param searchTool The search tool's key, Anthropic's or a8's, for when
  *   loading is `search`.
  */
 export function connectorInstructions({
   connections,
-  mentioned,
   loading,
   searchTool,
 }: {
   connections: ConnectionSummary[];
-  mentioned: ConnectorView[];
   loading: ToolLoading;
   searchTool: string;
 }): string | undefined {
@@ -159,8 +158,28 @@ export function connectorInstructions({
     CONNECTOR_GUIDE,
     connectorStatusLine(connections),
     ...(loading === "search" ? [toolSearchInstruction(searchTool)] : []),
-    ...mentioned.map((connector) => mentionInstruction(connector, connections)),
   ].join("\n");
+}
+
+/**
+ * The note on the connectors a prompt mentions, which the reply adds to
+ * the prompt (withPromptNote). Undefined when the prompt mentions none,
+ * and for a user with no connections, who gets no connector text.
+ *
+ * @param mentioned The connectors the prompt mentions (findMentions).
+ * @param connections The user's connections, of any status.
+ */
+export function mentionNote({
+  mentioned,
+  connections,
+}: {
+  mentioned: ConnectorView[];
+  connections: ConnectionSummary[];
+}): string | undefined {
+  if (mentioned.length === 0 || connections.length === 0) return undefined;
+  return mentioned
+    .map((connector) => mentionInstruction(connector, connections))
+    .join("\n");
 }
 
 /**

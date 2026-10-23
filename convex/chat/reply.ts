@@ -30,6 +30,7 @@ import {
   CACHE_BREAKPOINT,
   createReplyTools,
   withCacheBreakpoint,
+  withPromptNote,
   type ReplyTools,
 } from "../lib/replyTools";
 import schema from "../schema";
@@ -118,7 +119,8 @@ export const streamReply = internalAction({
         autoApprovedCount,
         model,
       });
-      const { log, fitHistory, maxSteps, activeTools } = replyTools;
+      const { log, fitHistory, maxSteps, activeTools, promptNote } =
+        replyTools;
       const result = await chatAgent.streamText(
         ctx,
         // With the thread's user, the Agent doesn't look up the thread.
@@ -181,15 +183,20 @@ export const streamReply = internalAction({
           // before the new prompt, so the steps of this reply and the next
           // prompt read the history from the cache. An attachment from an
           // earlier turn that the model can't read goes as a note naming
-          // it.
+          // it. The note on the prompt's mentions goes on the prompt, not
+          // in the instructions, so a mention keeps the tools and
+          // instructions in the cache.
           contextHandler: async (
             _ctx,
             { search, recent, inputMessages, inputPrompt, existingResponses },
           ) => {
             const history = [...search, ...recent, ...inputMessages];
-            const messages = replaceUnreadableAttachments(
-              [...history, ...inputPrompt, ...existingResponses],
-              model.reads,
+            const messages = withPromptNote(
+              replaceUnreadableAttachments(
+                [...history, ...inputPrompt, ...existingResponses],
+                model.reads,
+              ),
+              promptNote,
             );
             return fitHistory(
               claude

@@ -167,7 +167,7 @@ A tool added to the allowlist reaches a connection at its next refresh. A tool r
 
 Building the tools sends nothing to the vendors. Each server's MCP client opens on the first call to one of its tools, with the access token refreshed first if it expires within 5 minutes. Each tool call counts against the user's daily connector tool call limit. a8 wraps each result in an `<untrusted-data>` tag and cuts it at about 20 KB.
 
-Each reply adds up the stored estimates of the user's connections. At 35k tokens or under, every tool loads, mentioned connectors first (ADR 0009). Above that, the thread defers connector tools from then on, and the first reply to cross writes a `deferredToolThreads` row (ADR 0006). Up to 3 mentioned connectors still load, and every other connector tool is sent with Anthropic's `deferLoading` and a description that starts with the connector's name in brackets, like `[Linear]`. The model finds those with the `toolSearch` tool.
+Each reply adds up the stored estimates of the user's connections. At 35k tokens or under, every tool loads, in the same order whatever the prompt mentions (ADR 0009). Above that, the thread defers connector tools from then on, and the first reply to cross writes a `deferredToolThreads` row (ADR 0006). Up to 3 mentioned connectors still load, and every other connector tool is sent with Anthropic's `deferLoading` and a description that starts with the connector's name in brackets, like `[Linear]`. The model finds those with the `toolSearch` tool.
 
 Each reply logs a `reply tools` line with the number of the user's connections, whether the thread defers, the loading mode, each connector's estimate, the steps, each search's query and found tools, the tools called and connector errors.
 

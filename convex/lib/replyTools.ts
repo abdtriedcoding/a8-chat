@@ -23,7 +23,7 @@ import {
 } from "./autoApprove";
 import { createConnectorTools, type ConnectorTools } from "./connectorTools";
 import { findMentions } from "./connectorView";
-import { connectorInstructions } from "./instructions";
+import { connectorInstructions, mentionNote } from "./instructions";
 import { isClaude, type Model } from "./models";
 import {
   arrangeReplyTools,
@@ -68,6 +68,33 @@ export function withCacheBreakpoint(
   );
 }
 
+/**
+ * The messages with `note` added as a text part to the last message with
+ * role `user`, the prompt the reply answers. A continuing reply's
+ * decisions on action cards have role `tool`, so the note still goes on
+ * the turn's prompt. With no
+ * note, the messages come back as they are.
+ */
+export function withPromptNote(
+  messages: ModelMessage[],
+  note: string | undefined,
+): ModelMessage[] {
+  if (note === undefined) return messages;
+  const index = messages.findLastIndex((message) => message.role === "user");
+  if (index === -1) return messages;
+  return messages.map((message, i) => {
+    if (i !== index || message.role !== "user") return message;
+    const content =
+      typeof message.content === "string"
+        ? [{ type: "text" as const, text: message.content }]
+        : message.content;
+    return {
+      ...message,
+      content: [...content, { type: "text" as const, text: note }],
+    };
+  });
+}
+
 export type ReplyTools = {
   /**
    * The native tools, a8's scheduled prompt tools and the connector tools,
@@ -101,6 +128,11 @@ export type ReplyTools = {
    * Undefined for a user with no connections.
    */
   connectorText: string | undefined;
+  /**
+   * The note on the connectors the prompt mentions, for withPromptNote.
+   * Undefined when it mentions none.
+   */
+  promptNote: string | undefined;
   /**
    * The most model calls this part of the reply can make, at least 1. The
    * cap counts steps across the whole reply. The Agent's count starts over
@@ -261,10 +293,10 @@ export function createReplyTools(
       autoApprovedCount < MAX_AUTO_APPROVED_ACTIONS,
     connectorText: connectorInstructions({
       connections,
-      mentioned,
       loading,
       searchTool: claude ? TOOL_SEARCH_KEY : FIND_TOOLS_KEY,
     }),
+    promptNote: mentionNote({ mentioned, connections }),
     maxSteps: Math.max(
       1,
       (connectorTools.groups.length > 0
