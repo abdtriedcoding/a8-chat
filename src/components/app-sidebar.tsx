@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   ArchiveIcon,
   CalendarClockIcon,
@@ -25,10 +24,14 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { api } from "../../convex/_generated/api";
 
 export function AppSidebar() {
-  const unreadRuns = useQuery(api.scheduledPrompts.unreadCount, {});
+  const { data: unreadRuns } = useQueryWithLocalCopy(
+    api.scheduledPrompts.unreadCount,
+    {},
+  );
   return (
     <SidebarFrame
       search={<ThreadSearchButton />}

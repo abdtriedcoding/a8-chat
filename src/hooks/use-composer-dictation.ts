@@ -1,4 +1,3 @@
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   useEffect,
   useEffectEvent,
@@ -11,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { useDictationShortcuts } from "@/components/keyboard-shortcuts";
 import { useDictation } from "@/hooks/use-dictation";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -50,7 +50,8 @@ export function useComposerDictation({
   setText: Dispatch<SetStateAction<string>>;
   getTextarea: () => HTMLTextAreaElement | null;
 }) {
-  const configured = useQuery(api.dictation.available) === true;
+  const configured =
+    useQueryWithLocalCopy(api.dictation.available, {}).data === true;
   const canRecord = useSyncExternalStore(
     subscribeToNothing,
     browserCanRecord,

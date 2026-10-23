@@ -71,6 +71,20 @@ export function ChatHeader({
   );
 }
 
+/**
+ * The thread's title as the page heading, sized like ThreadHeading, for a
+ * thread shown from the device's copy that can't be renamed yet.
+ */
+export function StaticThreadHeading({ title }: { title?: string }) {
+  return (
+    <h1 className="min-w-0 flex-1 text-sm font-medium">
+      <span className="block h-8 max-w-full truncate border border-transparent px-2 leading-[30px]">
+        {threadTitle({ title })}
+      </span>
+    </h1>
+  );
+}
+
 /** The thread's title as the page heading. Clicking it renames the thread. */
 export function ThreadHeading({
   threadId,

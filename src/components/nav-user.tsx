@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import {
   ChevronsUpDownIcon,
@@ -32,7 +31,9 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { authClient } from "@/lib/auth-client";
+import { clearLocalCopy } from "@/lib/local-copy";
 import { initials } from "@/lib/initials";
 import { api } from "../../convex/_generated/api";
 
@@ -48,8 +49,11 @@ type CurrentUser = NonNullable<
 >;
 
 export function NavUser() {
-  const user = useQuery(api.auth.getCurrentUser, {});
-  const billingEnabled = useQuery(api.billing.enabled);
+  const { data: user } = useQueryWithLocalCopy(api.auth.getCurrentUser, {});
+  const { data: billingEnabled } = useQueryWithLocalCopy(
+    api.billing.enabled,
+    {},
+  );
   const { isMobile } = useSidebar();
   const openShortcutsHelp = useOpenShortcutsHelp();
   const leaveTemporaryThread = useLeaveTemporaryThread();
@@ -65,6 +69,9 @@ export function NavUser() {
         setTimeout(resolve, TEMPORARY_THREAD_DELETE_WAIT_MS),
       ),
     ]);
+    // Cleared first, so the page never leaves with the copy still there. If
+    // sign-out fails, the next page load writes it again.
+    await clearLocalCopy();
     try {
       await authClient.signOut({
         fetchOptions: {

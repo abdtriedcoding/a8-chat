@@ -1,4 +1,3 @@
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   useId,
   useRef,
@@ -7,6 +6,7 @@ import {
   type SyntheticEvent,
 } from "react";
 import { flushSync } from "react-dom";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { isConnected } from "@/lib/connection-status";
 import { searchConnectors } from "@/lib/connector-search";
 import { api } from "../../convex/_generated/api";
@@ -39,8 +39,9 @@ export function mentionOptionId(menuId: string, connectorId: string): string {
  *
  * `blockedMentions` lists the mentioned connectors that aren't connected.
  * `canSend` is false while there are any, or while the user's connections
- * are still loading and the text mentions a connector. The composer doesn't
- * send until each is connected or its mention is removed.
+ * are still loading, or showing from the device's copy, and the text
+ * mentions a connector. The composer doesn't send until each is connected
+ * or its mention is removed.
  */
 export function useComposerMentions({
   text,
@@ -49,7 +50,10 @@ export function useComposerMentions({
   text: string;
   setText: (text: string) => void;
 }) {
-  const statuses = useQuery(api.connectors.list, {});
+  const { data: statuses, stale } = useQueryWithLocalCopy(
+    api.connectors.list,
+    {},
+  );
   const connectors = statuses && withStatus(statuses);
   const [mention, setMention] = useState<MentionQuery>();
   // The start of a mention Esc closed, so its menu stays closed while the
@@ -75,7 +79,7 @@ export function useComposerMentions({
   });
   const canSend =
     blockedMentions.length === 0 &&
-    (connectors !== undefined || mentioned.length === 0);
+    ((connectors !== undefined && !stale) || mentioned.length === 0);
 
   /**
    * Opens the menu when the caret is in an @ word, and closes it otherwise.

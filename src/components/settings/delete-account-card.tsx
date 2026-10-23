@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useHasPassword } from "@/hooks/use-has-password";
 import { authClient } from "@/lib/auth-client";
+import { clearLocalCopy } from "@/lib/local-copy";
 
 /**
  * Deletes the account after the user types their email. Email accounts also
@@ -78,6 +79,7 @@ export function DeleteAccountCard() {
       }
       // The server already ended the session. This clears the client's copy.
       await authClient.signOut().catch(() => {});
+      await clearLocalCopy();
       window.location.replace("/");
     } catch {
       setError("Couldn't delete your account. Please try again.");

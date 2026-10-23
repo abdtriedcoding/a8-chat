@@ -1,6 +1,5 @@
 "use client";
 
-import { usePaginatedQuery, useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import {
   ArchiveIcon,
@@ -48,6 +47,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useConfirm } from "@/hooks/use-confirm";
+import {
+  usePaginatedQueryWithLocalCopy,
+  useQueryWithLocalCopy,
+} from "@/hooks/use-query-with-local-copy";
 import { useRemoveThread } from "@/hooks/use-remove-thread";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
@@ -124,12 +127,23 @@ function ThreadRowsSkeleton() {
 }
 
 export function ThreadList() {
-  const { results, status, loadMore } = usePaginatedQuery(
+  // Until the first page loads, the device's copy of it shows, stale.
+  const {
+    results,
+    status,
+    loadMore,
+    stale: chatsStale,
+  } = usePaginatedQueryWithLocalCopy(
     api.threads.list,
     {},
     { initialNumItems: PAGE_SIZE },
   );
-  const pinned = useQuery(api.threads.listPinned, {});
+  const { data: pinned, stale: pinnedStale } = useQueryWithLocalCopy(
+    api.threads.listPinned,
+    {},
+  );
+  // A row from the copy opens its thread, but its menu waits for live data.
+  const stale = chatsStale || pinnedStale;
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   const renameThread = useRenameThread();
@@ -248,49 +262,56 @@ export function ThreadList() {
             )}
           </Link>
         </SidebarMenuButton>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuAction showOnHover>
-              <MoreHorizontalIcon />
-              <span className="sr-only">
-                More options for {threadTitle(thread)}
-              </span>
-            </SidebarMenuAction>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="start">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => setPinned(thread, !isPinned)}>
-                {isPinned ? <PinOffIcon /> : <PinIcon />}
-                {isPinned ? "Unpin" : "Pin"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setSharing(thread)}>
-                <Share2Icon />
-                Share
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setRenamingId(thread._id)}>
-                <PencilIcon />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void archiveThread(thread)}>
-                <ArchiveIcon />
-                Archive
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => void deleteThread(thread)}
-              >
-                <Trash2Icon />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {!stale && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuAction showOnHover>
+                <MoreHorizontalIcon />
+                <span className="sr-only">
+                  More options for {threadTitle(thread)}
+                </span>
+              </SidebarMenuAction>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => setPinned(thread, !isPinned)}>
+                  {isPinned ? <PinOffIcon /> : <PinIcon />}
+                  {isPinned ? "Unpin" : "Pin"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setSharing(thread)}>
+                  <Share2Icon />
+                  Share
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setRenamingId(thread._id)}>
+                  <PencilIcon />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void archiveThread(thread)}>
+                  <ArchiveIcon />
+                  Archive
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => void deleteThread(thread)}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </SidebarMenuItem>
     );
   }
 
-  const loading = status === "LoadingFirstPage" || pinned === undefined;
-  const chatsEmpty = results.length === 0 && status === "Exhausted";
+  // Without a copy, Chats waits for the pins too, so Pinned doesn't push it
+  // down when it loads.
+  const loading =
+    !chatsStale && (status === "LoadingFirstPage" || pinned === undefined);
+  // A copy is saved empty only when the list was.
+  const chatsEmpty =
+    results.length === 0 && (status === "Exhausted" || chatsStale);
   const hasPins = pinned !== undefined && pinned.length > 0;
 
   return (
@@ -318,7 +339,7 @@ export function ThreadList() {
           ) : (
             <SidebarMenu>
               {results.map((thread) => renderThread(thread, false))}
-              {status !== "Exhausted" && (
+              {!stale && status !== "Exhausted" && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     className="text-muted-foreground"
