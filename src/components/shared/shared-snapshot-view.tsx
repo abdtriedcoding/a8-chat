@@ -118,7 +118,8 @@ function LoadMoreTrigger({ onVisible }: { onVisible: () => void }) {
   return <div ref={ref} aria-hidden="true" className="h-px" />;
 }
 
-function LinkUnavailable() {
+/** A shared link that was unshared, or whose chat was deleted. */
+export function LinkUnavailable() {
   return (
     <Empty>
       <EmptyHeader>
