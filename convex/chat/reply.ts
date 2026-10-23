@@ -26,6 +26,7 @@ import {
   type RunEnding,
 } from "../lib/scheduledPrompts";
 import { findTemporaryThread } from "../lib/temporaryThreads";
+import { releaseReply as releaseReplyHold } from "../lib/creditHolds";
 import { resolveReplyModel } from "../lib/threadModels";
 import { recordEstimatedUsage } from "../lib/usage";
 import {
@@ -279,6 +280,13 @@ export const streamReply = internalAction({
       throw error;
     } finally {
       await replyTools?.close();
+      // Its model calls still hold credits until their costs land. A hold
+      // left by a failed release stops counting after a while.
+      await ctx
+        .runMutation(internal.chat.reply.releaseReply, { promptMessageId })
+        .catch((releaseError: unknown) =>
+          console.error("Couldn't release the credit hold", releaseError),
+        );
       // Before the next queued prompt starts, so the reply's turn is still
       // the thread's last.
       if (ending) {
@@ -446,6 +454,20 @@ export const threadExists = internalQuery({
       threadId,
     });
     return thread !== null;
+  },
+});
+
+/**
+ * Ends the reply's credit hold (lib/creditHolds.ts). streamReply calls it
+ * once the reply ends, however it ends. Its model calls hold credits until
+ * their costs land.
+ */
+export const releaseReply = internalMutation({
+  args: { promptMessageId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { promptMessageId }) => {
+    await releaseReplyHold(ctx, promptMessageId);
+    return null;
   },
 });
 

@@ -84,6 +84,13 @@ export const polar = new Polar<DataModel>(components.polar, {
 /** What each plan grants a month, in credits. */
 export const MONTHLY_CREDITS = { free: 100, pro: 800 } as const;
 
+/**
+ * How much of the daily spend ceiling one user's usage can take on each
+ * plan. checkSpend refuses the user's Sends past it, so a few accounts
+ * can't lock everyone out until 00:00 UTC.
+ */
+export const DAILY_SPEND_SHARES = { free: 0.1, pro: 0.25 } as const;
+
 // Polar keeps a subscription past_due while it retries a failed payment, and
 // ends it if the retries fail. The user keeps Pro until then.
 const PRO_STATUSES = new Set(["active", "trialing", "past_due"]);

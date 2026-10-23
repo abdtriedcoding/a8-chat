@@ -12,6 +12,7 @@ import { getPlanTerms } from "../lib/billing";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess } from "../lib/guards";
 import { addPendingActions, deletePendingActions } from "../lib/pendingActions";
+import { holdReply } from "../lib/creditHolds";
 import { settleReplyModel } from "../lib/threadModels";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { limitSend, vSendLimited } from "../rateLimits";
@@ -118,6 +119,11 @@ export const decideAction = mutation({
         .length,
       // The auto-approve cap counts across the whole reply.
       autoApprovedCount: countAutoApproved(turn),
+    });
+    await holdReply(ctx, {
+      userId: user._id,
+      threadId,
+      promptMessageId: messageId,
     });
     return null;
   },

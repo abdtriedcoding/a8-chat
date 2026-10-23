@@ -5,14 +5,19 @@ import { v, type Infer } from "convex/values";
 import { BYTES_PER_MB, MAX_ATTACHMENT_SIZE_IN_BYTES } from "./lib/attachments";
 import {
   billingEnabled,
+  DAILY_SPEND_SHARES,
   dailySpendCeilingUsd,
   planAt,
   type PlanTerms,
 } from "./lib/billing";
 import { creditPeriodAt, creditsLeft } from "./lib/creditPeriod";
 import { latestCreditRow } from "./lib/credits";
-import { getDailySpend } from "./lib/dailySpend";
+import { getDailySpend, getUserDailySpend } from "./lib/dailySpend";
 import { ERROR_CODES } from "./lib/errors";
+import {
+  countHolds,
+  REPLY_HOLD_CREDITS,
+} from "./lib/creditHolds";
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 
@@ -212,13 +217,19 @@ export async function limitSend(
 
 /**
  * Why the hosted a8 would refuse the user's Send for spend, or null if it
- * can go ahead: the user has no credits left, or a8's spend today reached
- * the daily ceiling. Null when billing is off.
+ * can go ahead: the user has no credits left, credit holds take what's
+ * left, the user's spend today reached their share of the daily ceiling
+ * (DAILY_SPEND_SHARES), or a8's spend today reached the ceiling. Null when
+ * billing is off.
  *
- * It reserves nothing. A reply that starts always finishes, even if its
- * cost takes the balance below zero. limitSend calls this, and so does a
- * queued prompt when it starts, since queueing it counted it already.
- * `plan` is the user's plan terms (getPlanTerms).
+ * Each of the user's threads with a reply running or a cost on its way
+ * holds REPLY_HOLD_CREDITS of the balance (lib/creditHolds.ts), since a
+ * cost lands seconds after each model call. The caller holds the new reply
+ * once it schedules it (holdReply). A reply that starts always finishes,
+ * even if its cost takes the balance below zero.
+ * limitSend calls this, and so does a queued prompt when it starts, since
+ * queueing it counted it already. `plan` is the user's plan terms
+ * (getPlanTerms).
  */
 export async function checkSpend(
   ctx: MutationCtx,
@@ -232,13 +243,28 @@ export async function checkSpend(
     planAt(plan, now),
     now,
   );
-  if (creditsLeft(period) <= 0) {
+  const left = creditsLeft(period);
+  if (left <= 0) {
     return {
       code: ERROR_CODES.OUT_OF_CREDITS,
       message:
         plan.name === "free"
           ? "You're out of credits. Upgrade to Pro, or wait for them to reset."
           : "You're out of credits until they reset.",
+    };
+  }
+  // The balance still shows credits, so this says to wait, not to upgrade.
+  const held = (await countHolds(ctx, userId, now)) * REPLY_HOLD_CREDITS;
+  if (left - held <= 0) {
+    return rateLimited(
+      "Your other replies are still using credits. Try again once they finish.",
+    );
+  }
+  const share = dailySpendCeilingUsd * DAILY_SPEND_SHARES[plan.name];
+  if ((await getUserDailySpend(ctx, userId, now)) >= share) {
+    return {
+      code: ERROR_CODES.DAILY_SPEND_CEILING,
+      message: "You hit today's usage limit. It resets at 00:00 UTC.",
     };
   }
   if ((await getDailySpend(ctx, now)) >= dailySpendCeilingUsd) {

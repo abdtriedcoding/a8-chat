@@ -602,6 +602,7 @@ async function sendRun(
     userSend: false,
   });
   const promptMessageId = await sendPrompt(ctx, {
+    userId: row.userId,
     threadId,
     message: buildPromptMessage(row.prompt, []),
     attachmentFileIds: [],
