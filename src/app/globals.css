@@ -180,3 +180,24 @@
     cursor: pointer;
   }
 }
+
+/*
+ * Placeholders in the app's skeleton on a full page load (AppLayoutSkeleton)
+ * show only after a moment. The device's copy of the user's data
+ * (lib/local-copy) usually fills them in first, so a quick load never
+ * flashes them. The layout around them shows at once.
+ */
+@keyframes skeleton-reveal {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+
+[data-delay-skeletons] [data-slot="skeleton"] {
+  animation:
+    var(--animate-pulse),
+    skeleton-reveal 0s linear 500ms both;
+}

@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import { toast } from "sonner";
 import {
   Card,
@@ -16,6 +15,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { useIsModelLocked } from "@/hooks/use-is-model-locked";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { useSetDefaultModel } from "@/hooks/use-set-default-model";
 import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
@@ -27,7 +27,10 @@ import { modelsByLab } from "../../../convex/lib/models";
  * models can't be picked.
  */
 export function DefaultModelCard() {
-  const defaultModelId = useQuery(api.models.defaultModel);
+  const { data: defaultModelId } = useQueryWithLocalCopy(
+    api.models.defaultModel,
+    {},
+  );
   const isLocked = useIsModelLocked();
   const setDefaultModel = useSetDefaultModel();
 

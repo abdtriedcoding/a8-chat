@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { Suspense, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { AppLayoutSkeleton } from "@/components/app-layout-skeleton";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ApprovalAlerts } from "@/components/approval-alerts";
@@ -39,20 +39,21 @@ export default async function ChatLayout({
     // left it in the skeleton.
     <SidebarProvider defaultOpen={defaultOpen} className="h-svh">
       <ConvexPreconnect />
-      <Suspense fallback={<AppLayoutSkeleton />}>
-        <ConvexClientProvider tokenPromise={tokenPromise}>
-          <SessionGuard />
-          <ApprovalAlerts />
-          <TemporaryThreadProvider>
-            <ThreadSearchProvider>
-              <KeyboardShortcutsProvider>
-                <AppSidebar />
-                <SidebarInset className="min-w-0">{children}</SidebarInset>
-              </KeyboardShortcutsProvider>
-            </ThreadSearchProvider>
-          </TemporaryThreadProvider>
-        </ConvexClientProvider>
-      </Suspense>
+      <ConvexClientProvider
+        tokenPromise={tokenPromise}
+        fallback={<AppLayoutSkeleton />}
+      >
+        <SessionGuard />
+        <ApprovalAlerts />
+        <TemporaryThreadProvider>
+          <ThreadSearchProvider>
+            <KeyboardShortcutsProvider>
+              <AppSidebar />
+              <SidebarInset className="min-w-0">{children}</SidebarInset>
+            </KeyboardShortcutsProvider>
+          </ThreadSearchProvider>
+        </TemporaryThreadProvider>
+      </ConvexClientProvider>
     </SidebarProvider>
   );
 }

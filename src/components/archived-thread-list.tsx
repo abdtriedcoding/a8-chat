@@ -1,6 +1,5 @@
 "use client";
 
-import { usePaginatedQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
 import { ArchiveIcon, ArchiveRestoreIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDeleteThread } from "@/hooks/use-delete-thread";
+import { usePaginatedQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
@@ -27,9 +27,12 @@ const PAGE_SIZE = 30;
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
-/** The user's archived threads, each with Unarchive and Delete. */
+/**
+ * The user's archived threads, each with Unarchive and Delete. Until they
+ * load, the device's copy shows with both turned off.
+ */
 export function ArchivedThreadList() {
-  const { results, status, loadMore } = usePaginatedQuery(
+  const { results, status, loadMore, stale } = usePaginatedQueryWithLocalCopy(
     api.threads.list,
     { archived: true },
     { initialNumItems: PAGE_SIZE },
@@ -43,7 +46,7 @@ export function ArchivedThreadList() {
     );
   }
 
-  if (status === "LoadingFirstPage") {
+  if (status === "LoadingFirstPage" && !stale) {
     return (
       <div aria-hidden="true" className="flex flex-col gap-3">
         <Skeleton className="h-12 w-full" />
@@ -53,7 +56,7 @@ export function ArchivedThreadList() {
     );
   }
 
-  if (results.length === 0 && status === "Exhausted") {
+  if (results.length === 0 && (status === "Exhausted" || stale)) {
     return (
       <Empty className="border">
         <EmptyHeader>
@@ -92,6 +95,7 @@ export function ArchivedThreadList() {
               <Button
                 variant="outline"
                 size="sm"
+                disabled={stale}
                 onClick={() => unarchiveThread(thread)}
               >
                 <ArchiveRestoreIcon data-icon="inline-start" />
@@ -102,6 +106,7 @@ export function ArchivedThreadList() {
                 size="icon-sm"
                 className="text-destructive hover:text-destructive"
                 aria-label={`Delete ${threadTitle(thread)}`}
+                disabled={stale}
                 onClick={() => void deleteThread(thread)}
               >
                 <Trash2Icon />
@@ -110,7 +115,7 @@ export function ArchivedThreadList() {
           </li>
         ))}
       </ul>
-      {status !== "Exhausted" && (
+      {!stale && status !== "Exhausted" && (
         <Button
           variant="ghost"
           className="self-center"

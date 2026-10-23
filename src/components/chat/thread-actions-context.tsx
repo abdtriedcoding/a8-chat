@@ -25,7 +25,8 @@ type ThreadActions = {
 
 /**
  * For messages that can't be edited, regenerated or approved: a shared
- * snapshot's, and a new thread's first prompt before the server saves it.
+ * snapshot's, a new thread's first prompt before the server saves it, and a
+ * thread shown from the device's copy.
  */
 export const READ_ONLY_ACTIONS: ThreadActions = {
   editingLastPrompt: false,

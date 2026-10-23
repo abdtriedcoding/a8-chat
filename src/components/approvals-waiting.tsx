@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -16,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { api } from "../../convex/_generated/api";
 
 /** The color of everything that says a chat waits on the user. */
@@ -45,7 +45,10 @@ export function NeedsApprovalMarker() {
  * one waits.
  */
 export function ApprovalsWaiting() {
-  const waiting = useQuery(api.pendingActions.listMine, {});
+  const { data: waiting } = useQueryWithLocalCopy(
+    api.pendingActions.listMine,
+    {},
+  );
   const { threadId: activeId } = useParams<{ threadId?: string }>();
   const closeOnMobile = useCloseSidebarOnMobile();
   if (!waiting || waiting.length === 0) return null;

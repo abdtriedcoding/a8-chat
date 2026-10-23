@@ -2,10 +2,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AuthShowcase } from "@/components/auth/auth-showcase";
 import { Logo } from "@/components/logo";
+import { ClearLocalCopy } from "@/components/session-guard";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <main className="grid flex-1 lg:grid-cols-2">
+      <ClearLocalCopy />
       <div className="flex flex-col justify-center px-6 py-12 sm:px-10">
         <div className="mx-auto flex w-full max-w-md flex-col gap-10">
           <Link

@@ -23,25 +23,27 @@ type ButtonElement = ReactElement<{
  * back in the composer (useConnectConnector).
  *
  * `render` is the button to show, with its variant and size. `logo` puts
- * the connector's logo before the label. A spinner takes the logo's place
+ * the connector's logo before the label. `disabled` turns it off. A spinner takes the logo's place
  * while the browser leaves for the vendor.
  */
 export function ReconnectButton({
   connector,
   draft,
+  disabled = false,
   logo = false,
   render = <Button variant="outline" size="sm" />,
   children = `Reconnect ${connector.name}`,
 }: {
   connector: ConnectorView;
   draft?: string;
+  disabled?: boolean;
   logo?: boolean;
   render?: ButtonElement;
   children?: ReactNode;
 }) {
   const { connecting, startConnect } = useConnectConnector(connector.id);
   return cloneElement(render, {
-    disabled: connecting,
+    disabled: disabled || connecting,
     onClick: () => void startConnect(draft),
     children: (
       <>

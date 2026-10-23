@@ -1,7 +1,6 @@
 "use client";
 
 import { useAction } from "convex/react";
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,6 +11,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { isConnected } from "@/lib/connection-status";
 import { CONNECT_TOAST_ID, showConnectResult } from "@/lib/connect-result";
 import { readConnectReturn } from "@/lib/connect-return";
@@ -50,7 +50,11 @@ function takeCallbackFromHash(): Callback | null {
 }
 
 export function ConnectorList() {
-  const connections = useQuery(api.connectors.list, {});
+  // Until they load, the device's copy shows, with the toggles turned off.
+  const { data: connections, stale } = useQueryWithLocalCopy(
+    api.connectors.list,
+    {},
+  );
   useFinishSignIn();
   const [search, setSearch] = useState("");
 
@@ -111,6 +115,7 @@ export function ConnectorList() {
                         key={connection?.connectedAt}
                         connector={connector}
                         connection={connection}
+                        stale={stale}
                       />
                     </li>
                   ))}

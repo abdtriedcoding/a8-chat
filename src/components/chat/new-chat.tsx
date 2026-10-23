@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import { GhostIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import type { UploadedAttachment } from "@/hooks/use-composer-attachments";
 import { useInBrowser } from "@/hooks/use-in-browser";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { useThreadQueries } from "@/hooks/use-thread-queries";
 import { throwIfRefused } from "@/lib/errors";
 import { promptMessage } from "@/lib/optimistic-prompt";
@@ -56,10 +56,14 @@ export function NewChat({ prompt }: { prompt?: string }) {
   const openTemporaryThread = useOpenTemporaryThread();
   const busy = starting || navigating;
   // The chat starts on the user's default model, unless they pick another.
-  const defaultModelId = useQuery(api.models.defaultModel, {});
+  const { data: defaultModelId, stale: defaultModelStale } =
+    useQueryWithLocalCopy(api.models.defaultModel, {});
   const [pickedModelId, setPickedModelId] = useState<string>();
   const modelId = pickedModelId ?? defaultModelId ?? undefined;
-  const user = useQuery(api.auth.getCurrentUser, {});
+  // The device's copy of the default model may be out of date, so a Send
+  // with it waits for the live one. A model the user picked doesn't.
+  const modelStale = defaultModelStale && pickedModelId === undefined;
+  const { data: user } = useQueryWithLocalCopy(api.auth.getCurrentUser, {});
   const firstName = user?.name.trim().split(/\s+/)[0];
   // The server doesn't know the local hour, and the name loads after the
   // page, so the greeting stays hidden until both are in.
@@ -153,6 +157,7 @@ export function NewChat({ prompt }: { prompt?: string }) {
         textareaRef={caretToEnd}
         onSend={send}
         disabled={busy}
+        sendDisabled={modelStale}
         autoApprove={autoApprove}
         onAutoApproveChange={setAutoApprove}
         modelId={modelId}

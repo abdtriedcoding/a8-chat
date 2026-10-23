@@ -40,9 +40,12 @@ import { ReconnectButton } from "./reconnect-button";
 export function ConnectorCard({
   connector,
   connection,
+  stale = false,
 }: {
   connector: ConnectorView;
   connection: ConnectorStatus | undefined;
+  /** Whether `connection` is the device's copy, which turns the toggle off. */
+  stale?: boolean;
 }) {
   const { id, name, handle, description, examplePrompt, cardNote, setupGuide } =
     connector;
@@ -98,7 +101,9 @@ export function ConnectorCard({
         ) : (
           <Switch
             checked={connected || connecting}
-            disabled={connection === undefined || connecting || disconnecting}
+            disabled={
+              connection === undefined || stale || connecting || disconnecting
+            }
             onCheckedChange={(checked) => {
               if (checked) void startConnect();
               else void startDisconnect();

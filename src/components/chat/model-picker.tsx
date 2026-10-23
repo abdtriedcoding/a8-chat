@@ -1,7 +1,6 @@
 "use client";
 
 import { cn } from "cn";
-import { useQuery } from "convex-helpers/react/cache/hooks";
 import {
   BrainIcon,
   ChevronDownIcon,
@@ -46,6 +45,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsModelLocked } from "@/hooks/use-is-model-locked";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { useSetDefaultModel } from "@/hooks/use-set-default-model";
 import { errorMessage } from "@/lib/errors";
 import { BILLING_PATH } from "@/lib/plans";
@@ -141,8 +141,10 @@ export function ModelPicker({
   attachmentKinds?: AttachmentKind[];
   disabled?: boolean;
 }) {
-  const defaultModelId = useQuery(api.models.defaultModel, {});
-  const billingEnabled = useQuery(api.billing.enabled) === true;
+  const { data: defaultModelId, stale: defaultModelStale } =
+    useQueryWithLocalCopy(api.models.defaultModel, {});
+  const billingEnabled =
+    useQueryWithLocalCopy(api.billing.enabled, {}).data === true;
   const isLocked = useIsModelLocked();
   const setDefaultModel = useSetDefaultModel();
   const model = modelOrDefault(modelId);
@@ -332,6 +334,8 @@ export function ModelPicker({
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start font-normal"
+                // The default from the device's copy may be out of date.
+                disabled={defaultModelStale}
                 onClick={() => void makeDefault()}
               >
                 <StarIcon />

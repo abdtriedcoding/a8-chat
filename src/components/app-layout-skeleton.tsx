@@ -25,17 +25,21 @@ const PAGE_HEADINGS: Record<string, string> = {
 /**
  * The chat layout while it waits for the Convex token: the sidebar, and the
  * current page's header and message box in outline, where the app puts them.
+ * The placeholders show only after a moment, so a load where the app
+ * mounts quickly with the device's copy (lib/local-copy) never flashes them.
  * It renders inside the layout's SidebarProvider, so it opens or closes the
  * sidebar the same as the app.
  */
 export function AppLayoutSkeleton() {
   return (
-    <>
+    // Its placeholders wait a moment before they show (globals.css). The
+    // wrapper takes no box, so the sidebar and inset stay siblings.
+    <div data-delay-skeletons className="contents">
       <AppSidebarSkeleton />
       <SidebarInset className="min-w-0">
         <PageSkeleton pathname={usePathname()} />
       </SidebarInset>
-    </>
+    </div>
   );
 }
 
