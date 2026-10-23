@@ -112,7 +112,6 @@ export function ConnectorList() {
                   {cards.map(({ connector, connection }) => (
                     <li key={connector.id}>
                       <ConnectorCard
-                        key={connection?.connectedAt}
                         connector={connector}
                         connection={connection}
                         stale={stale}
