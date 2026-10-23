@@ -77,6 +77,7 @@ function SidebarFrame({
       <SidebarHeader className="gap-3">
         <Link
           href="/chat"
+          prefetch
           aria-label="a8, new chat"
           onClick={closeOnMobile}
           className="self-start rounded-md px-2 pt-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -85,7 +86,7 @@ function SidebarFrame({
         </Link>
         <div className="flex flex-col gap-1">
           <Button variant="outline" className="justify-start" asChild>
-            <Link href="/chat" onClick={closeOnMobile}>
+            <Link href="/chat" prefetch onClick={closeOnMobile}>
               <SquarePenIcon data-icon="inline-start" />
               New chat
             </Link>
@@ -98,6 +99,7 @@ function SidebarFrame({
           >
             <Link
               href="/connectors"
+              prefetch
               aria-current={pathname === "/connectors" ? "page" : undefined}
               onClick={closeOnMobile}
             >
@@ -112,6 +114,7 @@ function SidebarFrame({
           >
             <Link
               href="/scheduled"
+              prefetch
               aria-current={pathname === "/scheduled" ? "page" : undefined}
               onClick={closeOnMobile}
             >
@@ -134,6 +137,7 @@ function SidebarFrame({
           >
             <Link
               href="/archived"
+              prefetch
               aria-current={pathname === "/archived" ? "page" : undefined}
               onClick={closeOnMobile}
             >

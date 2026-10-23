@@ -129,14 +129,14 @@ export function NavUser() {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
-                <Link href="/settings/account">
+                <Link href="/settings/account" prefetch>
                   <UserRoundCogIcon />
                   Account settings
                 </Link>
               </DropdownMenuItem>
               {billingEnabled && (
                 <DropdownMenuItem asChild>
-                  <Link href="/settings/billing">
+                  <Link href="/settings/billing" prefetch>
                     <CreditCardIcon />
                     Billing
                   </Link>

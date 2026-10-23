@@ -11,6 +11,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { Skeleton } from "@/components/ui/skeleton";
 import { isConnected } from "@/lib/connection-status";
 import { CONNECT_TOAST_ID, showConnectResult } from "@/lib/connect-result";
 import { readConnectReturn } from "@/lib/connect-return";
@@ -57,18 +58,16 @@ export function ConnectorList() {
     connector,
     connection: connections?.find(({ id }) => id === connector.id),
   }));
-  const sections: { heading?: string; cards: typeof cards }[] = connections
-    ? [
-        {
-          heading: "Connected",
-          cards: cards.filter(({ connection }) => isConnected(connection)),
-        },
-        {
-          heading: "Available",
-          cards: cards.filter(({ connection }) => !isConnected(connection)),
-        },
-      ]
-    : [{ cards }];
+  const sections = [
+    {
+      heading: "Connected",
+      cards: cards.filter(({ connection }) => isConnected(connection)),
+    },
+    {
+      heading: "Available",
+      cards: cards.filter(({ connection }) => !isConnected(connection)),
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -89,29 +88,36 @@ export function ConnectorList() {
           No connectors match &ldquo;{search.trim()}&rdquo;.
         </p>
       )}
-      {sections.map(
-        ({ heading, cards }) =>
-          cards.length > 0 && (
-            <section key={heading ?? "all"} className="flex flex-col gap-3">
-              {heading && (
+      {/* Until the connections load, a card doesn't know its section. */}
+      {connections === undefined && cards.length > 0 && (
+        <div aria-hidden="true" className="flex flex-col gap-4">
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+        </div>
+      )}
+      {connections !== undefined &&
+        sections.map(
+          ({ heading, cards }) =>
+            cards.length > 0 && (
+              <section key={heading} className="flex flex-col gap-3">
                 <h2 className="font-heading text-sm font-medium text-muted-foreground">
                   {heading}
                 </h2>
-              )}
-              <ul className="flex flex-col gap-4">
-                {cards.map(({ connector, connection }) => (
-                  <li key={connector.id}>
-                    <ConnectorCard
-                      key={connection?.connectedAt}
-                      connector={connector}
-                      connection={connection}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ),
-      )}
+                <ul className="flex flex-col gap-4">
+                  {cards.map(({ connector, connection }) => (
+                    <li key={connector.id}>
+                      <ConnectorCard
+                        key={connection?.connectedAt}
+                        connector={connector}
+                        connection={connection}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ),
+        )}
     </div>
   );
 }
