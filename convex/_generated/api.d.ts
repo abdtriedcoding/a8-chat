@@ -39,6 +39,7 @@ import type * as lib_connectorToolList from "../lib/connectorToolList.js";
 import type * as lib_connectorTools from "../lib/connectorTools.js";
 import type * as lib_connectorView from "../lib/connectorView.js";
 import type * as lib_connectors from "../lib/connectors.js";
+import type * as lib_creditHolds from "../lib/creditHolds.js";
 import type * as lib_creditPeriod from "../lib/creditPeriod.js";
 import type * as lib_credits from "../lib/credits.js";
 import type * as lib_dailySpend from "../lib/dailySpend.js";
@@ -121,6 +122,7 @@ declare const fullApi: ApiFromModules<{
   "lib/connectorTools": typeof lib_connectorTools;
   "lib/connectorView": typeof lib_connectorView;
   "lib/connectors": typeof lib_connectors;
+  "lib/creditHolds": typeof lib_creditHolds;
   "lib/creditPeriod": typeof lib_creditPeriod;
   "lib/credits": typeof lib_credits;
   "lib/dailySpend": typeof lib_dailySpend;

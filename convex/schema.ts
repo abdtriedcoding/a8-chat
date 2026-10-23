@@ -429,6 +429,32 @@ export default defineSchema({
     shard: v.number(),
     usd: v.number(),
   }).index("by_day_and_shard", ["day", "shard"]),
+  // What one user's usage cost a8 today, for the user's share of the daily
+  // dollar ceiling (lib/dailySpend.ts). One row per user. The first usage
+  // event of a new UTC day starts it over. Deleting the account deletes it.
+  userDailySpend: defineTable({
+    userId: v.string(),
+    // "YYYY-MM-DD", in UTC.
+    day: v.string(),
+    usd: v.number(),
+  }).index("by_userId", ["userId"]),
+  // Credit holds (lib/creditHolds.ts), only when billing is on: one row per
+  // reply still running, and one per model call whose cost isn't recorded
+  // yet. Scheduling a reply adds its row, and its runner deletes it when it
+  // ends. A cost lookup adds its row, and recording the cost deletes it.
+  // Deleting the account deletes the user's rows.
+  creditHolds: defineTable({
+    userId: v.string(),
+    threadId: v.string(),
+    // A reply's: the one its runner got, the prompt or the decisions on
+    // action cards for a continuing reply.
+    promptMessageId: v.optional(v.string()),
+    // A model call's: AI Gateway's id for it.
+    generationId: v.optional(v.string()),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_promptMessageId", ["promptMessageId"])
+    .index("by_generationId", ["generationId"]),
   // OAuth client registrations: the client a8 registered with a connector's
   // authorization server (convex/signIns.ts). One row per connector per
   // deployment, shared by every user. Notion orphans earlier grants when a

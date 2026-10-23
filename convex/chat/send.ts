@@ -42,6 +42,7 @@ import {
   setThreadModelRow,
   vModelLocked,
 } from "../lib/threadModels";
+import { holdReply } from "../lib/creditHolds";
 import { resolveTimeZone, vTimeZone } from "../lib/timeZone";
 import { checkSpend, limitSend, vSendLimited } from "../rateLimits";
 import { setThreadStatus } from "../threads";
@@ -181,6 +182,7 @@ export const startThread = mutation({
     }
     await setThreadModelRow(ctx, { threadId, modelId: model.id });
     await sendPrompt(ctx, {
+      userId: user._id,
       threadId,
       message,
       attachmentFileIds: attachments.fileIds,
@@ -270,6 +272,7 @@ export const sendMessage = mutation({
     // current.
     await closeUnrunActions(ctx, threadId, lastTurn);
     await sendPrompt(ctx, {
+      userId: user._id,
       threadId,
       message,
       attachmentFileIds: attachments.fileIds,
@@ -490,6 +493,7 @@ async function redoLastTurn(
       ? prompt.message
       : replacePromptText(prompt.message, newText);
   const newPromptId = await sendPrompt(ctx, {
+    userId,
     threadId,
     message: newPrompt,
     attachmentFileIds: prompt.fileIds ?? [],
@@ -582,6 +586,7 @@ async function startNextQueuedPrompt(
   // which Anthropic needs a result for.
   await closeUnrunActions(ctx, threadId, turn);
   const promptMessageId = await sendPrompt(ctx, {
+    userId: next.userId,
     threadId,
     message: buildPromptMessage(next.prompt, attachments.parts),
     attachmentFileIds: attachments.fileIds,
@@ -624,8 +629,8 @@ export async function isThreadBusy(
 }
 
 /**
- * Saves a prompt, schedules the reply to it (streamReply) and returns the
- * prompt's message id. startThread, sendMessage, startNextQueuedPrompt,
+ * Saves a prompt, schedules the reply to it (streamReply), holds credits
+ * for the reply (holdReply) and returns the prompt's message id. startThread, sendMessage, startNextQueuedPrompt,
  * redoLastTurn and a scheduled run (convex/scheduledPrompts.ts) all send
  * through here. It leaves the last turn's actions as they are.
  * sendMessage, startNextQueuedPrompt and a scheduled run close them first
@@ -637,11 +642,13 @@ export async function isThreadBusy(
 export async function sendPrompt(
   ctx: MutationCtx,
   {
+    userId,
     threadId,
     message,
     attachmentFileIds,
     timeZone,
   }: {
+    userId: string;
     threadId: string;
     message: Message | ModelMessage;
     attachmentFileIds: string[];
@@ -663,5 +670,6 @@ export async function sendPrompt(
     order: savedPrompt.order,
     timeZone: resolveTimeZone(timeZone),
   });
+  await holdReply(ctx, { userId, threadId, promptMessageId: messageId });
   return messageId;
 }

@@ -178,11 +178,11 @@ The model a new thread starts on. The user sets it. If the user's plan doesn't i
 _Avoid_: preferred model, global model
 
 **Credit**:
-A unit of hosted usage worth one US cent of model cost. A reply on a premium model uses more credits than the same reply on a cheap one, and a web search costs one credit. Thread titles cost nothing. a8 checks the balance at each send: a reply that starts always finishes, even if it takes the balance below zero, and then sends wait until the plan renews. A scheduled run with no credits counts as a failed run. Credits reset every month, and leftovers expire.
+A unit of hosted usage worth one US cent of model cost. A reply on a premium model uses more credits than the same reply on a cheap one, and a web search costs one credit. Thread titles cost nothing. a8 checks the balance at each send: a reply that starts always finishes, even if it takes the balance below zero, and then sends wait until the plan renews. A reply's cost lands seconds after it, so each chat with a reply running or a cost on its way holds 5 credits of the balance until the cost lands, and a send that the holds leave no credits for waits. A scheduled run with no credits counts as a failed run. Credits reset every month, and leftovers expire.
 _Avoid_: token (for credits), point, coin
 
 **Daily spend ceiling**:
-The most the hosted a8 spends on models across all users in a UTC day, set in dollars by the operator. Once the day's spend reaches it, a8 refuses every send until 00:00 UTC, whatever the user's credits. Thread titles count toward it.
+The most the hosted a8 spends on models across all users in a UTC day, set in dollars by the operator. Once the day's spend reaches it, a8 refuses every send until 00:00 UTC, whatever the user's credits. Thread titles count toward it. One user's spend can take at most a share of it, 10% on Free and 25% on Pro, and past that a8 refuses that user's sends until 00:00 UTC.
 _Avoid_: daily cap, daily limit (those are self-hosted send caps)
 
 **Plan**:
