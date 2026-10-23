@@ -50,8 +50,12 @@ const target = ["--deployment", `dev/${name}`]; // never fall back to main's dep
 // Everything except SITE_URL comes from the project's dev env defaults. Set them
 // once with `bunx convex env default set --type dev NAME value`. Fail early
 // instead of leaving a worktree with a half-configured deployment.
+// ANTHROPIC_BYOK_API_KEY is optional for the app, but without it a worktree
+// spends gateway credits on Claude. TEMPORARY: drop it from the list once
+// spec #334 is done, with the rest of the BYOK key.
 const defaults = convex("env", "default", "list", "--type", "dev", "--names-only").split(/\r?\n/).map((l) => l.trim());
-const missing = ["AI_GATEWAY_API_KEY", "BETTER_AUTH_SECRET", "CONNECTION_ENCRYPTION_KEY"].filter((k) => !defaults.includes(k));
+const required = ["AI_GATEWAY_API_KEY", "ANTHROPIC_BYOK_API_KEY", "BETTER_AUTH_SECRET", "CONNECTION_ENCRYPTION_KEY"];
+const missing = required.filter((k) => !defaults.includes(k));
 if (missing.length) throw new Error(`project dev env defaults are missing ${missing.join(", ")}`);
 convex("env", "set", ...target, "SITE_URL", siteUrl);
 

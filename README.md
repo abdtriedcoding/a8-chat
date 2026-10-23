@@ -117,7 +117,7 @@ Only the hosted a8 sets these up. In the Polar organization (use [sandbox.polar.
 | `MCP_TOKEN` | `bun run probe` | An access token for the vendor's MCP server, so the probe can list its tools. |
 | `E2E_EMAIL`, `E2E_PASSWORD_HASH` | `scripts/worktree-setup.ts` | A test login that the setup script creates in each git worktree's dev deployment, so browser checks can sign in. Optional. |
 
-`scripts/worktree-setup.ts` gives each linked git worktree its own dev deployment, port and `.env.local`. It copies `.env.local` from the main checkout, and it needs `AI_GATEWAY_API_KEY`, `BETTER_AUTH_SECRET` and `CONNECTION_ENCRYPTION_KEY` set as the project's dev env defaults with `bunx convex env default set --type dev NAME value`. It sets `JWKS` on the new deployment itself.
+`scripts/worktree-setup.ts` gives each linked git worktree its own dev deployment, port and `.env.local`. It copies `.env.local` from the main checkout, and it needs `AI_GATEWAY_API_KEY`, `ANTHROPIC_BYOK_API_KEY`, `BETTER_AUTH_SECRET` and `CONNECTION_ENCRYPTION_KEY` set as the project's dev env defaults with `bunx convex env default set --type dev NAME value`. It sets `JWKS` on the new deployment itself.
 
 ## Scripts
 
