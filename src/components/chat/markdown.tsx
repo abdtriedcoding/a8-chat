@@ -4,14 +4,20 @@ import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import "katex/dist/katex.min.css";
 import { cn } from "cn";
+import { ImageIcon } from "lucide-react";
+import { useState, type ComponentProps } from "react";
 import {
+  defaultRehypePlugins,
   Streamdown,
+  type Components,
   type ControlsConfig,
+  type ExtraProps,
   type LinkSafetyConfig,
   type PluginConfig,
   type StreamdownProps,
   type StreamdownTranslations,
 } from "streamdown";
+import { Button } from "@/components/ui/button";
 
 // Module constants, since Streamdown re-renders when these change identity.
 // Shiki uses github-light and github-dark. No Mermaid plugin, so Mermaid
@@ -31,6 +37,34 @@ const translations: Partial<StreamdownTranslations> = {
 // Real links that open in a new tab, rather than buttons behind a confirm
 // dialog, so they can be middle-clicked, copied and hovered for their URL.
 const linkSafety: LinkSafetyConfig = { enabled: false };
+
+// Streamdown's harden step allows any URL and protocol by default. Ours keeps
+// http(s), mailto and the other safe protocols, plus Streamdown's own
+// placeholders for a link or image still streaming in. A blocked link or
+// image shows its text. Remote images still get through here so
+// RemoteImage knows their URL, but none loads until the reader clicks.
+type RehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
+const [hardenPlugin] = defaultRehypePlugins.harden as Extract<
+  RehypePlugins[number],
+  unknown[]
+>;
+const rehypePlugins: RehypePlugins = [
+  defaultRehypePlugins.raw,
+  defaultRehypePlugins.sanitize,
+  [
+    hardenPlugin,
+    {
+      allowedLinkPrefixes: ["*"],
+      allowedImagePrefixes: ["*"],
+      allowDataImages: false,
+      allowedProtocols: ["streamdown:"],
+      linkBlockPolicy: "text-only",
+      imageBlockPolicy: "text-only",
+    },
+  ],
+];
+
+const components: Components = { img: RemoteImage };
 
 // Remend closes unfinished markdown. Ours runs before its KaTeX handler (70).
 const streamingRemendOptions: StreamdownProps["remend"] = {
@@ -59,6 +93,8 @@ export function Markdown({
       controls={controls}
       translations={translations}
       linkSafety={linkSafety}
+      rehypePlugins={rehypePlugins}
+      components={components}
       remend={streaming ? streamingRemendOptions : undefined}
       isAnimating={streaming}
       lineNumbers={false}
@@ -74,6 +110,58 @@ export function Markdown({
       {streaming ? withoutUnfinishedTable(children) : children}
     </Streamdown>
   );
+}
+
+const INCOMPLETE_IMAGE = "streamdown:incomplete-image";
+
+/**
+ * An image in a reply, held back until the reader clicks. A prompt injection
+ * can ask the model for an image whose URL carries chat or connector data,
+ * and loading it would send that data to the URL's host. Until the click it
+ * shows the alt text and the host. Spans only, since an image sits in a <p>.
+ */
+function RemoteImage({ src, alt }: ComponentProps<"img"> & ExtraProps) {
+  const [loaded, setLoaded] = useState(false);
+  if (typeof src !== "string" || !src) return null;
+  if (src === INCOMPLETE_IMAGE) {
+    return (
+      <span className="my-2 inline-block h-24 w-48 animate-pulse rounded-lg bg-muted" />
+    );
+  }
+  if (loaded) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- Any host, so no next/image.
+      <img src={src} alt={alt} className="max-w-full rounded-lg" />
+    );
+  }
+  return (
+    <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-lg border bg-card p-2 pl-3 text-sm align-middle">
+      <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0">
+        {alt ? <span className="block truncate">{alt}</span> : null}
+        <span className="block truncate text-muted-foreground text-xs">
+          {hostOf(src)}
+        </span>
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        onClick={() => setLoaded(true)}
+      >
+        Load image
+      </Button>
+    </span>
+  );
+}
+
+/** The host an image would load from, or the URL itself if it's relative. */
+function hostOf(src: string): string {
+  try {
+    return new URL(src).host;
+  } catch {
+    return src;
+  }
 }
 
 // Up to 3 spaces in; 4 or more makes an indented code line instead.
