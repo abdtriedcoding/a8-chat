@@ -2,6 +2,7 @@
 
 import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -21,6 +22,9 @@ export default function RootError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
   if (useSignInOnUnauthenticated(error)) return null;
   return (
     <Empty className="min-h-svh">
@@ -34,7 +38,7 @@ export default function RootError({
       <EmptyContent className="flex-row justify-center">
         <Button onClick={retry}>Try again</Button>
         <Button variant="outline" asChild>
-          <Link href="/sign-in">Sign in</Link>
+          <Link href="/">Go home</Link>
         </Button>
       </EmptyContent>
     </Empty>
