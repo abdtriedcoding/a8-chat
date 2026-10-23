@@ -15,6 +15,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
+import { MAX_NAME_LENGTH } from "../../../convex/lib/userName";
 
 /** Edits the user's name. The user menu reads it from the same session. */
 export function ProfileCard() {
@@ -69,6 +70,7 @@ export function ProfileCard() {
               onChange={(event) => setDraft(event.target.value)}
               disabled={!session}
               autoComplete="name"
+              maxLength={MAX_NAME_LENGTH}
               aria-invalid={error !== undefined}
             />
             {error && <FieldError>{error}</FieldError>}

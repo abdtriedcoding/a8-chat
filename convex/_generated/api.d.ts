@@ -67,6 +67,7 @@ import type * as lib_threadSearchSnippet from "../lib/threadSearchSnippet.js";
 import type * as lib_timeZone from "../lib/timeZone.js";
 import type * as lib_toolLoading from "../lib/toolLoading.js";
 import type * as lib_usage from "../lib/usage.js";
+import type * as lib_userName from "../lib/userName.js";
 import type * as migrations from "../migrations.js";
 import type * as models from "../models.js";
 import type * as pendingActions from "../pendingActions.js";
@@ -149,6 +150,7 @@ declare const fullApi: ApiFromModules<{
   "lib/timeZone": typeof lib_timeZone;
   "lib/toolLoading": typeof lib_toolLoading;
   "lib/usage": typeof lib_usage;
+  "lib/userName": typeof lib_userName;
   migrations: typeof migrations;
   models: typeof models;
   pendingActions: typeof pendingActions;

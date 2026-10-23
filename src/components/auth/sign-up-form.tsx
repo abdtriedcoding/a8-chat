@@ -19,11 +19,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
+import { MAX_NAME_LENGTH } from "../../../convex/lib/userName";
 import { GoogleButton } from "./google-button";
 import { newPassword, PasswordInput } from "./password-input";
 
 const formSchema = z.object({
-  name: z.string().trim().min(1, "Enter your name."),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Enter your name.")
+    .max(
+      MAX_NAME_LENGTH,
+      `Names can be at most ${MAX_NAME_LENGTH} characters.`,
+    ),
   email: z.email("Enter a valid email address."),
   password: newPassword,
 });
@@ -118,6 +126,7 @@ export function SignUpForm() {
                   disabled={pending}
                   placeholder="Ada Lovelace"
                   autoComplete="name"
+                  maxLength={MAX_NAME_LENGTH}
                 />
                 {fieldState.invalid && (
                   <FieldError errors={[fieldState.error]} />

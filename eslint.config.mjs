@@ -17,6 +17,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "queue",
   "scheduleText",
   "timeZone",
+  "userName",
 ];
 
 const eslintConfig = defineConfig([
