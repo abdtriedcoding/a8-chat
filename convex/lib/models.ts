@@ -59,6 +59,12 @@ export type Model = {
    * (estimateCredits). Real charges come from each reply's cost.
    */
   creditsPerReply: number;
+  /**
+   * What the gateway lists the model at, for estimates. Real charges come
+   * from each reply's cost, except for a step the user stopped
+   * (recordEstimatedUsage).
+   */
+  usdPerMillionTokens: { input: number; output: number };
   /** Ids its replies were saved under before, so older replies keep a label. */
   formerIds?: string[];
 };
@@ -139,6 +145,7 @@ export const MODELS: Model[] = GATEWAY_MODELS.map((entry) => {
         ? ["free", "pro"]
         : ["pro"],
     creditsPerReply,
+    usdPerMillionTokens: entry.usdPerMillionTokens,
     formerIds: FORMER_IDS[id],
   };
 });

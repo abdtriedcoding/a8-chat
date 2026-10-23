@@ -27,6 +27,7 @@ import {
 } from "../lib/scheduledPrompts";
 import { findTemporaryThread } from "../lib/temporaryThreads";
 import { resolveReplyModel } from "../lib/threadModels";
+import { recordEstimatedUsage } from "../lib/usage";
 import {
   CACHE_BREAKPOINT,
   createReplyTools,
@@ -122,6 +123,11 @@ export const streamReply = internalAction({
       });
       const { log, fitHistory, maxSteps, activeTools, promptNote } =
         replyTools;
+      // The step the model is on, from prepareStep until onStepFinish, with
+      // what it sent and how much it has streamed back. The Agent records a
+      // step's usage only once it finishes, so a Stop in between records an
+      // estimate instead (onAbort).
+      let openStep: { input: unknown; outputChars: number } | undefined;
       const result = await chatAgent.streamText(
         ctx,
         // With the thread's user, the Agent doesn't look up the thread.
@@ -159,7 +165,8 @@ export const streamReply = internalAction({
           // Other models get toolChoice "none" on the last step instead.
           // On every step, they see the tools a8's own search has found so
           // far (activeTools, ADR 0016).
-          prepareStep: ({ stepNumber }) => {
+          prepareStep: ({ stepNumber, instructions, messages }) => {
+            openStep = { input: { instructions, messages }, outputChars: 0 };
             const lastStep =
               stepNumber === maxSteps - 1 ||
               Date.now() - startedAt >= REPLY_TIME_LIMIT_MS;
@@ -168,10 +175,34 @@ export const streamReply = internalAction({
               ? { activeTools: activeTools(), toolChoice: "none" }
               : { activeTools: activeTools() };
           },
-          onStepFinish: (step) => log.addStep(step),
+          onChunk: ({ chunk }) => {
+            if (!openStep) return;
+            if (
+              chunk.type === "text-delta" ||
+              chunk.type === "reasoning-delta"
+            ) {
+              openStep.outputChars += chunk.text.length;
+            } else if (chunk.type === "tool-input-delta") {
+              openStep.outputChars += chunk.delta.length;
+            }
+          },
+          onStepFinish: (step) => {
+            openStep = undefined;
+            log.addStep(step);
+          },
           onToolExecutionEnd: (event) => log.addToolRun(event),
-          onAbort: () => {
+          onAbort: async () => {
             aborted = true;
+            if (!openStep) return;
+            const { input, outputChars } = openStep;
+            openStep = undefined;
+            await recordEstimatedUsage(ctx, {
+              userId,
+              threadId,
+              model,
+              input,
+              outputChars,
+            });
           },
         },
         {
