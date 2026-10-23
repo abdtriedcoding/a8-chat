@@ -20,6 +20,7 @@ import {
 import { isThreadBusy, sendPrompt } from "./chat/send";
 import { getStoppedReply } from "./chat/stop";
 import { getLastTurn } from "./chat/turns";
+import { getPlanTerms } from "./lib/billing";
 import { appError, ERROR_CODES, type AppErrorData } from "./lib/errors";
 import { optionalUser, requireUser } from "./lib/guards";
 import { buildPromptMessage, checkPrompt, checkTitle } from "./lib/prompt";
@@ -572,7 +573,8 @@ async function sendRun(
       message: `Its chat already has ${MAX_QUEUED_PROMPTS} queued prompts. Open it and wait for one to start.`,
     };
   }
-  const limited = await limitSend(ctx, row.userId);
+  const plan = await getPlanTerms(ctx, row.userId);
+  const limited = await limitSend(ctx, row.userId, plan);
   if (limited) return limited;
   await setThreadStatus(ctx, threadId, "active");
   if (shouldQueue) {
@@ -596,6 +598,7 @@ async function sendRun(
   await settleReplyModel(ctx, {
     threadId,
     userId: row.userId,
+    plan,
     userSend: false,
   });
   const promptMessageId = await sendPrompt(ctx, {

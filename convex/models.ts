@@ -2,6 +2,7 @@
 // in lib/models.ts, which the browser reads too.
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
+import { getPlanTerms } from "./lib/billing";
 import { authorizeThreadAccess, optionalUser, requireUser } from "./lib/guards";
 import {
   clearModelSwitch,
@@ -19,7 +20,8 @@ export const defaultModel = query({
   handler: async (ctx) => {
     const user = await optionalUser(ctx);
     if (!user) return null;
-    return (await getDefaultModel(ctx, user._id)).id;
+    const plan = await getPlanTerms(ctx, user._id);
+    return (await getDefaultModel(ctx, user._id, plan)).id;
   },
 });
 
@@ -32,7 +34,7 @@ export const setDefaultModel = mutation({
   returns: v.null(),
   handler: async (ctx, { modelId }) => {
     const user = await requireUser(ctx);
-    await requireModelPick(ctx, user._id, modelId);
+    requireModelPick(await getPlanTerms(ctx, user._id), modelId);
     await setDefaultModelRow(ctx, { userId: user._id, modelId });
     return null;
   },
@@ -48,7 +50,7 @@ export const setThreadModel = mutation({
   returns: v.null(),
   handler: async (ctx, { threadId, modelId }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    await requireModelPick(ctx, user._id, modelId);
+    requireModelPick(await getPlanTerms(ctx, user._id), modelId);
     await setThreadModelRow(ctx, { threadId, userId: user._id, modelId });
     return null;
   },

@@ -1,7 +1,7 @@
 /**
  * Plans and the Polar client. Billing is on only for the hosted a8, when
  * BILLING_ENABLED is "true". Everything that needs a user's plan reads it
- * through getPlan, or getPlanTerms in a query.
+ * through getPlan, or getPlanTerms in a query and in a Send.
  */
 import { Polar } from "@convex-dev/polar";
 import { subscriptionsUpdate } from "@polar-sh/sdk/funcs/subscriptionsUpdate.js";
@@ -112,7 +112,7 @@ export type Plan = PlanTerms & { periodStart: number; periodEnd: number };
 /**
  * The user's plan, what it grants each month and the current month's
  * dates at `now`, or null when billing is off. Every part of billing reads
- * the plan through this, or through getPlanTerms in a query.
+ * the plan through this, or through getPlanTerms and planAt.
  */
 export async function getPlan(
   ctx: QueryCtx | ActionCtx,
@@ -120,7 +120,12 @@ export async function getPlan(
   now: number,
 ): Promise<Plan | null> {
   const terms = await getPlanTerms(ctx, userId);
-  return terms && { ...terms, ...monthlyPeriod(terms.periodAnchor, now) };
+  return terms && planAt(terms, now);
+}
+
+/** The plan with its monthly period at `now`. */
+export function planAt(terms: PlanTerms, now: number): Plan {
+  return { ...terms, ...monthlyPeriod(terms.periodAnchor, now) };
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   loadPromptAttachments,
   vAttachmentNotFound,
 } from "../attachments/load";
+import { getPlanTerms, type PlanTerms } from "../lib/billing";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess, requireUser } from "../lib/guards";
 import {
@@ -66,6 +67,11 @@ const vAttachmentFileIds = v.optional(v.array(v.string()));
 // instead of throwing it, because the Convex client logs every thrown error
 // to the browser console. sendMessage also returns a refusal when the queue
 // is full.
+//
+// Each Send loads the user's plan terms once (getPlanTerms) and passes them
+// to the model checks (lib/threadModels.ts) and the spend check
+// (checkSpend), since each load reads Polar's subscriptions and, on Free,
+// the user.
 //
 // startThread and sendMessage load their attachments before the rate limits
 // (prepareSend), and sendMessage checks the queue first. limitSend counts
@@ -142,13 +148,15 @@ export const startThread = mutation({
     },
   ) => {
     const user = await requireUser(ctx);
+    const plan = await getPlanTerms(ctx, user._id);
     const model = modelId
-      ? await checkModelPick(ctx, user._id, modelId)
-      : await getDefaultModel(ctx, user._id);
+      ? checkModelPick(plan, modelId)
+      : await getDefaultModel(ctx, user._id, plan);
     if ("code" in model) return model;
     const prepared = await prepareSend(
       ctx,
       user._id,
+      plan,
       prompt,
       attachmentFileIds,
       model,
@@ -214,9 +222,11 @@ export const sendMessage = mutation({
     { prompt, attachmentFileIds = [], threadId, timeZone, modelId },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
+    const plan = await getPlanTerms(ctx, user._id);
     const sendModel = await resolveSendModel(ctx, {
       threadId,
       userId: user._id,
+      plan,
       modelId,
     });
     if ("code" in sendModel) return sendModel;
@@ -239,6 +249,7 @@ export const sendMessage = mutation({
     const prepared = await prepareSend(
       ctx,
       user._id,
+      plan,
       prompt,
       attachmentFileIds,
       model,
@@ -336,9 +347,10 @@ export const regenerateReply = mutation({
   returns: v.union(v.null(), vSendLimited),
   handler: async (ctx, { threadId, timeZone }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    const refused = await limitSend(ctx, user._id);
+    const plan = await getPlanTerms(ctx, user._id);
+    const refused = await limitSend(ctx, user._id, plan);
     if (refused) return refused;
-    await redoLastTurn(ctx, { threadId, userId: user._id, timeZone });
+    await redoLastTurn(ctx, { threadId, userId: user._id, plan, timeZone });
     return null;
   },
 });
@@ -353,13 +365,15 @@ export const editPrompt = mutation({
   returns: v.union(v.null(), vSendLimited),
   handler: async (ctx, { threadId, prompt, timeZone }) => {
     const user = await authorizeThreadAccess(ctx, threadId);
-    const refused = await limitSend(ctx, user._id);
+    const plan = await getPlanTerms(ctx, user._id);
+    const refused = await limitSend(ctx, user._id, plan);
     if (refused) return refused;
     // redoLastTurn checks the new text, since it loads the prompt, and a
     // prompt with attachments can have no text.
     await redoLastTurn(ctx, {
       threadId,
       userId: user._id,
+      plan,
       timeZone,
       newText: prompt,
     });
@@ -370,12 +384,14 @@ export const editPrompt = mutation({
 /**
  * Runs the steps startThread and sendMessage share before they save the
  * prompt. Checks the prompt, loads its attachments for `model`, the
- * reply's model, and counts the Send (limitSend). Returns the checked
- * text, the prompt's message and the attachments, or the refusal to return.
+ * reply's model, and counts the Send (limitSend) against the user's plan
+ * terms. Returns the checked text, the prompt's message and the
+ * attachments, or the refusal to return.
  */
 async function prepareSend(
   ctx: MutationCtx,
   userId: string,
+  plan: PlanTerms | null,
   prompt: string,
   attachmentFileIds: string[],
   model: Model,
@@ -388,7 +404,7 @@ async function prepareSend(
     model,
   );
   if ("code" in attachments) return attachments;
-  const refused = await limitSend(ctx, userId);
+  const refused = await limitSend(ctx, userId, plan);
   if (refused) return refused;
   return {
     text,
@@ -423,11 +439,13 @@ async function redoLastTurn(
   {
     threadId,
     userId,
+    plan,
     timeZone,
     newText,
   }: {
     threadId: string;
     userId: string;
+    plan: PlanTerms | null;
     timeZone: string | undefined;
     newText?: string;
   },
@@ -442,7 +460,7 @@ async function redoLastTurn(
     throw appError(ERROR_CODES.REPLY_IN_PROGRESS, REPLY_IN_PROGRESS_MESSAGE);
   }
   await setThreadStatus(ctx, threadId, "active");
-  await settleReplyModel(ctx, { threadId, userId, userSend: true });
+  await settleReplyModel(ctx, { threadId, userId, plan, userSend: true });
 
   // The Agent also aborts any stream still running at this order.
   await chatAgent.deleteMessages(ctx, {
@@ -538,6 +556,7 @@ async function startNextQueuedPrompt(
     await pauseThreadQueue(ctx, threadId);
     return null;
   }
+  const plan = await getPlanTerms(ctx, next.userId);
   const attachments = await loadPromptAttachments(
     ctx,
     next.userId,
@@ -545,6 +564,7 @@ async function startNextQueuedPrompt(
     await settleReplyModel(ctx, {
       threadId,
       userId: next.userId,
+      plan,
       userSend: false,
     }),
   );
@@ -552,7 +572,7 @@ async function startNextQueuedPrompt(
     await pauseThreadQueue(ctx, threadId);
     return "attachmentGone";
   }
-  const refused = await checkSpend(ctx, next.userId);
+  const refused = await checkSpend(ctx, next.userId, plan);
   if (refused) {
     for (const queued of await listQueuedPrompts(ctx, threadId)) {
       if (!queued.scheduledPromptId) continue;

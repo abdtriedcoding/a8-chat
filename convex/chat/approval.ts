@@ -8,6 +8,7 @@ import {
 } from "../_generated/server";
 import { chatAgent } from "../agents/chat";
 import { countAutoApproved } from "../lib/autoApprove";
+import { getPlanTerms } from "../lib/billing";
 import { appError, ERROR_CODES } from "../lib/errors";
 import { authorizeThreadAccess } from "../lib/guards";
 import { deletePendingActions, setPendingActions } from "../lib/pendingActions";
@@ -82,7 +83,12 @@ export const decideAction = mutation({
     // The continuing reply uses the thread's model as it is now. When the
     // thread can't use it anymore, this moves the thread off it, and the
     // composer says why.
-    await settleReplyModel(ctx, { threadId, userId: user._id, userSend: false });
+    await settleReplyModel(ctx, {
+      threadId,
+      userId: user._id,
+      plan: await getPlanTerms(ctx, user._id),
+      userSend: false,
+    });
     await ctx.scheduler.runAfter(0, internal.chat.reply.streamReply, {
       threadId,
       // The Agent continues the reply from the user's decisions.

@@ -3,7 +3,12 @@ import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import { v, type Infer } from "convex/values";
 import { BYTES_PER_MB, MAX_ATTACHMENT_SIZE_IN_BYTES } from "./lib/attachments";
-import { billingEnabled, dailySpendCeilingUsd, getPlan } from "./lib/billing";
+import {
+  billingEnabled,
+  dailySpendCeilingUsd,
+  planAt,
+  type PlanTerms,
+} from "./lib/billing";
 import { creditPeriodAt, creditsLeft } from "./lib/creditPeriod";
 import { latestCreditRow } from "./lib/credits";
 import { getDailySpend } from "./lib/dailySpend";
@@ -36,7 +41,19 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // spend ceiling instead. Windows count from `start`, and 0 is midnight UTC,
   // so each day's window opens at 00:00 UTC. Without `start`, the component
   // picks a random time of day.
-  dailySends: { kind: "fixed window", rate: 500, period: DAY, start: 0 },
+  //
+  // Every self-hosted Send counts here, so one row would make Sends from
+  // different users conflict. The shards split the cap into 10 rows of 50.
+  // A Send counts on whichever of two random shards has more left, or on
+  // both when neither has room alone. The cap never goes over 500, but a Send can be
+  // refused a little before it, when the two shards it picks are both spent.
+  dailySends: {
+    kind: "fixed window",
+    rate: 500,
+    period: DAY,
+    start: 0,
+    shards: 10,
+  },
   // One user's share of dailySends, a fifth of it. Five users can use up the
   // day's cap, but one can't. Self-hosted only, like dailySends. Windows
   // open at 00:00 UTC, like dailySends.
@@ -156,11 +173,13 @@ export type SendLimited = Infer<typeof vSendLimited>;
  *
  * It checks every limit before counting against any, so a refused Send
  * isn't counted. The user's limits are checked before the daily ones, so
- * their messages win when both are hit.
+ * their messages win when both are hit. `plan` is the user's plan terms
+ * (getPlanTerms), for checkSpend.
  */
 export async function limitSend(
   ctx: MutationCtx,
   userId: string,
+  plan: PlanTerms | null,
 ): Promise<SendLimited | null> {
   const user = await rateLimiter.check(ctx, "userSends", { key: userId });
   if (!user.ok) {
@@ -168,7 +187,7 @@ export async function limitSend(
     return rateLimited(`Slow down: try again in ${seconds}s.`, user.retryAfter);
   }
   if (billingEnabled) {
-    const refused = await checkSpend(ctx, userId);
+    const refused = await checkSpend(ctx, userId, plan);
     if (refused) return refused;
     // The check passed in this transaction, so this can't fail.
     await rateLimiter.limit(ctx, "userSends", { key: userId, throws: true });
@@ -183,20 +202,21 @@ export async function limitSend(
       userDaily.retryAfter,
     );
   }
-  const daily = await rateLimiter.check(ctx, "dailySends");
+  // A check and a limit on dailySends can pick different shards, so this
+  // counts it in one go. limit() counts nothing when it refuses.
+  const daily = await rateLimiter.limit(ctx, "dailySends");
   if (!daily.ok) {
     return rateLimited(
       "a8 hit today's limit. It resets at 00:00 UTC.",
       daily.retryAfter,
     );
   }
-  // Every check passed in this transaction, so none of these can fail.
+  // Both checks passed in this transaction, so neither of these can fail.
   await rateLimiter.limit(ctx, "userSends", { key: userId, throws: true });
   await rateLimiter.limit(ctx, "userDailySends", {
     key: userId,
     throws: true,
   });
-  await rateLimiter.limit(ctx, "dailySends", { throws: true });
   return null;
 }
 
@@ -208,17 +228,18 @@ export async function limitSend(
  * It reserves nothing. A reply that starts always finishes, even if its
  * cost takes the balance below zero. limitSend calls this, and so does a
  * queued prompt when it starts, since queueing it counted it already.
+ * `plan` is the user's plan terms (getPlanTerms).
  */
 export async function checkSpend(
   ctx: MutationCtx,
   userId: string,
+  plan: PlanTerms | null,
 ): Promise<SendLimited | null> {
-  const now = Date.now();
-  const plan = await getPlan(ctx, userId, now);
   if (!plan) return null;
+  const now = Date.now();
   const period = creditPeriodAt(
     await latestCreditRow(ctx, userId),
-    plan,
+    planAt(plan, now),
     now,
   );
   if (creditsLeft(period) <= 0) {

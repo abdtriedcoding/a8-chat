@@ -8,11 +8,15 @@
  * Send whose thread model is off the list or off the user's plan replies
  * on the default model instead (resolveSendModel). The thread then moves to
  * that model, and its row keeps the switch for the composer's note.
+ *
+ * The functions that check the plan take the user's plan terms
+ * (getPlanTerms), null when billing is off. A Send loads them once and
+ * passes them to these and to checkSpend.
  */
 import { v, type Infer } from "convex/values";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ModelSwitch } from "../schema";
-import { getPlanTerms } from "./billing";
+import { getPlanTerms, type PlanTerms } from "./billing";
 import { appError, ERROR_CODES } from "./errors";
 import {
   defaultModel,
@@ -21,7 +25,6 @@ import {
   modelOrDefault,
   planIncludes,
   type Model,
-  type PlanName,
 } from "./models";
 
 /**
@@ -55,14 +58,6 @@ export function findUserPreferences(ctx: QueryCtx, userId: string) {
     .unique();
 }
 
-/** The user's plan, or null when billing is off. */
-async function getPlanName(
-  ctx: QueryCtx,
-  userId: string,
-): Promise<PlanName | null> {
-  return (await getPlanTerms(ctx, userId))?.name ?? null;
-}
-
 /**
  * The model the user's new threads start on. That's the default model they
  * set, or DEFAULT_MODEL_ID. When their plan doesn't include it, it's the
@@ -71,13 +66,11 @@ async function getPlanName(
 export async function getDefaultModel(
   ctx: QueryCtx,
   userId: string,
+  plan: PlanTerms | null,
 ): Promise<Model> {
-  const [preferences, plan] = await Promise.all([
-    findUserPreferences(ctx, userId),
-    getPlanName(ctx, userId),
-  ]);
+  const preferences = await findUserPreferences(ctx, userId);
   const model = modelOrDefault(preferences?.defaultModelId);
-  return planIncludes(plan, model) ? model : firstFreeModel();
+  return planIncludes(plan?.name ?? null, model) ? model : firstFreeModel();
 }
 
 /**
@@ -87,6 +80,7 @@ export async function getDefaultModel(
  *
  * It can be a model the owner's plan no longer includes. The next Send
  * moves the thread off it (resolveSendModel), and the composer says why.
+ * It loads the owner's plan only when the thread has no listed model.
  */
 export async function getThreadModel(
   ctx: QueryCtx,
@@ -95,7 +89,8 @@ export async function getThreadModel(
   const row = await findThreadModel(ctx, threadId);
   const model = row && findModel(row.modelId);
   if (model) return model;
-  return userId ? await getDefaultModel(ctx, userId) : defaultModel();
+  if (!userId) return defaultModel();
+  return await getDefaultModel(ctx, userId, await getPlanTerms(ctx, userId));
 }
 
 /**
@@ -107,19 +102,20 @@ export async function getThreadModel(
  */
 export async function resolveReplyModel(
   ctx: QueryCtx,
-  { threadId, userId }: { threadId: string; userId: string | undefined },
+  {
+    threadId,
+    userId,
+    plan,
+  }: { threadId: string; userId: string | undefined; plan: PlanTerms | null },
 ): Promise<ReplyModel> {
   if (!userId) return { model: defaultModel(), switchedFrom: null };
-  const [row, plan] = await Promise.all([
-    findThreadModel(ctx, threadId),
-    getPlanName(ctx, userId),
-  ]);
+  const row = await findThreadModel(ctx, threadId);
   const model = row && findModel(row.modelId);
-  if (model && planIncludes(plan, model)) {
+  if (model && planIncludes(plan?.name ?? null, model)) {
     return { model, switchedFrom: null };
   }
   return {
-    model: await getDefaultModel(ctx, userId),
+    model: await getDefaultModel(ctx, userId, plan),
     switchedFrom: row && {
       modelId: row.modelId,
       reason: model ? "plan" : "removed",
@@ -143,21 +139,28 @@ export async function resolveSendModel(
   {
     threadId,
     userId,
+    plan,
     modelId,
-  }: { threadId: string; userId: string; modelId?: string },
+  }: {
+    threadId: string;
+    userId: string;
+    plan: PlanTerms | null;
+    modelId?: string;
+  },
 ): Promise<ReplyModel | ModelLocked> {
   if (modelId !== undefined) {
-    const [shown, row] = await Promise.all([
-      getThreadModel(ctx, { threadId, userId }),
-      findThreadModel(ctx, threadId),
-    ]);
+    // The model the chip shows, as getThreadModel finds it.
+    const row = await findThreadModel(ctx, threadId);
+    const shown =
+      (row && findModel(row.modelId)) ??
+      (await getDefaultModel(ctx, userId, plan));
     if (modelId !== shown.id && modelId !== row?.switchedFrom?.modelId) {
-      const model = await checkModelPick(ctx, userId, modelId);
+      const model = checkModelPick(plan, modelId);
       if ("code" in model) return model;
       return { model, switchedFrom: null };
     }
   }
-  return await resolveReplyModel(ctx, { threadId, userId });
+  return await resolveReplyModel(ctx, { threadId, userId, plan });
 }
 
 /**
@@ -198,10 +201,16 @@ export async function settleReplyModel(
   {
     threadId,
     userId,
+    plan,
     userSend,
-  }: { threadId: string; userId: string; userSend: boolean },
+  }: {
+    threadId: string;
+    userId: string;
+    plan: PlanTerms | null;
+    userSend: boolean;
+  },
 ): Promise<Model> {
-  const replyModel = await resolveReplyModel(ctx, { threadId, userId });
+  const replyModel = await resolveReplyModel(ctx, { threadId, userId, plan });
   await saveSendModel(ctx, { threadId, userId, ...replyModel, userSend });
   return replyModel.model;
 }
@@ -224,13 +233,12 @@ export function requireModel(modelId: string): Model {
  * The picker locks the models a plan doesn't include, so only a call that
  * skips it gets ModelLocked.
  */
-export async function checkModelPick(
-  ctx: QueryCtx,
-  userId: string,
+export function checkModelPick(
+  plan: PlanTerms | null,
   modelId: string,
-): Promise<Model | ModelLocked> {
+): Model | ModelLocked {
   const model = requireModel(modelId);
-  if (planIncludes(await getPlanName(ctx, userId), model)) return model;
+  if (planIncludes(plan?.name ?? null, model)) return model;
   return {
     code: ERROR_CODES.MODEL_LOCKED,
     message: `${model.name} is a Pro model. Upgrade to Pro to use it.`,
@@ -238,12 +246,11 @@ export async function checkModelPick(
 }
 
 /** checkModelPick, throwing ModelLocked. For the picker's own mutations. */
-export async function requireModelPick(
-  ctx: QueryCtx,
-  userId: string,
+export function requireModelPick(
+  plan: PlanTerms | null,
   modelId: string,
-): Promise<Model> {
-  const model = await checkModelPick(ctx, userId, modelId);
+): Model {
+  const model = checkModelPick(plan, modelId);
   if ("code" in model) throw appError(model.code, model.message);
   return model;
 }
