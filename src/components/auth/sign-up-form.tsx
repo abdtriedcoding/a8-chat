@@ -178,6 +178,11 @@ export function SignUpForm() {
               Create account
             </Button>
             <FieldDescription>
+              By signing up you agree to the{" "}
+              <Link href="/terms">Terms</Link> and{" "}
+              <Link href="/privacy">Privacy Policy</Link>.
+            </FieldDescription>
+            <FieldDescription>
               Already have an account?{" "}
               <Link href="/sign-in">Sign in</Link>
             </FieldDescription>
