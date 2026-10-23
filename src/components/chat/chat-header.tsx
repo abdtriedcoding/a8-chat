@@ -62,7 +62,7 @@ export function ChatHeader({
       <div className="ml-auto flex items-center gap-2">
         {end}
         <Button variant="outline" size="icon-sm" className="md:hidden" asChild>
-          <Link href="/chat" aria-label="New chat">
+          <Link href="/chat" prefetch aria-label="New chat">
             <SquarePenIcon />
           </Link>
         </Button>
