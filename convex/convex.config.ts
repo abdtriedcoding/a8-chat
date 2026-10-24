@@ -46,6 +46,13 @@ const app = defineApp({
     // Google connectors show as not set up.
     GOOGLE_MCP_CLIENT_ID: v.optional(v.string()),
     GOOGLE_MCP_CLIENT_SECRET: v.optional(v.string()),
+    // Optional. The deployment's GitHub App (ADR 0003,
+    // docs/connectors/github.md): its client ID and secret, and its slug
+    // from github.com/apps/<slug>. Without all three, GitHub shows as not
+    // set up.
+    GITHUB_APP_CLIENT_ID: v.optional(v.string()),
+    GITHUB_APP_CLIENT_SECRET: v.optional(v.string()),
+    GITHUB_APP_SLUG: v.optional(v.string()),
     // Optional. Deepgram's key for Dictation (ADR 0012). It needs the Member
     // role or higher to mint the browser's short-lived tokens. Without it,
     // the composer shows no mic.

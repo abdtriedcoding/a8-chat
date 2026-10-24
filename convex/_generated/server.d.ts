@@ -38,6 +38,9 @@ type Env = {
   readonly DAILY_SPEND_CEILING_USD: string | undefined;
   readonly DEEPGRAM_API_KEY: string | undefined;
   readonly EMAIL_FROM: string;
+  readonly GITHUB_APP_CLIENT_ID: string | undefined;
+  readonly GITHUB_APP_CLIENT_SECRET: string | undefined;
+  readonly GITHUB_APP_SLUG: string | undefined;
   readonly GOOGLE_CLIENT_ID: string;
   readonly GOOGLE_CLIENT_SECRET: string;
   readonly GOOGLE_MCP_CLIENT_ID: string | undefined;

@@ -5,6 +5,7 @@
 
 import { v } from "convex/values";
 import { env } from "../_generated/server";
+import type { AppInstallCheck } from "../schema";
 import {
   CONNECTOR_VIEWS,
   RECONNECT_ERROR_CODE,
@@ -85,6 +86,28 @@ export type SignIn =
       tokenEndpoint: string;
     };
 
+/** fetch limited to the connector's pinned origins (pinnedFetch). */
+type PinnedFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * How a8 finds whether a connection reaches anything, for a vendor whose
+ * token only reaches the user's app installations, like a GitHub App's
+ * (ADR 0003). The card says when the app isn't installed or reaches
+ * nothing, and links to `url()`.
+ */
+type AppInstallation = {
+  /**
+   * Where the user installs the app, from the deployment's env vars.
+   * Undefined while they're missing, and the connector shows as not set up.
+   */
+  url: () => string | undefined;
+  /**
+   * Asks the vendor with the user's token. `fetch` only reaches the pinned
+   * origins. Throws when the vendor doesn't answer.
+   */
+  check: (fetch: PinnedFetch, accessToken: string) => Promise<AppInstallCheck>;
+};
+
 /** How a8 signs in to a connector and what it may contact. */
 type ConnectorAccess<Tool extends string> = {
   /** Dynamic registration when left out. */
@@ -121,6 +144,15 @@ type ConnectorAccess<Tool extends string> = {
    * because revoking it would end the new connection too.
    */
   revocationEndsEveryGrant?: boolean;
+  /**
+   * How a8 authenticates a token refresh. `client_secret_basic`, the
+   * default, sends HTTP Basic. `client_secret_post` sends `client_id` and
+   * `client_secret` in the form instead, for a vendor that documents only
+   * that, like GitHub.
+   */
+  refreshAuthMethod?: ConnectorAccess<Tool>["revocationAuthMethod"];
+  /** For a connector whose token only reaches its app installations. */
+  appInstall?: AppInstallation;
   /**
    * Where the name of the signed-in account comes from. A label tool must
    * be a `read`, because a8 calls it without asking. The card shows it once
@@ -216,6 +248,48 @@ const DRIVE_FILE_OWNER = {
   field: "files.0.owner",
 } as const;
 
+const GITHUB_API = "https://api.github.com";
+
+/** How long each GitHub API request of the app install check can take. */
+const GITHUB_API_TIMEOUT_MS = 10_000;
+
+/**
+ * Whether the user installed the deployment's GitHub App, and whether an
+ * installation reaches a repository. A user token lists only the
+ * installations of the app that issued it.
+ */
+async function checkGitHubAppInstall(
+  fetchPinned: PinnedFetch,
+  accessToken: string,
+): Promise<AppInstallCheck> {
+  async function get(path: string): Promise<unknown> {
+    const response = await fetchPinned(`${GITHUB_API}${path}`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "a8",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub answered ${path} with ${response.status}.`);
+    }
+    return await response.json();
+  }
+  const { installations } = (await get("/user/installations?per_page=100")) as {
+    installations: { id: number }[];
+  };
+  if (installations.length === 0) return "missing";
+  for (const { id } of installations) {
+    const { total_count } = (await get(
+      `/user/installations/${id}/repositories?per_page=1`,
+    )) as { total_count: number };
+    if (total_count > 0) return "installed";
+  }
+  return "noRepos";
+}
+
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
     servers: {
@@ -287,6 +361,38 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       arguments: { action: "list" },
       field: "workspaces.0.displayName",
     },
+  },
+  github: {
+    servers: {
+      github: {
+        url: "https://api.githubcopilot.com/mcp/",
+      },
+    },
+    // GitHub has no dynamic registration, so a8 signs in through the
+    // deployment's own GitHub App (ADR 0003). The app's permissions decide
+    // what the token reaches, and GitHub ignores the scopes sign-in asks for.
+    signIn: {
+      kind: "preRegistered",
+      credentials: () => ({
+        clientId: env.GITHUB_APP_CLIENT_ID,
+        clientSecret: env.GITHUB_APP_CLIENT_SECRET,
+      }),
+      tokenEndpoint: "https://github.com/login/oauth/access_token",
+    },
+    pinnedOrigins: [
+      "https://api.githubcopilot.com",
+      "https://github.com",
+      GITHUB_API,
+    ],
+    refreshAuthMethod: "client_secret_post",
+    appInstall: {
+      url: () =>
+        env.GITHUB_APP_SLUG
+          ? `https://github.com/apps/${env.GITHUB_APP_SLUG}/installations/new`
+          : undefined,
+      check: checkGitHubAppInstall,
+    },
+    accountLabel: { from: "tool", tool: "get_me", field: "login" },
   },
   googlecalendar: {
     servers: {
@@ -521,12 +627,15 @@ export function needsSignIn(connector: Connector): boolean {
 
 /**
  * Whether the deployment has what the connector's sign-in needs. Only a
- * pre-registered client can be missing, when its env vars aren't set.
+ * pre-registered client or an app to install can be missing, when their
+ * env vars aren't set.
  */
 export function isSetUp(connector: Connector): boolean {
   return (
-    connector.signIn?.kind !== "preRegistered" ||
-    preRegisteredCredentials(connector) !== undefined
+    (connector.signIn?.kind !== "preRegistered" ||
+      preRegisteredCredentials(connector) !== undefined) &&
+    (connector.appInstall === undefined ||
+      connector.appInstall.url() !== undefined)
   );
 }
 

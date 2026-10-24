@@ -20,6 +20,7 @@ import { isConnected } from "@/lib/connection-status";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";
 import type { ConnectorView } from "../../../convex/lib/connectorView";
+import type { AppInstall } from "../../../convex/schema";
 import { ConnectorLogo } from "./connector-logo";
 import { ReconnectButton } from "./reconnect-button";
 
@@ -30,9 +31,10 @@ import { ReconnectButton } from "./reconnect-button";
  * toggle. The example prompt opens a new chat with that prompt in the
  * composer, unsent. A connection that needs reconnecting shows a Reconnect
  * button, which signs in again, and so does one missing a scope the user
- * unticked at sign-in. A connector the deployment hasn't set up has no
- * toggle and links to its setup guide. A catalog card note shows under the
- * description.
+ * unticked at sign-in. A connection whose app isn't installed, or reaches
+ * nothing, links to the vendor's install page. A connector the deployment
+ * hasn't set up has no toggle and links to its setup guide. A catalog card
+ * note shows under the description.
  *
  * `connection` is undefined until the user's connections load.
  */
@@ -58,6 +60,7 @@ export function ConnectorCard({
   const needsReconnect = connected && connection?.status === "needs_reconnect";
   const missingScopes =
     connected && !needsReconnect && connection?.missingScopes === true;
+  const appInstall = connected && !needsReconnect && connection?.appInstall;
   const notSetUp = connection?.setUp === false;
   // After a disconnect, focus goes to the remounted card's switch, which a
   // ref to this one can't reach.
@@ -141,6 +144,22 @@ export function ConnectorCard({
             wasn&apos;t allowed at sign-in.
           </ReconnectAlert>
         )}
+        {appInstall && (
+          <Alert className="mb-3">
+            <TriangleAlertIcon />
+            <AlertTitle>{APP_INSTALL_ALERTS[appInstall.status].title}</AlertTitle>
+            <AlertDescription>
+              {APP_INSTALL_ALERTS[appInstall.status].text(name)}
+            </AlertDescription>
+            <AlertAction>
+              <Button size="sm" asChild>
+                <a href={appInstall.url}>
+                  {APP_INSTALL_ALERTS[appInstall.status].button}
+                </a>
+              </Button>
+            </AlertAction>
+          </Alert>
+        )}
         <div className="flex flex-col gap-1">
           <p>{description}</p>
           {cardNote && (
@@ -176,6 +195,25 @@ export function ConnectorCard({
     </Card>
   );
 }
+
+/** The card's alert while the connector's app installations reach nothing. */
+const APP_INSTALL_ALERTS: Record<
+  AppInstall,
+  { title: string; text: (name: string) => string; button: string }
+> = {
+  missing: {
+    title: "App not installed",
+    text: (name) =>
+      `Install a8's ${name} App on your account or organization, so a8 can reach your repositories.`,
+    button: "Install",
+  },
+  noRepos: {
+    title: "No repositories",
+    text: (name) =>
+      `a8's ${name} App can't reach any repositories. Pick some on ${name}.`,
+    button: "Pick repositories",
+  },
+};
 
 /** An alert on the card about the connection, with a Reconnect button. */
 function ReconnectAlert({

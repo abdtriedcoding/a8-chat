@@ -59,8 +59,8 @@ import {
   getEncryptionKey,
   isMisconfigured,
 } from "./lib/encryption";
-import { vConnectionStatus } from "./schema";
-import { readToolList } from "./toolLists";
+import { vAppInstall, vConnectionStatus } from "./schema";
+import { readToolList, refreshConnectionToolList } from "./toolLists";
 
 const vConnectorStatus = v.object({
   id: vConnectorId,
@@ -71,6 +71,9 @@ const vConnectorStatus = v.object({
   setUp: v.boolean(),
   // True when the user unticked a scope at sign-in, so some tools don't load.
   missingScopes: v.boolean(),
+  // Set while the connector's app isn't installed or reaches nothing, with
+  // where the user installs it.
+  appInstall: v.optional(v.object({ status: vAppInstall, url: v.string() })),
 });
 
 export type ConnectorStatus = Infer<typeof vConnectorStatus>;
@@ -117,6 +120,7 @@ export const list = query({
       const connection = connections.find(
         (row) => row.connectorId === connector.id,
       );
+      const installUrl = connector.appInstall?.url();
       return {
         id: connector.id,
         status: connection?.status ?? "disconnected",
@@ -124,6 +128,10 @@ export const list = query({
         connectedAt: connection?.connectedAt,
         setUp: isSetUp(connector),
         missingScopes: missesScopes(connector, connection?.grantedScopes),
+        appInstall:
+          connection?.appInstall && installUrl
+            ? { status: connection.appInstall, url: installUrl }
+            : undefined,
       };
     });
   },
@@ -340,6 +348,30 @@ export const finishConnect = action({
       await forgetOAuthClientRegistration(ctx, connector);
       return { error: connectError };
     }
+  },
+});
+
+/**
+ * Checks again whether the user's connections reach anything where their
+ * connector has an app to install, like after the user installs a8's
+ * GitHub App, which sends the browser back to the Connectors page. Each
+ * check refreshes the connection's tool list, which runs it.
+ */
+export const checkAppInstalls = action({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    // Each check calls the vendor, so it counts as a connect start.
+    await ctx.runMutation(internal.signIns.checkConnectStart, {});
+    for (const connector of CONNECTORS) {
+      if (!connector.appInstall) continue;
+      const connection = await ctx.runQuery(
+        internal.connections.getConnection,
+        { by: { connectorId: connector.id } },
+      );
+      if (connection) await refreshConnectionToolList(ctx, connection._id);
+    }
+    return null;
   },
 });
 

@@ -335,6 +335,42 @@ const ENTRIES = [
     },
   },
   {
+    id: "github",
+    name: "GitHub",
+    description: "Search code, read issues and pull requests, and open or comment on issues.",
+    examplePrompt: "@github list the open issues assigned to me",
+    cardNote: { text: "Reaches only the repositories where you install a8's GitHub App." },
+    setupGuide:
+      "https://github.com/abdtriedcoding/a8-chat/blob/main/docs/connectors/github.md",
+    servers: {
+      github: {
+        tools: {
+          get_me: { kind: "read", label: "Reading the GitHub account" },
+          search_repositories: { kind: "read", label: "Searching GitHub repositories" },
+          search_code: { kind: "read", label: "Searching code on GitHub" },
+          get_file_contents: { kind: "read", label: "Reading a GitHub file" },
+          search_issues: { kind: "read", label: "Searching GitHub issues" },
+          list_issues: { kind: "read", label: "Finding GitHub issues" },
+          issue_read: { kind: "read", label: "Reading a GitHub issue" },
+          search_pull_requests: { kind: "read", label: "Searching GitHub pull requests" },
+          list_pull_requests: { kind: "read", label: "Finding GitHub pull requests" },
+          pull_request_read: { kind: "read", label: "Reading a GitHub pull request" },
+          // Creates without `issue_number` and updates the issue with it.
+          issue_write: {
+            kind: "action",
+            label: "Saving a GitHub issue",
+            target: ["owner", "repo", "issue_number"],
+          },
+          add_issue_comment: {
+            kind: "action",
+            label: "Commenting on GitHub",
+            target: ["owner", "repo", "issue_number"],
+          },
+        },
+      },
+    },
+  },
+  {
     id: "googlecalendar",
     name: "Google Calendar",
     handle: "calendar",
