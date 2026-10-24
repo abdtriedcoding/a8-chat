@@ -13,6 +13,8 @@ const CONNECT_ERROR_MESSAGES: Record<ConnectError, string> = {
   unreachable: "The app didn't respond. Please try again in a few minutes.",
   rejected_client:
     "The app didn't accept a8's sign-in. Turn the toggle on to try again.",
+  rejected_code:
+    "The app didn't accept that sign-in. Turn the toggle on to try again.",
   failed: "Couldn't connect. Please try again.",
 };
 

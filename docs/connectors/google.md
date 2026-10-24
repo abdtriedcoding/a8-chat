@@ -102,6 +102,7 @@ Add `--prod` for the production deployment. These are separate from `GOOGLE_CLIE
 - Every connect and reconnect sends `access_type=offline` and `prompt=consent`, so Google returns a refresh token each time. Without one, a connection would stop working after an hour.
 - The connection stores the scopes Google granted, read from the token response.
 - Disconnecting revokes the refresh token at `https://oauth2.googleapis.com/revoke`.
+- Reconnecting doesn't revoke the old refresh token. A revoke at Google ends every grant the user gave the client, so it would end the new token too.
 - Gmail's server has no send tool. a8 writes a draft, and the user sends it from Gmail. No Gmail tool returns the account's address, so the Gmail card takes it from the sender of the account's newest draft. Until the account has a draft, the card shows no account.
 - No Drive tool returns the account's address either, so the Google Drive, Google Docs, Google Sheets and Google Slides cards take it from the owner of a file the account owns. An account that owns no files shows no account.
 - Google Docs' server only reads and edits a doc by its ID. The Google Docs connector finds docs with Drive's `search_files` and `list_recent_files`, and creates or copies one with Drive's `create_file` and `copy_file`. Google Sheets' and Google Slides' servers are the same, and their connectors use the same four Drive tools.

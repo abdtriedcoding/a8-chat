@@ -21,9 +21,12 @@ export function oauthErrorMessage(code: string): string {
 
 export function GoogleButton({
   disabled,
+  callbackURL = "/chat",
   onError,
 }: {
   disabled: boolean;
+  /** Where the browser goes once signed in. */
+  callbackURL?: string;
   onError: (message: string) => void;
 }) {
   const [pending, setPending] = useState(false);
@@ -32,7 +35,7 @@ export function GoogleButton({
     setPending(true);
     const { error } = await authClient.signIn.social({
       provider: "google",
-      callbackURL: "/chat",
+      callbackURL,
       errorCallbackURL: "/sign-in",
     });
     if (error) {
