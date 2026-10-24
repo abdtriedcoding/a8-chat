@@ -31,7 +31,7 @@ export default function GlobalError({ retry }: { retry: () => void }) {
         <title>Something went wrong · a8</title>
         <ThemeProvider
           attribute="class"
-          defaultTheme="light"
+          defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >

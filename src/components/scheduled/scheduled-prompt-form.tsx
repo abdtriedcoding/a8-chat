@@ -37,6 +37,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { errorMessage } from "@/lib/errors";
+import { TimeZonePicker } from "./time-zone-picker";
 import { api } from "../../../convex/_generated/api";
 import { MAX_RENAME_LENGTH } from "../../../convex/lib/prompt";
 import type { Schedule } from "../../../convex/lib/schedule";
@@ -91,17 +92,6 @@ const formSchema = z
   });
 
 type FormValues = z.infer<typeof formSchema>;
-
-/**
- * The browser's time zones, plus UTC and `extra`, such as its own zone,
- * which the browser can leave out.
- */
-function timeZoneOptions(extra: (string | undefined)[]) {
-  const zones = new Set(Intl.supportedValuesOf("timeZone"));
-  for (const zone of extra) if (zone) zones.add(zone);
-  zones.add("UTC");
-  return [...zones].sort();
-}
 
 /** Today in `timeZone`, as "YYYY-MM-DD". */
 function today(timeZone: string) {
@@ -216,9 +206,6 @@ function ScheduledPromptForm({
   const update = useMutation(api.scheduledPrompts.update);
   const router = useRouter();
   const [ownTimeZone] = useState(browserTimeZone);
-  const [timeZones] = useState(() =>
-    timeZoneOptions([ownTimeZone, row?.timeZone]),
-  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -415,23 +402,19 @@ function ScheduledPromptForm({
                 <Field
                   data-invalid={fieldState.invalid}
                   data-disabled={pending}
+                  className="sm:col-span-2"
                 >
                   <FieldLabel htmlFor="scheduled-time-zone">
                     Time zone
                   </FieldLabel>
-                  <NativeSelect
-                    {...field}
+                  <TimeZonePicker
                     id="scheduled-time-zone"
-                    className="w-full"
-                    aria-invalid={fieldState.invalid}
+                    value={field.value}
+                    onChange={field.onChange}
+                    ownTimeZone={ownTimeZone}
+                    invalid={fieldState.invalid}
                     disabled={pending}
-                  >
-                    {timeZones.map((zone) => (
-                      <NativeSelectOption key={zone} value={zone}>
-                        {zone}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                  />
                   {fieldState.invalid && (
                     <FieldError errors={[fieldState.error]} />
                   )}
