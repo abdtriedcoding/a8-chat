@@ -51,6 +51,7 @@ import {
 } from "@/lib/starting-threads";
 import { lastReplyText } from "@/lib/reply-text";
 import { stoppedTurns } from "@/lib/stopped-turns";
+import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../../convex/_generated/api";
 import { MAX_QUEUED_PROMPTS } from "../../../convex/lib/queue";
 import {
@@ -179,14 +180,20 @@ export function ThreadView({ threadId }: { threadId: string }) {
   });
 
   // The page's metadata says "Chat". React puts the <title> that mounts
-  // last first in <head>, and this one mounts once the thread loads, after
-  // Next's. Matches the "%s · a8" template in the root layout.
-  const title = thread?.temporary && <title>Temporary chat · a8</title>;
+  // last first in <head>, and this one mounts once the live thread loads,
+  // after Next's. The device copy shows before Next's title mounts on a full
+  // page load, so a title from it would lose. Matches the "%s · a8" template
+  // in the root layout. When the thread doesn't exist, the page renders no
+  // title, so the tab keeps "Chat".
+  const title = thread && (
+    <title>
+      {`${thread.temporary ? "Temporary chat" : threadTitle(thread)} · a8`}
+    </title>
+  );
 
   if (thread === null) {
     return (
       <>
-        {title}
         <ChatHeader />
         <Empty>
           <EmptyHeader>

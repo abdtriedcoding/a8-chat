@@ -107,7 +107,7 @@ Only the hosted a8 sets these up. In the Polar organization (use [sandbox.polar.
 | `CONVEX_DEPLOYMENT` | `convex dev` | The dev deployment the Convex CLI pushes to. |
 | `NEXT_PUBLIC_CONVEX_URL` | `convex dev` | The deployment's URL, for the Convex client. |
 | `NEXT_PUBLIC_CONVEX_SITE_URL` | `convex dev` | The deployment's HTTP actions URL. The `/api/auth` route sends auth requests there. |
-| `NEXT_PUBLIC_SITE_URL` | You | The app's URL, the same as `SITE_URL`. The Better Auth client calls it. |
+| `NEXT_PUBLIC_SITE_URL` | You | The app's URL, the same as `SITE_URL`. The Better Auth client calls it, and link preview tags, `robots.txt` and the sitemap use it for absolute URLs. |
 | `PORT` | You, optional | The port `bun run dev` serves on. Defaults to 3000. If you change it, change both site URLs to match. |
 
 ### Dev scripts
