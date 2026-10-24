@@ -14,40 +14,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { isConnected } from "@/lib/connection-status";
 import { CONNECT_TOAST_ID, showConnectResult } from "@/lib/connect-result";
+import { takeConnectCallback } from "@/lib/connect-callback";
 import { readConnectReturn } from "@/lib/connect-return";
 import { searchConnectors } from "@/lib/connector-search";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectResult } from "../../../convex/connectors";
-import {
-  CONNECT_ERRORS,
-  CONNECTOR_VIEWS,
-  type ConnectError,
-} from "../../../convex/lib/connectorView";
+import { CONNECTOR_VIEWS } from "../../../convex/lib/connectorView";
 import { ConnectorCard } from "./connector-card";
-
-/** What the callback's redirect put in the URL fragment. */
-type Callback =
-  | { finish: { state: string; code: string; iss?: string } }
-  | { error: ConnectError };
-
-/** Reads the fragment, then removes it so the code leaves the URL and history. */
-function takeCallbackFromHash(): Callback | null {
-  const fragment = new URLSearchParams(window.location.hash.slice(1));
-  const error = CONNECT_ERRORS.find((code) => code === fragment.get("error"));
-  const state = fragment.get("finish");
-  const code = fragment.get("code");
-  let callback: Callback | null = null;
-  if (error) callback = { error };
-  else if (state !== null && code !== null) {
-    callback = {
-      finish: { state, code, iss: fragment.get("iss") ?? undefined },
-    };
-  }
-  if (callback) {
-    window.history.replaceState(null, "", window.location.pathname);
-  }
-  return callback;
-}
 
 export function ConnectorList() {
   // Until they load, the device's copy shows, with the toggles turned off.
@@ -130,17 +103,19 @@ export function ConnectorList() {
  * Finishes the sign-in the callback sent the user back with, or shows why
  * it ended early. finishConnect only finishes a sign-in for the signed-in
  * user who started it, and the Convex client holds the call until it sends
- * the user's token. A sign-in started on another page goes back there once
- * it connects (ConnectReturn).
+ * the user's token. A signed-out user signs in first, and the sign-in page
+ * holds the callback until they're back (holdConnectCallback). A sign-in
+ * started on another page goes back there once it connects
+ * (ConnectReturn).
  */
 function useFinishSignIn() {
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
 
   useEffect(() => {
-    // Taking the fragment clears it, so a second run, like React's in
+    // Taking the callback clears it, so a second run, like React's in
     // development, finds nothing and can't call finishConnect twice.
-    const callback = takeCallbackFromHash();
+    const callback = takeConnectCallback();
     if (!callback) return;
     if ("error" in callback) {
       showConnectResult(callback);

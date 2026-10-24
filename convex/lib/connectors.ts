@@ -116,6 +116,12 @@ type ConnectorAccess<Tool extends string> = {
    */
   revocationAuthMethod?: "client_secret_basic" | "client_secret_post";
   /**
+   * True when revoking any one token ends every grant the user gave a8's
+   * client, like Google's. A reconnect then leaves the old grant alone,
+   * because revoking it would end the new connection too.
+   */
+  revocationEndsEveryGrant?: boolean;
+  /**
    * Where the name of the signed-in account comes from. A label tool must
    * be a `read`, because a8 calls it without asking. The card shows it once
    * connected, and shows nothing when the source gives no label.
@@ -178,7 +184,11 @@ const GOOGLE_ACCESS = {
   },
   // Google gives a refresh token only with both (ADR 0007).
   authorizeParams: { access_type: "offline", prompt: "consent" },
-} satisfies Pick<ConnectorAccess<string>, "signIn" | "authorizeParams">;
+  revocationEndsEveryGrant: true,
+} satisfies Pick<
+  ConnectorAccess<string>,
+  "signIn" | "authorizeParams" | "revocationEndsEveryGrant"
+>;
 const GOOGLE_AUTH_ORIGINS = [
   "https://accounts.google.com",
   "https://oauth2.googleapis.com",

@@ -5,7 +5,7 @@ import { CircleAlertIcon, MailCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
-import { useTransition } from "react";
+import { useEffect, useSyncExternalStore, useTransition } from "react";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
+import {
+  hasConnectCallback,
+  holdConnectCallback,
+} from "@/lib/connect-callback";
 import {
   DEFAULT_NEXT,
   safeNext,
@@ -60,6 +64,11 @@ function urlNotice(error: string | null, verify: boolean): Notice | null {
   return null;
 }
 
+// The page reads the callback once, and nothing changes it while it's open.
+function subscribeToNothing() {
+  return () => {};
+}
+
 /** SignInForm with what the URL holds: `?next=`, `?error=` and `?verify=`. */
 export function SignInFormFromUrl() {
   const params = useSearchParams();
@@ -80,6 +89,19 @@ export function SignInForm({
 }) {
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
+  // A connector's callback that reached a signed-out browser. Signing in
+  // goes on to the Connectors page, which finishes connecting, instead of
+  // `next`.
+  const finishingConnect = useSyncExternalStore(
+    subscribeToNothing,
+    hasConnectCallback,
+    () => false,
+  );
+  const destination = finishingConnect ? "/connectors" : next;
+
+  useEffect(() => {
+    holdConnectCallback();
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -104,7 +126,7 @@ export function SignInForm({
     // The callback is for the verification email an unverified user gets.
     const { error } = await authClient.signIn.email({
       ...data,
-      callbackURL: verifyEmailCallback(next),
+      callbackURL: verifyEmailCallback(destination),
     });
     if (error) {
       form.setError("root", {
@@ -116,7 +138,7 @@ export function SignInForm({
       return;
     }
     startNavigation(() => {
-      router.replace(next);
+      router.replace(destination);
       router.refresh();
     });
   }
@@ -126,7 +148,9 @@ export function SignInForm({
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Welcome back</h1>
         <p className="text-muted-foreground">
-          Sign in to pick up where you left off.
+          {finishingConnect
+            ? "Sign in to finish connecting."
+            : "Sign in to pick up where you left off."}
         </p>
       </div>
 
@@ -140,7 +164,7 @@ export function SignInForm({
           )}
           <Field>
             <GoogleButton
-              next={next}
+              next={destination}
               disabled={pending}
               onError={(message) => form.setError("root", { message })}
             />

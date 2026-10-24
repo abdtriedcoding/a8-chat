@@ -86,6 +86,9 @@ export const getConnection = internalQuery({
  * Creates or replaces the user's connection to the connector. Stores
  * `toolList` as its tool list, or schedules refreshToolList to fetch one.
  * A connector with no sign-in has no tokens to store.
+ *
+ * Returns the tokens of the connection it replaced, so a reconnect can
+ * revoke them (revokeReplacedConnection), or null if there was none.
  */
 export const saveConnection = internalMutation({
   args: {
@@ -99,7 +102,7 @@ export const saveConnection = internalMutation({
     accountLabel: v.optional(v.string()),
     toolList: v.optional(vStoredToolList),
   },
-  returns: v.null(),
+  returns: v.union(vConnectionTokens, v.null()),
   handler: async (ctx, { toolList, ...args }) => {
     const existing = await findConnection(ctx, args.userId, args.connectorId);
     const now = Date.now();
@@ -126,7 +129,7 @@ export const saveConnection = internalMutation({
         connectionId,
       });
     }
-    return null;
+    return existing ? connectionTokens(existing) : null;
   },
 });
 
@@ -288,6 +291,50 @@ export async function revokeAndDeleteConnection(
     revoked = await tryRevoke(ctx, connector, deleted);
   }
   return revoked;
+}
+
+/**
+ * Revokes the grant a reconnect replaced, after saveConnection stored the
+ * new tokens. Without it, the old grant stays live at the vendor.
+ *
+ * It skips the revoke when the vendor sent back the same token. It also
+ * skips it for a connector whose revocation ends every grant to a8's
+ * client, like Google's. In both cases the revoke would end the new
+ * connection too. A failed revoke only logs, since the new connection
+ * works either way.
+ */
+export async function revokeReplacedConnection(
+  ctx: ActionCtx,
+  connector: Connector,
+  replaced: ConnectionTokens,
+  current: { access_token: string; refresh_token?: string },
+): Promise<void> {
+  const { encryptedAccessToken, encryptedRefreshToken } = replaced;
+  if (connector.revocationEndsEveryGrant || !encryptedAccessToken) return;
+  try {
+    const encryptionKey = await getEncryptionKey();
+    const [accessToken, refreshToken] = await Promise.all([
+      decryptOrUndefined(encryptionKey, encryptedAccessToken),
+      encryptedRefreshToken === undefined
+        ? undefined
+        : decryptOrUndefined(encryptionKey, encryptedRefreshToken),
+    ]);
+    if (
+      accessToken === current.access_token ||
+      (refreshToken !== undefined && refreshToken === current.refresh_token)
+    ) {
+      return;
+    }
+    await revokeConnection(ctx, connector, encryptionKey, {
+      encryptedAccessToken,
+      encryptedRefreshToken,
+    });
+  } catch (error) {
+    console.error(
+      `Revoking a8's replaced ${connector.name} grant failed`,
+      error,
+    );
+  }
 }
 
 /**
