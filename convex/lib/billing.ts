@@ -92,8 +92,10 @@ export const MONTHLY_CREDITS = { free: 100, pro: 800 } as const;
 export const DAILY_SPEND_SHARES = { free: 0.1, pro: 0.25 } as const;
 
 // Polar keeps a subscription past_due while it retries a failed payment, and
-// ends it if the retries fail. The user keeps Pro until then.
-const PRO_STATUSES = new Set(["active", "trialing", "past_due"]);
+// ends it if the retries fail. The user is on Free until a retry goes
+// through. Polar can still charge a past_due subscription, so it's live.
+const PRO_STATUSES = new Set(["active", "trialing"]);
+const LIVE_STATUSES = new Set([...PRO_STATUSES, "past_due"]);
 
 /**
  * A plan without its current month's dates, which depend on the clock. A
@@ -109,6 +111,12 @@ export const vPlanTerms = v.object({
   billingInterval: v.union(vBillingInterval, v.null()),
   /** Pro only: when a cancelled subscription ends, or null while it renews. */
   endsAt: v.union(v.number(), v.null()),
+  /**
+   * Free only: the user has a Pro subscription whose payment failed, which
+   * Polar still retries. A new checkout would charge them twice, so they
+   * update their card in Polar's portal instead.
+   */
+  paymentFailed: v.boolean(),
 });
 
 export type PlanTerms = Infer<typeof vPlanTerms>;
@@ -149,11 +157,12 @@ export async function getPlanTerms(
   userId: string,
 ): Promise<PlanTerms | null> {
   if (!billingEnabled) return null;
+  const live = await liveSubscriptions(ctx, userId);
   // A renewing subscription wins over a cancelled one, so a second
   // subscription that renews doesn't show as ending.
-  const subscriptions = (await liveSubscriptions(ctx, userId)).sort(
-    (a, b) => Number(a.cancelAtPeriodEnd) - Number(b.cancelAtPeriodEnd),
-  );
+  const subscriptions = live
+    .filter(({ status }) => PRO_STATUSES.has(status))
+    .sort((a, b) => Number(a.cancelAtPeriodEnd) - Number(b.cancelAtPeriodEnd));
   for (const subscription of subscriptions) {
     const billingInterval = proInterval(subscription.productId);
     if (!billingInterval) continue;
@@ -168,6 +177,7 @@ export async function getPlanTerms(
       ),
       billingInterval,
       endsAt: endsAt === null ? null : Date.parse(endsAt),
+      paymentFailed: false,
     };
   }
   const user = await authComponent.getAnyUserById(ctx, userId);
@@ -178,6 +188,10 @@ export async function getPlanTerms(
     periodAnchor: user.createdAt,
     billingInterval: null,
     endsAt: null,
+    paymentFailed: live.some(
+      ({ status, productId }) =>
+        status === "past_due" && proInterval(productId) !== null,
+    ),
   };
 }
 
@@ -203,7 +217,7 @@ async function liveSubscriptions(ctx: QueryCtx | ActionCtx, userId: string) {
     components.polar.lib.listUserSubscriptions,
     { userId },
   );
-  return subscriptions.filter(({ status }) => PRO_STATUSES.has(status));
+  return subscriptions.filter(({ status }) => LIVE_STATUSES.has(status));
 }
 
 function proInterval(productId: string): BillingInterval | null {

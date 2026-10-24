@@ -18,7 +18,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `emails.ts`: queues verification, password reset and scheduled run emails through Resend.
 - `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, and the action that cancels a deleted user's subscription.
 - `usage.ts`: the cost recorder, and the lookup of each model call's cost on AI Gateway. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.
-- `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins, connector tool calls and shares. Web searches also have a daily cap across all users. On the hosted a8, a send also needs credits left and the day's spend under the daily ceiling (`checkSpend`). Self-hosted a8 has no credits, so its sends keep daily caps per user and across all users.
+- `rateLimits.ts`: the rate limits on sends, web searches, attachments, email sign-in attempts, connector sign-ins, connector tool calls, shares and new scheduled prompts. Web searches also have a daily cap across all users. On the hosted a8, a send also needs credits left and the day's spend under the daily ceiling (`checkSpend`). Self-hosted a8 has no credits, so its sends keep daily caps per user and across all users.
 
 ### Chat
 

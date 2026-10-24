@@ -40,7 +40,7 @@ import {
 import type { RunEmailKind } from "./lib/runEmails";
 import { resolveTimeZone } from "./lib/timeZone";
 import { settleReplyModel } from "./lib/threadModels";
-import { limitSend } from "./rateLimits";
+import { limitScheduledPromptCreate, limitSend } from "./rateLimits";
 import { vLastRun, vScheduledPromptStatus } from "./schema";
 import { setThreadStatus } from "./threads";
 
@@ -50,6 +50,12 @@ import { setThreadStatus } from "./threads";
 
 /** How many active scheduled prompts a user can have. */
 const MAX_ACTIVE_SCHEDULED_PROMPTS = 10;
+
+/**
+ * How many scheduled prompts a user can have, active, paused and done
+ * together. Each one has a thread of its own.
+ */
+const MAX_SCHEDULED_PROMPTS = 50;
 
 /** Failed runs in a row that pause a scheduled prompt. */
 const MAX_FAILED_RUNS = 3;
@@ -752,8 +758,8 @@ function toView(row: Doc<"scheduledPrompts">) {
 /**
  * Makes the user's scheduled prompt and its thread, titled with `title`,
  * and schedules its first run. The thread gets no generated title. Throws
- * at the active cap, and on a bad title, prompt, schedule or time zone, or
- * a one-off whose time has passed.
+ * at the active or total cap or the hourly create limit, and on a bad
+ * title, prompt, schedule or time zone, or a one-off whose time has passed.
  */
 async function createScheduledPrompt(
   ctx: MutationCtx,
@@ -769,6 +775,15 @@ async function createScheduledPrompt(
   checkSchedule(schedule, timeZone);
   const runAt = requireNextRun(schedule, timeZone);
   await refuseAtActiveCap(ctx, userId);
+  await refuseAtTotalCap(ctx, userId);
+  const retryAfter = await limitScheduledPromptCreate(ctx, userId);
+  if (retryAfter !== null) {
+    const minutes = Math.ceil(retryAfter / 60_000);
+    throw appError(
+      ERROR_CODES.RATE_LIMITED,
+      `You've made a lot of scheduled tasks this hour. Try again in ${minutes} min.`,
+    );
+  }
   const threadId = await createThread(ctx, components.agent, {
     userId,
     title,
@@ -901,6 +916,20 @@ async function refuseAtActiveCap(ctx: MutationCtx, userId: string) {
     throw appError(
       ERROR_CODES.TOO_MANY_SCHEDULED_PROMPTS,
       `You can have ${MAX_ACTIVE_SCHEDULED_PROMPTS} active scheduled tasks. Pause or delete one first.`,
+    );
+  }
+}
+
+/** Throws when the user already has the most scheduled prompts. */
+async function refuseAtTotalCap(ctx: MutationCtx, userId: string) {
+  const rows = await ctx.db
+    .query("scheduledPrompts")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .take(MAX_SCHEDULED_PROMPTS);
+  if (rows.length >= MAX_SCHEDULED_PROMPTS) {
+    throw appError(
+      ERROR_CODES.TOO_MANY_SCHEDULED_PROMPTS,
+      `You can have ${MAX_SCHEDULED_PROMPTS} scheduled tasks. Delete one first.`,
     );
   }
 }
