@@ -1,6 +1,11 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import {
+  APIError,
+  createAuthMiddleware,
+  getIp,
+  isAPIError,
+} from "better-auth/api";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
@@ -14,7 +19,13 @@ import {
 import authConfig from "./auth.config";
 import { billingEnabled } from "./lib/billing";
 import { checkUserName } from "./lib/userName";
-import { limitSignIn, resetUserLimits } from "./rateLimits";
+import {
+  checkSignIn,
+  clearSignInFailures,
+  countFailedSignIn,
+  resetUserLimits,
+  type SignInAttempt,
+} from "./rateLimits";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
@@ -36,6 +47,24 @@ async function queueEmail(
 ) {
   if (!("runMutation" in ctx)) return;
   await ctx.runMutation(internal.emails.sendAuthEmail, { kind, to, url });
+}
+
+// The email and client IP of a password sign-in, or null for other paths.
+// It reads the IP the way Better Auth's own rate limit does, and the IP is
+// null when Better Auth can't tell.
+function signInAttempt(authCtx: {
+  path?: string;
+  body?: { email?: unknown };
+  request?: Request;
+  headers?: Headers;
+  context: { options: BetterAuthOptions };
+}): SignInAttempt | null {
+  if (authCtx.path !== "/sign-in/email") return null;
+  const email = authCtx.body?.email;
+  if (typeof email !== "string") return null;
+  const source = authCtx.request ?? authCtx.headers;
+  const ip = source ? getIp(source, authCtx.context.options) : null;
+  return { email, ip };
 }
 
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
@@ -120,8 +149,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       },
     },
     hooks: {
-      // Limits sign-ins by email, which works without a client IP and stops
-      // one IP spreading guesses over many accounts.
+      // Refuses a password sign-in once its email has too many wrong
+      // passwords, from its IP or from all IPs (rateLimits.ts).
       before: createAuthMiddleware(async (authCtx) => {
         if (
           authCtx.path === "/sign-up/email" ||
@@ -140,16 +169,30 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
           }
           return { context: { body: { ...authCtx.body, name: checked } } };
         }
-        if (authCtx.path !== "/sign-in/email") return;
+        const attempt = signInAttempt(authCtx);
         // Sign-ins arrive over HTTP, in an action. A query can't count.
-        if (!("runMutation" in ctx)) return;
-        const email = authCtx.body?.email;
-        if (typeof email !== "string") return;
-        const retryAfter = await limitSignIn(ctx, email);
+        if (!attempt || !("runMutation" in ctx)) return;
+        const retryAfter = await checkSignIn(ctx, attempt);
         if (retryAfter !== null) {
           throw new APIError("TOO_MANY_REQUESTS", {
             message: `Too many sign-in attempts. Try again in ${Math.ceil(retryAfter / 1000)}s.`,
           });
+        }
+      }),
+      // Counts a wrong password once Better Auth has checked it, so a correct
+      // password never counts, and clears the email and IP's count after a
+      // sign-in goes through. Only INVALID_EMAIL_OR_PASSWORD counts: other
+      // 401s, like a failed session write after a correct password, aren't
+      // guesses. Google sign-in and password reset use other paths and stay
+      // open while the limit is hit.
+      after: createAuthMiddleware(async (authCtx) => {
+        const attempt = signInAttempt(authCtx);
+        if (!attempt || !("runMutation" in ctx)) return;
+        const returned = authCtx.context.returned;
+        if (!isAPIError(returned)) {
+          await clearSignInFailures(ctx, attempt);
+        } else if (returned.body?.code === "INVALID_EMAIL_OR_PASSWORD") {
+          await countFailedSignIn(ctx, attempt);
         }
       }),
     },
