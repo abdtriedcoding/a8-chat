@@ -23,6 +23,7 @@ import {
   BILLING_INTERVALS,
   isBillingInterval,
   PRO_PRICES,
+  TAX_NOTE,
   type BillingInterval,
 } from "@/lib/plans";
 import { GITHUB_URL } from "@/lib/site";
@@ -70,8 +71,8 @@ const SELF_HOST: PricingPlan = {
 };
 
 const INTERVAL_NOTES: Record<BillingInterval, string> = {
-  month: `or ${PRO_PRICES.year.price} a year`,
-  year: `or ${PRO_PRICES.month.price} a month`,
+  month: `or ${PRO_PRICES.year.price} a year. ${TAX_NOTE}`,
+  year: `or ${PRO_PRICES.month.price} a month. ${TAX_NOTE}`,
 };
 
 /**
