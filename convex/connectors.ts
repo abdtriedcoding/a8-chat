@@ -8,7 +8,8 @@
 //    `#finish=<state>&code=<code>&iss=<iss>`. A fragment never reaches a
 //    server or a Referer header, and callback saves nothing.
 // 3. The page calls finishConnect with the state, code and issuer, which
-//    exchanges the code and stores the connection.
+//    exchanges the code and stores the connection. On a reconnect, it then
+//    revokes the grant the new one replaced.
 // The exchange waits for step 3 because the callback runs on the Convex
 // site and can't see who is signed in. finishConnect only finishes a
 // sign-in for the signed-in user who started it. The code goes only to the
@@ -31,6 +32,7 @@ import { optionalUser } from "./lib/guards";
 import {
   readUserConnections,
   revokeAndDeleteConnection,
+  revokeReplacedConnection,
 } from "./connections";
 import {
   classifyOAuthError,
@@ -300,25 +302,31 @@ export const finishConnect = action({
       // Saves right after the exchange, so a failing tool list can't drop
       // tokens the vendor already granted. saveConnection schedules the tool
       // list refresh, which also reads a tool-based account label.
-      await ctx.runMutation(internal.connections.saveConnection, {
-        userId: pending.userId,
-        connectorId: connector.id,
-        encryptedAccessToken: await encryptSecret(
-          encryptionKey,
-          tokens.access_token,
-        ),
-        encryptedRefreshToken: await encryptOptionalSecret(
-          encryptionKey,
-          tokens.refresh_token,
-        ),
-        tokenExpiresAt:
-          tokens.expires_in === undefined
-            ? undefined
-            : Date.now() + tokens.expires_in * 1000,
-        resource: provider.resource,
-        grantedScopes: tokens.scope?.split(" ").filter(Boolean),
-        accountLabel: provider.accountLabel,
-      });
+      const replaced = await ctx.runMutation(
+        internal.connections.saveConnection,
+        {
+          userId: pending.userId,
+          connectorId: connector.id,
+          encryptedAccessToken: await encryptSecret(
+            encryptionKey,
+            tokens.access_token,
+          ),
+          encryptedRefreshToken: await encryptOptionalSecret(
+            encryptionKey,
+            tokens.refresh_token,
+          ),
+          tokenExpiresAt:
+            tokens.expires_in === undefined
+              ? undefined
+              : Date.now() + tokens.expires_in * 1000,
+          resource: provider.resource,
+          grantedScopes: tokens.scope?.split(" ").filter(Boolean),
+          accountLabel: provider.accountLabel,
+        },
+      );
+      if (replaced) {
+        await revokeReplacedConnection(ctx, connector, replaced, tokens);
+      }
       return { connected: connector.id };
     } catch (error) {
       console.error(`Finishing ${connector.name} sign-in failed`, error);
@@ -374,7 +382,7 @@ export const disconnect = action({
  * Why finishing a sign-in, or turning on a connector with no sign-in,
  * failed. This deployment or the catalog entry is set up wrong, the vendor
  * rejected a8's client registration, the vendor refused the code because
- * it expired or was already used, or the vendor couldn't be reached.
+ * it was wrong, expired or already used, or the vendor couldn't be reached.
  * Anything else is `failed`.
  */
 function finishConnectError(error: unknown): ConnectError {
@@ -383,7 +391,7 @@ function finishConnectError(error: unknown): ConnectError {
   }
   const oauthError = classifyOAuthError(error);
   if (oauthError === "rejectedClient") return "rejected_client";
-  if (oauthError === "rejectedGrant") return "expired";
+  if (oauthError === "rejectedGrant") return "rejected_code";
   if (isVendorUnreachable(error)) return "unreachable";
   return "failed";
 }

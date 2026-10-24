@@ -667,7 +667,8 @@ export function findConnectorView(id: string): ConnectorView | undefined {
  * Why a sign-in ended without connecting: the user cancelled at the vendor,
  * the sign-in expired or belongs to another user, this deployment or the
  * catalog entry is set up wrong, the vendor couldn't be reached, the vendor
- * rejected a8's client registration, or another step failed.
+ * rejected a8's client registration, the vendor refused the code, or
+ * another step failed.
  */
 export const CONNECT_ERRORS = [
   "cancelled",
@@ -675,6 +676,7 @@ export const CONNECT_ERRORS = [
   "misconfigured",
   "unreachable",
   "rejected_client",
+  "rejected_code",
   "failed",
 ] as const;
 export type ConnectError = (typeof CONNECT_ERRORS)[number];

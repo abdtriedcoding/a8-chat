@@ -5,7 +5,7 @@ import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
-import { useTransition } from "react";
+import { useEffect, useSyncExternalStore, useTransition } from "react";
 import * as z from "zod";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
+import {
+  hasConnectCallback,
+  holdConnectCallback,
+} from "@/lib/connect-callback";
 import { GoogleButton, oauthErrorMessage } from "./google-button";
 import { PasswordInput } from "./password-input";
 
@@ -34,9 +38,26 @@ export function SignInFormFromUrl() {
   return <SignInForm oauthError={error ?? undefined} />;
 }
 
+// The page reads the callback once, and nothing changes it while it's open.
+function subscribeToNothing() {
+  return () => {};
+}
+
 export function SignInForm({ oauthError }: { oauthError?: string }) {
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
+  // A connector's callback that reached a signed-out browser. Signing in
+  // goes on to the Connectors page, which finishes connecting.
+  const finishingConnect = useSyncExternalStore(
+    subscribeToNothing,
+    hasConnectCallback,
+    () => false,
+  );
+  const destination = finishingConnect ? "/connectors" : "/chat";
+
+  useEffect(() => {
+    holdConnectCallback();
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -59,7 +80,7 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
   async function onSubmit(data: z.infer<typeof formSchema>) {
     const { error } = await authClient.signIn.email({
       ...data,
-      callbackURL: `${window.location.origin}/chat`,
+      callbackURL: `${window.location.origin}${destination}`,
     });
     if (error) {
       form.setError("root", {
@@ -71,7 +92,7 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
       return;
     }
     startNavigation(() => {
-      router.replace("/chat");
+      router.replace(destination);
       router.refresh();
     });
   }
@@ -81,7 +102,9 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Welcome back</h1>
         <p className="text-muted-foreground">
-          Sign in to pick up where you left off.
+          {finishingConnect
+            ? "Sign in to finish connecting."
+            : "Sign in to pick up where you left off."}
         </p>
       </div>
 
@@ -96,6 +119,7 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
           <Field>
             <GoogleButton
               disabled={pending}
+              callbackURL={destination}
               onError={(message) => form.setError("root", { message })}
             />
           </Field>
