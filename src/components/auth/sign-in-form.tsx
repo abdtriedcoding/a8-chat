@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, MailCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
@@ -24,6 +24,12 @@ import {
   hasConnectCallback,
   holdConnectCallback,
 } from "@/lib/connect-callback";
+import {
+  DEFAULT_NEXT,
+  safeNext,
+  verifyEmailCallback,
+  withNext,
+} from "@/lib/next-path";
 import { GoogleButton, oauthErrorMessage } from "./google-button";
 import { PasswordInput } from "./password-input";
 
@@ -32,10 +38,30 @@ const formSchema = z.object({
   password: z.string().min(1, "Enter your password."),
 });
 
-/** SignInForm with the error Better Auth puts in the URL when Google sign-in fails. */
-export function SignInFormFromUrl() {
-  const error = useSearchParams().get("error");
-  return <SignInForm oauthError={error ?? undefined} />;
+type Notice = { message: string; destructive: boolean };
+
+/**
+ * What the URL says about how the user got here. `?verify=1` means an email
+ * verification link sent them, as set by verifyEmailCallback. A bad link adds
+ * `?error=`. A good one lands here only when it was already used, or when the
+ * proxy couldn't confirm the new session. The email is verified either way.
+ * `?error=` alone is a failed Google sign-in.
+ */
+function urlNotice(error: string | null, verify: boolean): Notice | null {
+  if (error && verify) {
+    return {
+      message: "This link has expired. Sign in to get a new one.",
+      destructive: true,
+    };
+  }
+  if (error) return { message: oauthErrorMessage(error), destructive: true };
+  if (verify) {
+    return {
+      message: "Your email is verified. Sign in to continue.",
+      destructive: false,
+    };
+  }
+  return null;
 }
 
 // The page reads the callback once, and nothing changes it while it's open.
@@ -43,17 +69,35 @@ function subscribeToNothing() {
   return () => {};
 }
 
-export function SignInForm({ oauthError }: { oauthError?: string }) {
+/** SignInForm with what the URL holds: `?next=`, `?error=` and `?verify=`. */
+export function SignInFormFromUrl() {
+  const params = useSearchParams();
+  return (
+    <SignInForm
+      next={safeNext(params.get("next"))}
+      notice={urlNotice(params.get("error"), params.has("verify"))}
+    />
+  );
+}
+
+export function SignInForm({
+  next = DEFAULT_NEXT,
+  notice,
+}: {
+  next?: string;
+  notice?: Notice | null;
+}) {
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
   // A connector's callback that reached a signed-out browser. Signing in
-  // goes on to the Connectors page, which finishes connecting.
+  // goes on to the Connectors page, which finishes connecting, instead of
+  // `next`.
   const finishingConnect = useSyncExternalStore(
     subscribeToNothing,
     hasConnectCallback,
     () => false,
   );
-  const destination = finishingConnect ? "/connectors" : "/chat";
+  const destination = finishingConnect ? "/connectors" : next;
 
   useEffect(() => {
     holdConnectCallback();
@@ -70,17 +114,19 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
   // `navigating` clears when the redirect settles, so a bounced redirect
   // leaves the form usable.
   const pending = form.formState.isSubmitting || navigating;
-  // The OAuth error from the URL shows until the first email attempt.
-  const error =
-    form.formState.errors.root?.message ??
-    (oauthError && form.formState.submitCount === 0
-      ? oauthErrorMessage(oauthError)
-      : null);
+  // The notice from the URL shows until the first email attempt.
+  const rootError = form.formState.errors.root?.message;
+  const alert: Notice | null = rootError
+    ? { message: rootError, destructive: true }
+    : form.formState.submitCount === 0
+      ? (notice ?? null)
+      : null;
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
+    // The callback is for the verification email an unverified user gets.
     const { error } = await authClient.signIn.email({
       ...data,
-      callbackURL: `${window.location.origin}${destination}`,
+      callbackURL: verifyEmailCallback(destination),
     });
     if (error) {
       form.setError("root", {
@@ -110,16 +156,16 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
 
       <form method="post" noValidate onSubmit={form.handleSubmit(onSubmit)}>
         <FieldGroup>
-          {error && (
-            <Alert variant="destructive">
-              <CircleAlertIcon />
-              <AlertDescription>{error}</AlertDescription>
+          {alert && (
+            <Alert variant={alert.destructive ? "destructive" : "default"}>
+              {alert.destructive ? <CircleAlertIcon /> : <MailCheckIcon />}
+              <AlertDescription>{alert.message}</AlertDescription>
             </Alert>
           )}
           <Field>
             <GoogleButton
+              next={destination}
               disabled={pending}
-              callbackURL={destination}
               onError={(message) => form.setError("root", { message })}
             />
           </Field>
@@ -185,7 +231,7 @@ export function SignInForm({ oauthError }: { oauthError?: string }) {
             </Button>
             <FieldDescription>
               Don&apos;t have an account?{" "}
-              <Link href="/sign-up">Sign up</Link>
+              <Link href={withNext("/sign-up", next)}>Sign up</Link>
             </FieldDescription>
             <FieldDescription>
               By continuing you agree to the <Link href="/terms">Terms</Link>{" "}

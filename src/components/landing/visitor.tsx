@@ -5,24 +5,33 @@ import type { Visitor } from "@/app/api/visitor/route";
 
 const SIGNED_OUT: Visitor = { signedIn: false, plan: null };
 
-const VisitorContext = createContext<Visitor>(SIGNED_OUT);
+/**
+ * How long the page waits for the lookup before showing the signed-out
+ * view. The route makes at most one Convex call.
+ */
+const LOOKUP_TIMEOUT_MS = 5000;
+
+const VisitorContext =createContext<Visitor | null>(null);
 
 /**
- * Fetches the visitor once per visit to the landing page. Until it answers,
- * the page shows what a signed-out visitor sees, which is most visitors.
+ * Fetches the visitor once per visit to the landing page. Null until it
+ * answers, so the page doesn't show "Sign in" to a signed-in visitor.
  */
 export function VisitorProvider({ children }: { children: ReactNode }) {
-  const [visitor, setVisitor] = useState(SIGNED_OUT);
+  const [visitor, setVisitor] = useState<Visitor | null>(null);
   useEffect(() => {
     let current = true;
-    fetch("/api/visitor")
+    fetch("/api/visitor", { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) })
       .then((response) => response.json() as Promise<Visitor>)
       .then(
         (next) => {
           if (current) setVisitor(next);
         },
-        // A failed lookup leaves the signed-out view, which still works.
-        () => {},
+        // A failed or timed-out lookup shows the signed-out view, which
+        // still works.
+        () => {
+          if (current) setVisitor(SIGNED_OUT);
+        },
       );
     return () => {
       current = false;
@@ -31,6 +40,7 @@ export function VisitorProvider({ children }: { children: ReactNode }) {
   return <VisitorContext value={visitor}>{children}</VisitorContext>;
 }
 
+/** The visitor, or null while the lookup runs. */
 export function useVisitor() {
   return use(VisitorContext);
 }

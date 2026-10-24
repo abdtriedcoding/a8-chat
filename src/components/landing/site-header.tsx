@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import Link from "next/link";
 import { GitHubIcon } from "@/components/icons/github-icon";
 import { Logo } from "@/components/logo";
@@ -8,7 +9,7 @@ import { useVisitor } from "./visitor";
 import { GITHUB_URL } from "@/lib/site";
 
 export function SiteHeader() {
-  const { signedIn } = useVisitor();
+  const visitor = useVisitor();
   return (
     <header className="sticky top-0 z-40 border-b bg-card/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -29,19 +30,26 @@ export function SiteHeader() {
               GitHub
             </a>
           </Button>
-          {signedIn ? (
+          {visitor?.signedIn ? (
             <Button asChild size="lg">
               <Link href="/chat">Open a8</Link>
             </Button>
           ) : (
-            <>
+            // Hidden until the visitor lookup answers. The buttons still
+            // take their space, so a signed-out visitor sees no shift.
+            <div
+              className={cn(
+                "flex items-center gap-1 sm:gap-2",
+                !visitor && "invisible",
+              )}
+            >
               <Button asChild variant="ghost" size="lg">
                 <Link href="/sign-in">Sign in</Link>
               </Button>
               <Button asChild size="lg">
                 <Link href="/sign-up">Get started</Link>
               </Button>
-            </>
+            </div>
           )}
         </nav>
       </div>

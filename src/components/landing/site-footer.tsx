@@ -1,9 +1,13 @@
+"use client";
+
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { GITHUB_URL } from "@/lib/site";
+import { useVisitor } from "./visitor";
 
 export function SiteFooter() {
+  const visitor = useVisitor();
   return (
     <footer className="border-t bg-card">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-12 sm:flex-row sm:items-end sm:justify-between sm:px-6">
@@ -32,9 +36,16 @@ export function SiteFooter() {
           <Button asChild variant="ghost">
             <Link href="/terms">Terms</Link>
           </Button>
-          <Button asChild variant="ghost">
-            <Link href="/sign-in">Sign in</Link>
-          </Button>
+          {/* Left out until the visitor lookup answers. */}
+          {visitor && (
+            <Button asChild variant="ghost">
+              {visitor.signedIn ? (
+                <Link href="/chat">Open a8</Link>
+              ) : (
+                <Link href="/sign-in">Sign in</Link>
+              )}
+            </Button>
+          )}
         </nav>
       </div>
     </footer>

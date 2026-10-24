@@ -79,7 +79,7 @@ const INTERVAL_NOTES: Record<BillingInterval, string> = {
  * buttons go to sign-up.
  */
 export function Pricing() {
-  const currentPlan = useVisitor().plan;
+  const currentPlan = useVisitor()?.plan ?? null;
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [opening, setOpening] = useState(false);
   usePageRestored(() => setOpening(false));
