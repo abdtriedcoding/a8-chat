@@ -11,7 +11,7 @@ import {
   AlertTitle,
 } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useCredits } from "@/hooks/use-credits";
+import type { Credits } from "@/hooks/use-credits";
 import { formatCredits, formatDate } from "@/lib/credits";
 import { BILLING_PATH } from "@/lib/plans";
 import { creditsLeft } from "../../../convex/lib/creditPeriod";
@@ -30,10 +30,16 @@ const DISMISSED_KEY = "a8:low-credits-dismissed";
  * the user has no credits left, until the balance is above zero again. A
  * warning shows below LOW_CREDITS_SHARE of the period's grant, and the user
  * can dismiss it until the next period. Both link to the Billing page.
- * Shows nothing when signed out or billing is off.
+ * `credits` is useCredits'. Shows nothing while they load, when signed out
+ * or when billing is off.
  */
-export function CreditNotice({ className }: { className?: string }) {
-  const credits = useCredits();
+export function CreditNotice({
+  credits,
+  className,
+}: {
+  credits: Credits | null | undefined;
+  className?: string;
+}) {
   const dismissedPeriod = useSyncExternalStore(
     subscribeToDismissed,
     readDismissed,

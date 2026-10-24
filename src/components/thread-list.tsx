@@ -47,13 +47,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useDeleteThread } from "@/hooks/use-delete-thread";
-import {
-  usePaginatedQueryWithLocalCopy,
-  useQueryWithLocalCopy,
-} from "@/hooks/use-query-with-local-copy";
+import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { useRenameThread } from "@/hooks/use-rename-thread";
 import { useSetThreadArchived } from "@/hooks/use-set-thread-archived";
 import { useSetThreadPinned } from "@/hooks/use-set-thread-pinned";
+import { THREAD_LIST_PAGE_SIZE, useThreadList } from "@/hooks/use-thread-list";
 import { useThreadQueries } from "@/hooks/use-thread-queries";
 import { errorMessage } from "@/lib/errors";
 import { threadTitle } from "@/lib/thread-title";
@@ -61,7 +59,6 @@ import { api } from "../../convex/_generated/api";
 
 type Thread = FunctionReturnType<typeof api.threads.list>["page"][number];
 
-const PAGE_SIZE = 30;
 const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
 // How long the pointer stays on a thread before it starts loading. A pointer
 // moving down the list stays on each thread for less.
@@ -126,17 +123,7 @@ function ThreadRowsSkeleton() {
 }
 
 export function ThreadList() {
-  // Until the first page loads, the device's copy of it shows, stale.
-  const {
-    results,
-    status,
-    loadMore,
-    stale: chatsStale,
-  } = usePaginatedQueryWithLocalCopy(
-    api.threads.list,
-    {},
-    { initialNumItems: PAGE_SIZE },
-  );
+  const { results, status, loadMore, stale: chatsStale } = useThreadList();
   const { data: pinned, stale: pinnedStale } = useQueryWithLocalCopy(
     api.threads.listPinned,
     {},
@@ -346,7 +333,7 @@ export function ThreadList() {
                   <SidebarMenuButton
                     className="text-muted-foreground"
                     disabled={status === "LoadingMore"}
-                    onClick={() => loadMore(PAGE_SIZE)}
+                    onClick={() => loadMore(THREAD_LIST_PAGE_SIZE)}
                   >
                     {status === "LoadingMore" && <Spinner />}
                     <span>Load more</span>

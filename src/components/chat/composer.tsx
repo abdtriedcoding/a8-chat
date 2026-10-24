@@ -2,7 +2,13 @@
 
 import { cn } from "cn";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
-import { useRef, useState, type Ref } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { toast } from "sonner";
 import { ConnectorLogo } from "@/components/connectors/connector-logo";
 import { ReconnectButton } from "@/components/connectors/reconnect-button";
@@ -24,6 +30,7 @@ import {
 } from "@/hooks/use-composer-attachments";
 import { useComposerDictation } from "@/hooks/use-composer-dictation";
 import { useComposerMentions } from "@/hooks/use-composer-mentions";
+import { useCredits } from "@/hooks/use-credits";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
@@ -31,7 +38,9 @@ import {
   getAcceptedMediaTypes,
   getAttachmentKind,
 } from "../../../convex/lib/attachments";
+import { creditsLeft } from "../../../convex/lib/creditPeriod";
 import { modelOrDefault } from "../../../convex/lib/models";
+import { promptCharsLeft } from "../../../convex/lib/prompt";
 import { ComposerAttachmentChip } from "./attachments";
 import { AutoApproveChip } from "./auto-approve-chip";
 import { CreditNotice } from "./credit-notice";
@@ -40,6 +49,7 @@ import { FileDropZone } from "./file-drop-zone";
 import { MentionHighlights } from "./mention-highlights";
 import { MentionMenu } from "./mention-menu";
 import { ModelPicker } from "./model-picker";
+import { PromptLengthCount } from "./prompt-length";
 
 /**
  * The message box's padding and text size, which MentionHighlights copies
@@ -51,8 +61,13 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * The message box. Enter sends and Shift+Enter adds a line. While `onStop`
  * is set, a Stop button shows next to Send. `disabled` turns Send off with
  * a spinner, for a Send in flight, and `sendDisabled` turns it off without
- * one. `initialText` is read on mount only, so give the box a new key to
- * start it with other text.
+ * one. `stale` is set while the page shows the device's copy
+ * (lib/local-copy). A Send then shows a spinner and goes once live data is
+ * in, unless the user types first. `initialText` is read on mount only, so
+ * give the box a new key to start it with other text.
+ *
+ * Near MAX_PROMPT_LENGTH, a count says how many characters are left
+ * (PromptLengthCount), and past it Send turns off.
  *
  * When `modelId`, the model the next reply uses, reads files, they can be
  * attached with the attach button, by pasting them into the box, or by
@@ -73,7 +88,9 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * set, the model chip (ModelPicker) follows it.
  *
  * On the hosted a8, a notice above the box says when the user is out of
- * credits or low on them (CreditNotice).
+ * credits or low on them (CreditNotice). Out of credits, Send is off. When
+ * that comes from the device's copy of the credits, a Send waits for the
+ * live balance instead, as the copy may be out of date.
  *
  * The box is marked data-composer, plus data-empty while it holds no text
  * and no attachments, for ↑ in KeyboardShortcutsProvider.
@@ -84,6 +101,7 @@ export function Composer({
   onStop,
   disabled = false,
   sendDisabled = false,
+  stale = false,
   autoFocus = false,
   textareaRef,
   autoApprove = false,
@@ -97,6 +115,7 @@ export function Composer({
   onStop?: () => Promise<void>;
   disabled?: boolean;
   sendDisabled?: boolean;
+  stale?: boolean;
   autoFocus?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   autoApprove?: boolean;
@@ -138,15 +157,32 @@ export function Composer({
   // A failed upload counts as not done, so the user has to remove it first
   // and it isn't left out unnoticed.
   const allUploadsDone = uploadedAttachments.length === attachments.length;
-  const canSend =
+  const credits = useCredits();
+  const outOfCredits = credits ? creditsLeft(credits.period) <= 0 : false;
+  const waitForLive = stale || (outOfCredits && credits?.stale === true);
+  // Everything but what live data can change, which makes a Send wait.
+  const canSendOnceLive =
     !disabled &&
     !sendDisabled &&
+    !(outOfCredits && !credits?.stale) &&
+    promptCharsLeft(text) >= 0 &&
     allUploadsDone &&
     mentions.canSend &&
     (text.trim() !== "" || attachments.length > 0);
+  const [sendPending, setSendPending] = useState(false);
+
+  const sendOnceLive = useEffectEvent(() => void send());
+  useEffect(() => {
+    if (sendPending && !waitForLive) sendOnceLive();
+  }, [sendPending, waitForLive]);
 
   async function send() {
-    if (!canSend) return;
+    setSendPending(false);
+    if (!canSendOnceLive) return;
+    if (waitForLive) {
+      setSendPending(true);
+      return;
+    }
     const prompt = dictation.active ? await dictation.finish() : text;
     // Null when another Send is already waiting for the last words.
     if (prompt === null) return;
@@ -207,7 +243,7 @@ export function Composer({
           onPick={mentions.pick}
         />
       )}
-      <CreditNotice className="mb-2" />
+      <CreditNotice credits={credits} className="mb-2" />
       <InputGroup>
         {mentions.blockedMentions.length > 0 && (
           <InputGroupAddon
@@ -274,6 +310,7 @@ export function Composer({
             }
             value={text}
             onChange={(event) => {
+              setSendPending(false);
               dictation.stopForTyping();
               setText(event.target.value);
               mentions.syncCaret(event.target);
@@ -357,6 +394,7 @@ export function Composer({
             />
           )}
           <div className="ml-auto flex items-center gap-2">
+            <PromptLengthCount text={text} />
             {dictation.available && (
               <DictationButton
                 state={dictation.state}
@@ -380,9 +418,9 @@ export function Composer({
               type="submit"
               variant="default"
               size="icon-sm"
-              disabled={!canSend}
+              disabled={!canSendOnceLive}
             >
-              {disabled ? <Spinner /> : <ArrowUpIcon />}
+              {disabled || sendPending ? <Spinner /> : <ArrowUpIcon />}
               <span className="sr-only">Send</span>
             </InputGroupButton>
           </div>

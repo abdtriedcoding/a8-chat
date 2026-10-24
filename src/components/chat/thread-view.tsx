@@ -295,7 +295,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
           onSend={send}
           onStop={replyInProgress && !stale ? stop : undefined}
           disabled={startingComposer !== undefined}
-          sendDisabled={queueFull || stale}
+          sendDisabled={queueFull}
+          stale={stale}
           autoApprove={
             (shownThread?.autoApprove ?? startingComposer?.autoApprove) === true
           }

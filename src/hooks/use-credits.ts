@@ -10,21 +10,29 @@ import { monthlyPeriod } from "../../convex/lib/monthlyPeriod";
 
 const MINUTE_MS = 60_000;
 
+/** The signed-in user's plan and the credit period that covers now. */
+export type Credits = {
+  plan: PlanTerms;
+  period: CreditPeriod;
+  /** Set while either comes from the device's copy (lib/local-copy). */
+  stale: boolean;
+};
+
 /**
- * The signed-in user's plan and the credit period that covers now.
- * Undefined while loading, and null when signed out or billing is off.
+ * The user's Credits. Undefined while loading, and null when signed out or
+ * billing is off.
  *
  * The clock moves on each minute, so a page left open past the reset shows
  * the new period, even before a reply opens its row.
  */
-export function useCredits():
-  | { plan: PlanTerms; period: CreditPeriod }
-  | null
-  | undefined {
-  // From the device's copy until they load. They're only shown, and the
-  // server checks credits on every Send.
-  const { data: plan } = useQueryWithLocalCopy(api.billing.plan, {});
-  const { data: latestCredits } = useQueryWithLocalCopy(
+export function useCredits(): Credits | null | undefined {
+  // From the device's copy until they load. The server checks credits on
+  // every Send anyway.
+  const { data: plan, stale: planStale } = useQueryWithLocalCopy(
+    api.billing.plan,
+    {},
+  );
+  const { data: latestCredits, stale: creditsStale } = useQueryWithLocalCopy(
     api.billing.latestCredits,
     {},
   );
@@ -40,5 +48,5 @@ export function useCredits():
     { ...plan, ...monthlyPeriod(plan.periodAnchor, now) },
     now,
   );
-  return { plan, period };
+  return { plan, period, stale: planStale || creditsStale };
 }
