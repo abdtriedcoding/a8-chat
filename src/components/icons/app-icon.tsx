@@ -3,8 +3,9 @@ import { LogoMark } from "@/components/icons/logo-mark";
 
 /**
  * a8's app icon: the mark in white on a tile with the sky photo's blues.
- * src/app/icon.svg is the same icon for the favicon, so change both
- * together. Size it with a size-* class.
+ * src/app/icon.svg is the same icon for the favicon, and
+ * src/app/opengraph-image.tsx draws it for link previews, so change all
+ * three together. Size it with a size-* class.
  */
 export function AppIcon({ className }: { className?: string }) {
   return (

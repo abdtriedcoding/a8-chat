@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ThreadView } from "@/components/chat/thread-view";
 
-// ThreadView sets "Temporary chat" itself once the thread loads, so this
+// ThreadView sets the thread's title itself once the thread shows, so this
 // needs no query.
 export const metadata: Metadata = { title: "Chat" };
 

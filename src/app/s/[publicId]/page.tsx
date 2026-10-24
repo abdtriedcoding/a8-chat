@@ -11,8 +11,8 @@ const getSnapshot = cache((publicId: string) =>
   fetchQuery(api.sharedSnapshots.getSharedSnapshot, { publicId }),
 );
 
-// The page title is the thread's title, so a link preview shows it. The page
-// has no Open Graph image.
+// The page title is the thread's title, so a link preview shows it. The card
+// image is the app's, from src/app/opengraph-image.tsx.
 export async function generateMetadata(
   props: PageProps<"/s/[publicId]">,
 ): Promise<Metadata> {
