@@ -5,7 +5,13 @@ import type { Visitor } from "@/app/api/visitor/route";
 
 const SIGNED_OUT: Visitor = { signedIn: false, plan: null };
 
-const VisitorContext = createContext<Visitor | null>(null);
+/**
+ * How long the page waits for the lookup before showing the signed-out
+ * view. The route makes at most one Convex call.
+ */
+const LOOKUP_TIMEOUT_MS = 5000;
+
+const VisitorContext =createContext<Visitor | null>(null);
 
 /**
  * Fetches the visitor once per visit to the landing page. Null until it
@@ -15,13 +21,14 @@ export function VisitorProvider({ children }: { children: ReactNode }) {
   const [visitor, setVisitor] = useState<Visitor | null>(null);
   useEffect(() => {
     let current = true;
-    fetch("/api/visitor")
+    fetch("/api/visitor", { signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) })
       .then((response) => response.json() as Promise<Visitor>)
       .then(
         (next) => {
           if (current) setVisitor(next);
         },
-        // A failed lookup shows the signed-out view, which still works.
+        // A failed or timed-out lookup shows the signed-out view, which
+        // still works.
         () => {
           if (current) setVisitor(SIGNED_OUT);
         },

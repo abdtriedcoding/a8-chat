@@ -23,7 +23,10 @@ export function safeNext(value: string | null | undefined): string {
   } catch {
     return DEFAULT_NEXT;
   }
-  const path = url.pathname + url.search;
+  // Re-encoding the query turns characters the pattern rejects, such as ":"
+  // in "?search=09:30", into %XX, which it accepts.
+  const query = url.searchParams.toString();
+  const path = url.pathname + (query ? `?${query}` : "");
   // "//evil.com" and "/\evil.com" parse as another host.
   if (
     url.origin !== ORIGIN ||
