@@ -92,8 +92,9 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * that comes from the device's copy of the credits, a Send waits for the
  * live balance instead, as the copy may be out of date.
  *
- * The box is marked data-composer, plus data-empty while it holds no text
- * and no attachments, for ↑ in KeyboardShortcutsProvider.
+ * The box is marked data-composer, for SkipLink and for ↑ in
+ * KeyboardShortcutsProvider, plus data-empty while it holds no text and no
+ * attachments.
  */
 export function Composer({
   initialText = "",
