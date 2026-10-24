@@ -5,6 +5,7 @@ import { GoogleIcon } from "@/components/icons/google-icon";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
+import { withNext } from "@/lib/next-path";
 
 const OAUTH_ERRORS: Record<string, string> = {
   // Account linking is off, so Google can't sign in to an email/password
@@ -20,9 +21,12 @@ export function oauthErrorMessage(code: string): string {
 }
 
 export function GoogleButton({
+  next,
   disabled,
   onError,
 }: {
+  /** The page to open after sign-in, already checked by safeNext. */
+  next: string;
   disabled: boolean;
   onError: (message: string) => void;
 }) {
@@ -32,8 +36,8 @@ export function GoogleButton({
     setPending(true);
     const { error } = await authClient.signIn.social({
       provider: "google",
-      callbackURL: "/chat",
-      errorCallbackURL: "/sign-in",
+      callbackURL: next,
+      errorCallbackURL: withNext("/sign-in", next),
     });
     if (error) {
       onError(error.message ?? "Couldn't start Google sign-in. Please try again.");

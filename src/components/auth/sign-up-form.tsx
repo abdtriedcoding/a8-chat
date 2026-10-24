@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlertIcon, MailCheckIcon } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { useState } from "react";
 import * as z from "zod";
@@ -19,6 +20,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
+import {
+  DEFAULT_NEXT,
+  safeNext,
+  verifyEmailCallback,
+  withNext,
+} from "@/lib/next-path";
 import { MAX_NAME_LENGTH } from "../../../convex/lib/userName";
 import { GoogleButton } from "./google-button";
 import { newPassword, PasswordInput } from "./password-input";
@@ -36,7 +43,12 @@ const formSchema = z.object({
   password: newPassword,
 });
 
-export function SignUpForm() {
+/** SignUpForm with the `?next=` page from the URL. */
+export function SignUpFormFromUrl() {
+  return <SignUpForm next={safeNext(useSearchParams().get("next"))} />;
+}
+
+export function SignUpForm({ next = DEFAULT_NEXT }: { next?: string }) {
   const [sentTo, setSentTo] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -53,7 +65,7 @@ export function SignUpForm() {
   async function onSubmit(data: z.infer<typeof formSchema>) {
     const { error } = await authClient.signUp.email({
       ...data,
-      callbackURL: `${window.location.origin}/chat`,
+      callbackURL: verifyEmailCallback(next),
     });
     if (error && error.code !== "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
       form.setError("root", {
@@ -76,7 +88,7 @@ export function SignUpForm() {
           </p>
         </div>
         <p className="text-sm text-muted-foreground">
-          Already verified? <Link href="/sign-in">Sign in</Link>
+          Already verified? <Link href={withNext("/sign-in", next)}>Sign in</Link>
         </p>
       </div>
     );
@@ -105,6 +117,7 @@ export function SignUpForm() {
           )}
           <Field>
             <GoogleButton
+              next={next}
               disabled={pending}
               onError={(message) => form.setError("root", { message })}
             />
@@ -174,9 +187,10 @@ export function SignUpForm() {
                   disabled={pending}
                   autoComplete="new-password"
                 />
-                <FieldDescription>At least 8 characters.</FieldDescription>
-                {fieldState.invalid && (
+                {fieldState.invalid ? (
                   <FieldError errors={[fieldState.error]} />
+                ) : (
+                  <FieldDescription>At least 8 characters.</FieldDescription>
                 )}
               </Field>
             )}
@@ -193,7 +207,7 @@ export function SignUpForm() {
             </FieldDescription>
             <FieldDescription>
               Already have an account?{" "}
-              <Link href="/sign-in">Sign in</Link>
+              <Link href={withNext("/sign-in", next)}>Sign in</Link>
             </FieldDescription>
           </Field>
         </FieldGroup>
