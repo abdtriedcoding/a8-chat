@@ -90,10 +90,15 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: DAY,
     start: 0,
   },
-  // Sign-in attempts for one email, wrong passwords included. Better Auth's
-  // limit by IP may not see the client IP behind the Next proxy, so this one
-  // holds without it. The key is the lowercased email.
-  signInByEmail: { kind: "fixed window", rate: 5, period: MINUTE },
+  // Wrong passwords for one email from one IP. Only failures count, so
+  // someone else's guesses from another IP don't lock the owner out. The key
+  // is the lowercased email and the IP. Without an IP this limit is skipped,
+  // since an email-only key at this rate would let anyone lock the owner out.
+  signInFailures: { kind: "fixed window", rate: 5, period: MINUTE },
+  // Wrong passwords for one email from any IP, so guesses spread over many
+  // IPs still stop. Better Auth lets one IP try 10 sign-ins a minute, so one
+  // IP alone can't hit this limit. The key is the lowercased email.
+  signInFailuresByEmail: { kind: "fixed window", rate: 20, period: MINUTE },
   // Each user's connector tool calls, reads and actions both, so a reply
   // stuck calling tools can't run up the bill or hammer the vendor. Web
   // searches don't count here. Windows open at 00:00 UTC, like dailySends.
@@ -314,17 +319,67 @@ export async function countWebSearch(
 }
 
 /**
- * Counts one sign-in attempt for an email. Returns the milliseconds until an
- * attempt would go through, or null if this one can go ahead.
+ * A password sign-in: the email as typed, and the client IP, or null when
+ * Better Auth can't read it.
  */
-export async function limitSignIn(
+export type SignInAttempt = { email: string; ip: string | null };
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+/** The signInFailures key, or null without an IP. */
+function emailAndIpKey({ email, ip }: SignInAttempt) {
+  return ip ? `${normalizeEmail(email)}|${ip}` : null;
+}
+
+/**
+ * Checks a sign-in against the wrong-password limits, without counting it.
+ * Returns the milliseconds until a sign-in would go through, or null if this
+ * one can go ahead.
+ */
+export async function checkSignIn(
   ctx: RunMutationCtx,
-  email: string,
+  attempt: SignInAttempt,
 ): Promise<number | null> {
-  const { ok, retryAfter } = await rateLimiter.limit(ctx, "signInByEmail", {
-    key: email.trim().toLowerCase(),
-  });
+  const key = emailAndIpKey(attempt);
+  if (key) {
+    const { ok, retryAfter } = await rateLimiter.check(ctx, "signInFailures", {
+      key,
+    });
+    if (!ok) return retryAfter;
+  }
+  const { ok, retryAfter } = await rateLimiter.check(
+    ctx,
+    "signInFailuresByEmail",
+    { key: normalizeEmail(attempt.email) },
+  );
   return ok ? null : retryAfter;
+}
+
+/** Counts a wrong password against the sign-in limits. */
+export async function countFailedSignIn(
+  ctx: RunMutationCtx,
+  attempt: SignInAttempt,
+): Promise<void> {
+  const key = emailAndIpKey(attempt);
+  if (key) await rateLimiter.limit(ctx, "signInFailures", { key });
+  await rateLimiter.limit(ctx, "signInFailuresByEmail", {
+    key: normalizeEmail(attempt.email),
+  });
+}
+
+/**
+ * Clears the email and IP's wrong passwords after a sign-in goes through, so
+ * the owner's own typos stop counting. The email-only count stays, since it
+ * holds other IPs' guesses too. Without an IP there's nothing to clear.
+ */
+export async function clearSignInFailures(
+  ctx: RunMutationCtx,
+  attempt: SignInAttempt,
+): Promise<void> {
+  const key = emailAndIpKey(attempt);
+  if (key) await rateLimiter.reset(ctx, "signInFailures", { key });
 }
 
 /**
@@ -508,8 +563,9 @@ export async function limitDictationStart(
 }
 
 /**
- * Deletes a deleted user's rate limit counters. The sign-in counter's key is
- * the email. Better Auth's own counters are keyed by IP and path, not user.
+ * Deletes a deleted user's rate limit counters. The email alone can't find
+ * the signInFailures counters, whose keys hold an IP too. Better Auth's own
+ * counters are keyed by IP and path, not user.
  */
 export async function resetUserLimits(
   ctx: RunMutationCtx,
@@ -528,8 +584,8 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userShares", key);
   await rateLimiter.reset(ctx, "userDictationStarts", key);
   await rateLimiter.reset(ctx, "userDailyDictationStarts", key);
-  await rateLimiter.reset(ctx, "signInByEmail", {
-    key: email.trim().toLowerCase(),
+  await rateLimiter.reset(ctx, "signInFailuresByEmail", {
+    key: normalizeEmail(email),
   });
 }
 
