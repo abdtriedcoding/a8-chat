@@ -8,6 +8,14 @@ const MAX_TITLE_LENGTH = 60;
 export const MAX_RENAME_LENGTH = 80;
 
 /**
+ * How many characters a prompt has left before MAX_PROMPT_LENGTH, counted
+ * the way checkPrompt counts. Negative once it's too long.
+ */
+export function promptCharsLeft(prompt: string): number {
+  return MAX_PROMPT_LENGTH - prompt.trim().length;
+}
+
+/**
  * A prompt's text, trimmed. Throws if it's too long, or blank when the
  * prompt has no attachments. With attachments, it can be empty.
  */

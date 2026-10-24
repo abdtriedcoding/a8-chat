@@ -157,7 +157,7 @@ export function NewChat({ prompt }: { prompt?: string }) {
         textareaRef={caretToEnd}
         onSend={send}
         disabled={busy}
-        sendDisabled={modelStale}
+        stale={modelStale}
         autoApprove={autoApprove}
         onAutoApproveChange={setAutoApprove}
         modelId={modelId}

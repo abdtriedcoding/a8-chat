@@ -6,8 +6,10 @@ import "katex/dist/katex.min.css";
 import { cn } from "cn";
 import { ImageIcon } from "lucide-react";
 import { useState, type ComponentProps } from "react";
+import remarkBreaks from "remark-breaks";
 import {
   defaultRehypePlugins,
+  defaultRemarkPlugins,
   Streamdown,
   type Components,
   type ControlsConfig,
@@ -64,6 +66,14 @@ const rehypePlugins: RehypePlugins = [
   ],
 ];
 
+// A single newline in a paragraph stays a line break, as in an address or a
+// poem. Plain markdown joins the lines.
+const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
+  defaultRemarkPlugins.gfm,
+  defaultRemarkPlugins.codeMeta,
+  remarkBreaks,
+];
+
 const components: Components = { img: RemoteImage };
 
 // Remend closes unfinished markdown. Ours runs before its KaTeX handler (70).
@@ -94,6 +104,7 @@ export function Markdown({
       translations={translations}
       linkSafety={linkSafety}
       rehypePlugins={rehypePlugins}
+      remarkPlugins={remarkPlugins}
       components={components}
       remend={streaming ? streamingRemendOptions : undefined}
       isAnimating={streaming}

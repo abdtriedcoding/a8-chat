@@ -1,7 +1,13 @@
 "use client";
 
 import type { PaginationStatus } from "convex/react";
-import { Fragment, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   MessageScroller,
@@ -73,19 +79,10 @@ export function MessageList({
         <MessageScroller className="flex-1">
           <MessageScrollerViewport>
             {(status === "CanLoadMore" || status === "LoadingMore") && (
-              <div className="mx-auto flex w-full max-w-3xl justify-center px-4 pt-6 pb-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={status === "LoadingMore" || !onLoadEarlier}
-                  onClick={onLoadEarlier}
-                >
-                  {status === "LoadingMore" && (
-                    <Spinner data-icon="inline-start" />
-                  )}
-                  Load earlier messages
-                </Button>
-              </div>
+              <LoadEarlier
+                loading={status === "LoadingMore"}
+                onLoad={onLoadEarlier}
+              />
             )}
             <MessageScrollerContent
               aria-busy={replyStatus === "streaming"}
@@ -165,6 +162,56 @@ export function MessageList({
         </MessageScroller>
       </MessageScrollerProvider>
     </KnownItemsContext>
+  );
+}
+
+/** How far above the top of the view earlier messages start to load. */
+const LOAD_EARLIER_MARGIN_PX = 300;
+
+/**
+ * The "Load earlier messages" button, which also loads them when it scrolls
+ * near the view. The scroller opens at the end before this checks, so a
+ * thread that opens at its last message loads nothing until the user
+ * scrolls up. A short thread that doesn't fill the view loads until it does.
+ * `onLoad` unset turns it off.
+ */
+function LoadEarlier({
+  loading,
+  onLoad,
+}: {
+  loading: boolean;
+  onLoad?: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const load = useEffectEvent(() => onLoad?.());
+  const canLoad = !loading && onLoad !== undefined;
+  // Observing again after each page checks once more, in case the button is
+  // still in view.
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || !canLoad) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) load();
+      },
+      {
+        root: element.closest("[data-slot=message-scroller-viewport]"),
+        rootMargin: `${LOAD_EARLIER_MARGIN_PX}px 0px 0px 0px`,
+      },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [canLoad]);
+  return (
+    <div
+      ref={ref}
+      className="mx-auto flex w-full max-w-3xl justify-center px-4 pt-6 pb-2"
+    >
+      <Button variant="ghost" size="sm" disabled={!canLoad} onClick={onLoad}>
+        {loading && <Spinner data-icon="inline-start" />}
+        Load earlier messages
+      </Button>
+    </div>
   );
 }
 

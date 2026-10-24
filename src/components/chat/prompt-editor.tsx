@@ -10,11 +10,13 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { checkPrompt } from "../../../convex/lib/prompt";
+import { PromptLengthCount } from "./prompt-length";
 
 /**
  * Edits a prompt's text, the last prompt's or a queued one's. Enter saves,
  * Shift+Enter adds a line, and Esc cancels. Saving the same text cancels
- * too, so an unchanged last prompt doesn't ask for a new reply.
+ * too, so an unchanged last prompt doesn't ask for a new reply. Near
+ * MAX_PROMPT_LENGTH, a count says how many characters are left.
  */
 export function PromptEditor({
   text,
@@ -91,6 +93,7 @@ export function PromptEditor({
           className="max-h-52 min-h-11 px-3 pt-3"
         />
         <InputGroupAddon align="block-end" className="justify-end">
+          <PromptLengthCount text={draft} />
           <InputGroupButton size="sm" onClick={onCancel}>
             Cancel
           </InputGroupButton>
