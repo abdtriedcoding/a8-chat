@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -247,6 +247,7 @@ export function ModelPicker({
         side="top"
         align="start"
         collisionPadding={8}
+        aria-label="Choose a model"
         className="max-h-(--radix-popover-content-available-height) w-[34rem] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0"
       >
         {hasLocked && (
@@ -287,6 +288,7 @@ export function ModelPicker({
             <LabRail
               tab={search.trim() ? null : tab}
               onPick={pickTab}
+              onEscape={() => setOpen(false)}
             />
             <CommandList className="max-h-none flex-1">
               <CommandEmpty>
@@ -361,13 +363,19 @@ function matches(model: Model, search: string): boolean {
 /**
  * The tabs down the picker's left side: Featured, then a logo for each
  * lab. `tab` is null while a search covers every lab.
+ *
+ * The rail is one Tab stop. ↑, ↓, Home and End move between the tabs and
+ * open each one. A focused tab shows its tooltip, and the tooltip takes the
+ * first Esc. Its Esc calls `onEscape`, which closes the picker too.
  */
 function LabRail({
   tab,
   onPick,
+  onEscape,
 }: {
   tab: Tab | null;
   onPick: (tab: Tab) => void;
+  onEscape: () => void;
 }) {
   const tabs = [
     { id: FEATURED, name: "Featured", count: featuredModels().length },
@@ -377,11 +385,37 @@ function LabRail({
       count: MODELS.filter((model) => model.lab === lab.id).length,
     })),
   ];
+  // Tab lands on the open tab, or on Featured during a search.
+  const tabStop = tab ?? FEATURED;
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const buttons = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]"),
+    );
+    const current = buttons.indexOf(event.target as HTMLButtonElement);
+    if (current === -1) return;
+    // Otherwise the Command around the rail takes Enter and picks the
+    // highlighted model. The button still gets its click.
+    if (event.key === "Enter") event.stopPropagation();
+    const moves: Partial<Record<string, number>> = {
+      ArrowDown: (current + 1) % buttons.length,
+      ArrowUp: (current - 1 + buttons.length) % buttons.length,
+      Home: 0,
+      End: buttons.length - 1,
+    };
+    const next = moves[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    buttons[next].focus();
+    onPick(tabs[next].id);
+  }
+
   return (
     <div
       role="tablist"
       aria-label="Labs"
       aria-orientation="vertical"
+      onKeyDown={onKeyDown}
       className="no-scrollbar flex w-11 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r py-1.5"
     >
       {tabs.map((entry) => (
@@ -396,6 +430,7 @@ function LabRail({
                   ? (node) => node?.scrollIntoView({ block: "nearest" })
                   : undefined
               }
+              tabIndex={entry.id === tabStop ? 0 : -1}
               aria-selected={entry.id === tab}
               aria-label={`${entry.name}, ${entry.count} models`}
               onClick={() => onPick(entry.id)}
@@ -411,7 +446,7 @@ function LabRail({
               )}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">
+          <TooltipContent side="right" onEscapeKeyDown={onEscape}>
             {entry.name} · {entry.count}
           </TooltipContent>
         </Tooltip>

@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ApprovalAlerts } from "@/components/approval-alerts";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
 import { SessionGuard } from "@/components/session-guard";
+import { SkipLink } from "@/components/skip-link";
 import { TemporaryThreadProvider } from "@/components/temporary-thread";
 import { ThreadSearchProvider } from "@/components/thread-search";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -38,6 +39,7 @@ export default async function ChatLayout({
     // Outside the boundary, so the sidebar stays open or closed as the user
     // left it in the skeleton.
     <SidebarProvider defaultOpen={defaultOpen} className="h-svh">
+      <SkipLink />
       <ConvexPreconnect />
       <ConvexClientProvider
         tokenPromise={tokenPromise}
