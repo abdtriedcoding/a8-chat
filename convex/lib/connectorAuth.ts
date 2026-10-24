@@ -468,10 +468,17 @@ export function classifyOAuthError(
   error: unknown,
 ): "rejectedClient" | "rejectedGrant" | "other" {
   const code = typeof error === "string" ? error : oauthErrorCode(error);
-  if (code === "invalid_client" || code === "unauthorized_client") {
+  // GitHub's token endpoint has codes of its own for both.
+  if (
+    code === "invalid_client" ||
+    code === "unauthorized_client" ||
+    code === "incorrect_client_credentials"
+  ) {
     return "rejectedClient";
   }
-  if (code === "invalid_grant") return "rejectedGrant";
+  if (code === "invalid_grant" || code === "bad_refresh_token") {
+    return "rejectedGrant";
+  }
   return "other";
 }
 
@@ -667,6 +674,7 @@ export async function refreshTokens(
     registration.token_endpoint,
     body,
     REFRESH_TIMEOUT_MS,
+    connector.refreshAuthMethod,
   );
   const answer: unknown = await response.json().catch(() => undefined);
   const fields =
@@ -674,7 +682,8 @@ export async function refreshTokens(
       ? (answer as Record<string, unknown>)
       : {};
 
-  if (!response.ok) {
+  // GitHub answers a refused refresh with a 200 and an `error`.
+  if (!response.ok || fields.error !== undefined) {
     const rejection = classifyOAuthError(fields.error);
     if (rejection === "rejectedClient") {
       await forgetOAuthClientRegistration(ctx, connector);

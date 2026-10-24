@@ -111,15 +111,20 @@ export function createConnectorTools(
       staleConnections.push(connection);
     }
     if (!toolList) continue;
-    const replyConnection = new ReplyConnection(ctx, connector, connection);
-    replyConnections.push(replyConnection);
-
-    const tools: ToolSet = {};
     const offered = offeredTools(
       connector,
       toolList.tools,
       connection.grantedScopes,
     );
+    const replyConnection = new ReplyConnection(
+      ctx,
+      connector,
+      connection,
+      offered,
+    );
+    replyConnections.push(replyConnection);
+
+    const tools: ToolSet = {};
     for (const { server, entry, mcpTool } of offered) {
       const name = modelToolName(connector, server, mcpTool.name);
       if (!isRead(entry, mcpTool)) toolApproval[name] = "user-approval";
@@ -249,6 +254,8 @@ class ReplyConnection {
     private readonly ctx: ActionCtx,
     private readonly connector: Connector,
     connection: Doc<"connections">,
+    /** The tools the reply offers from the connection, as stored. */
+    private readonly tools: { server: ConnectorServer; mcpTool: McpTool }[],
   ) {
     this.tokens = connection;
   }
@@ -283,7 +290,20 @@ class ReplyConnection {
   private async open(server: ConnectorServer): Promise<MCPClient> {
     let client = this.clients.get(server.key);
     if (!client) {
-      const opening = openMcpClientWithFetch(server, this.fetchWithToken);
+      const opening = openMcpClientWithFetch(server, this.fetchWithToken).then(
+        (mcp) => {
+          // The MCP SDK sends a tool's `x-mcp-header` arguments as
+          // Mcp-Param headers, which servers like GitHub's require, only
+          // for tools it has seen listed. A reply calls tools from the
+          // stored list without listing them, so it shows the client those.
+          mcp.toolsFromDefinitions({
+            tools: this.tools
+              .filter((tool) => tool.server === server)
+              .map(({ mcpTool }) => mcpTool),
+          });
+          return mcp;
+        },
+      );
       client = opening;
       this.clients.set(server.key, opening);
       this.opened.push(opening);

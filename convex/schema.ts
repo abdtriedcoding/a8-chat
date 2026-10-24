@@ -9,6 +9,23 @@ export const vConnectionStatus = v.union(
   v.literal("needs_reconnect"),
 );
 
+/**
+ * Why a connection whose token only reaches its app installations, like
+ * GitHub's, can't reach anything yet: the app isn't installed, or no
+ * installation reaches a repository.
+ */
+export const vAppInstall = v.union(v.literal("missing"), v.literal("noRepos"));
+
+export type AppInstall = Infer<typeof vAppInstall>;
+
+/** What the app installation check finds: installed and reaching, or why not. */
+export const vAppInstallCheck = v.union(
+  v.literal("installed"),
+  ...vAppInstall.members,
+);
+
+export type AppInstallCheck = Infer<typeof vAppInstallCheck>;
+
 /** The authorization server a connector sign-in started with. */
 export const vAuthorizationServer = v.object({
   issuer: v.optional(v.string()),
@@ -368,6 +385,10 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
+    // Set while the connector's app isn't installed or reaches nothing, as
+    // the last tool list refresh found. Unset once it reaches something, or
+    // for a connector with no app to install.
+    appInstall: v.optional(vAppInstall),
     connectedAt: v.number(),
   }).index("by_userId_and_connectorId", ["userId", "connectorId"]),
   // The tools a8 stores for one connection (convex/toolLists.ts), apart from

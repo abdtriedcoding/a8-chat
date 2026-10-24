@@ -104,6 +104,10 @@ _Avoid_: plugin, integration, connected app, MCP server (for the connector)
 A connector a user adds themselves from an MCP server's URL, seen only by that user. It has a handle and a connection like any other connector, but a8 can't label its tools, so every call to one of them asks for approval unless the thread has auto-approve on.
 _Avoid_: custom MCP, custom server, my connector
 
+**App installation**:
+Where a user installed the deployment's own vendor app, like a8's GitHub App on their GitHub account or organization. A GitHub connection only reaches the repositories its installations reach, so connecting signs in and installing is a second step on GitHub. "App" here is the vendor's word for what the deployer registered, not an app in the sense above.
+_Avoid_: install (for the connection)
+
 **Connection**:
 One user's link to a connector. The user signed in to the app, or turned the connector on if its app needs no sign-in, like Excalidraw. A user has at most one connection per connector.
 _Avoid_: account, link, install
@@ -113,7 +117,7 @@ The OAuth client a8 registered with a connector's authorization server. A deploy
 _Avoid_: connector client, OAuth app, client (on its own)
 
 **Pre-registered client**:
-An OAuth client the deployer registered with a vendor by hand, for a vendor with no dynamic registration, like Google. Its ID and secret come from the deployment's env vars, and a8 stores no OAuth client registration for it. Without them, the connector is not set up.
+An OAuth client the deployer registered with a vendor by hand, for a vendor with no dynamic registration, like Google's OAuth client or GitHub's GitHub App. Its ID and secret come from the deployment's env vars, and a8 stores no OAuth client registration for it. Without them, the connector is not set up.
 _Avoid_: static client, manual client
 
 **MCP client**:

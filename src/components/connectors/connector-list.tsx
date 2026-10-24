@@ -29,6 +29,7 @@ export function ConnectorList() {
     {},
   );
   useFinishSignIn();
+  useCheckAppInstalls();
   const [search, setSearch] = useState("");
 
   const cards = searchConnectors(CONNECTOR_VIEWS, search).map((connector) => ({
@@ -135,4 +136,24 @@ function useFinishSignIn() {
         }
       });
   }, [router, finishConnect]);
+}
+
+/**
+ * Checks the user's app installs again when a vendor's install page sent
+ * the browser back, like GitHub's with `?setup_action=install`, then drops
+ * the query. The cards update once the check stores what it found.
+ */
+function useCheckAppInstalls() {
+  const checkAppInstalls = useAction(api.connectors.checkAppInstalls);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("setup_action")) return;
+    // Dropped at once, so a second run, like React's in development, finds
+    // nothing and can't check twice.
+    window.history.replaceState(null, "", "/connectors");
+    void checkAppInstalls().catch((error: unknown) => {
+      console.error("Checking app installs failed", error);
+    });
+  }, [checkAppInstalls]);
 }

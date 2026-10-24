@@ -10,10 +10,12 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalAction,
   internalMutation,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import {
+  pinnedFetch,
   withMcpClients,
   withoutFailedServers,
   type ServerClient,
@@ -26,6 +28,7 @@ import {
 import { withAccessToken } from "./lib/connectionTokens";
 import { readAccountLabel } from "./lib/connectorTools";
 import { findConnector, type Connector } from "./lib/connectors";
+import { vAppInstallCheck, type AppInstallCheck } from "./schema";
 
 /**
  * How long after a tool list refresh is scheduled before another can be.
@@ -104,38 +107,50 @@ export const refreshToolList = internalAction({
   args: { connectionId: v.id("connections") },
   returns: v.null(),
   handler: async (ctx, { connectionId }) => {
-    const connection = await ctx.runQuery(
-      internal.connections.getConnection,
-      { by: { connectionId } },
-    );
-    const connector = connection && findConnector(connection.connectorId);
-    if (connection?.status !== "connected" || !connector) return null;
-    // Reads the account label while a client is open, if sign-in found none.
-    const needsLabel = connection.accountLabel === undefined;
-    const result = await withAccessToken(
-      ctx,
-      connector,
-      connection,
-      async (accessToken) =>
-        await readToolList(connector, accessToken, { needsLabel }),
-    );
-    if ("needsReconnect" in result) return null;
-    await ctx.runMutation(internal.toolLists.saveToolList, {
-      connectionId,
-      connectedAt: connection.connectedAt,
-      toolList: result.value.toolList,
-      accountLabel: result.value.accountLabel,
-    });
+    await refreshConnectionToolList(ctx, connectionId);
     return null;
   },
 });
+
+/**
+ * What refreshToolList does, for an action that refreshes a connection's
+ * list at once, without the cooldown, like checkAppInstalls.
+ */
+export async function refreshConnectionToolList(
+  ctx: ActionCtx,
+  connectionId: Id<"connections">,
+) {
+  const connection = await ctx.runQuery(internal.connections.getConnection, {
+    by: { connectionId },
+  });
+  const connector = connection && findConnector(connection.connectorId);
+  if (connection?.status !== "connected" || !connector) return;
+  // Reads the account label while a client is open, if sign-in found none.
+  const needsLabel = connection.accountLabel === undefined;
+  const result = await withAccessToken(
+    ctx,
+    connector,
+    connection,
+    async (accessToken) =>
+      await readToolList(connector, accessToken, { needsLabel }),
+  );
+  if ("needsReconnect" in result) return;
+  await ctx.runMutation(internal.toolLists.saveToolList, {
+    connectionId,
+    connectedAt: connection.connectedAt,
+    toolList: result.value.toolList,
+    accountLabel: result.value.accountLabel,
+    appInstall: result.value.appInstall,
+  });
+}
 
 /**
  * Stores a new tool list for the connection, if it still exists and wasn't
  * replaced since `connectedAt`. A reconnect keeps the row's ID but stores
  * its own list, which an older refresh mustn't overwrite. A token refresh
  * keeps `connectedAt`, so it doesn't stop the write. Also stores
- * `accountLabel` if the connection has none.
+ * `accountLabel` if the connection has none, and what the app install
+ * check found.
  */
 export const saveToolList = internalMutation({
   args: {
@@ -143,16 +158,22 @@ export const saveToolList = internalMutation({
     connectedAt: v.number(),
     toolList: vStoredToolList,
     accountLabel: v.optional(v.string()),
+    appInstall: v.optional(vAppInstallCheck),
   },
   returns: v.null(),
   handler: async (
     ctx,
-    { connectionId, connectedAt, toolList, accountLabel },
+    { connectionId, connectedAt, toolList, accountLabel, appInstall },
   ) => {
     const connection = await ctx.db.get("connections", connectionId);
     if (connection?.connectedAt !== connectedAt) return null;
     if (accountLabel !== undefined && connection.accountLabel === undefined) {
       await ctx.db.patch("connections", connectionId, { accountLabel });
+    }
+    if (appInstall !== undefined) {
+      await ctx.db.patch("connections", connectionId, {
+        appInstall: appInstall === "installed" ? undefined : appInstall,
+      });
     }
     await writeToolList(ctx, connectionId, toolList);
     return null;
@@ -232,19 +253,46 @@ async function listAllTools(client: MCPClient): Promise<McpTool[]> {
 }
 
 /**
- * The connector's tool list (fetchToolList), read with `accessToken`, and
- * its account label (readAccountLabel) if `needsLabel`. A connector with no
- * sign-in has no token to pass.
+ * The connector's tool list (fetchToolList), read with `accessToken`, its
+ * account label (readAccountLabel) if `needsLabel`, and whether its app is
+ * installed (readAppInstall). A connector with no sign-in has no token to
+ * pass.
  */
 export async function readToolList(
   connector: Connector,
   accessToken: string | undefined,
   { needsLabel }: { needsLabel: boolean },
-): Promise<{ toolList: StoredToolList; accountLabel: string | undefined }> {
+): Promise<{
+  toolList: StoredToolList;
+  accountLabel: string | undefined;
+  appInstall: AppInstallCheck | undefined;
+}> {
   return await withMcpClients(connector, accessToken, async (clients) => ({
     toolList: await fetchToolList(connector, clients),
     accountLabel: needsLabel
       ? await readAccountLabel(connector, clients)
       : undefined,
+    appInstall: await readAppInstall(connector, accessToken),
   }));
+}
+
+/**
+ * Whether the connection's app is installed and reaches anything, for a
+ * connector with an app to install. Undefined for any other connector, or
+ * when the vendor didn't answer, so the stored answer stays.
+ */
+async function readAppInstall(
+  connector: Connector,
+  accessToken: string | undefined,
+): Promise<AppInstallCheck | undefined> {
+  if (!connector.appInstall || accessToken === undefined) return undefined;
+  try {
+    return await connector.appInstall.check(
+      pinnedFetch(connector),
+      accessToken,
+    );
+  } catch (error) {
+    console.error(`Checking the ${connector.name} app install failed`, error);
+    return undefined;
+  }
 }
