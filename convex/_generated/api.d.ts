@@ -61,6 +61,7 @@ import type * as lib_runEmails from "../lib/runEmails.js";
 import type * as lib_schedule from "../lib/schedule.js";
 import type * as lib_scheduleText from "../lib/scheduleText.js";
 import type * as lib_scheduledPrompts from "../lib/scheduledPrompts.js";
+import type * as lib_sharedFiles from "../lib/sharedFiles.js";
 import type * as lib_sharedMessages from "../lib/sharedMessages.js";
 import type * as lib_temporaryThreads from "../lib/temporaryThreads.js";
 import type * as lib_threadModels from "../lib/threadModels.js";
@@ -145,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   "lib/schedule": typeof lib_schedule;
   "lib/scheduleText": typeof lib_scheduleText;
   "lib/scheduledPrompts": typeof lib_scheduledPrompts;
+  "lib/sharedFiles": typeof lib_sharedFiles;
   "lib/sharedMessages": typeof lib_sharedMessages;
   "lib/temporaryThreads": typeof lib_temporaryThreads;
   "lib/threadModels": typeof lib_threadModels;

@@ -16,7 +16,9 @@ import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  httpAction,
   internalMutation,
+  internalQuery,
   mutation,
   query,
   type MutationCtx,
@@ -25,10 +27,17 @@ import {
 import { waitingApprovalIds } from "./chat/approval";
 import { getStoppedReply, isReplyInProgress } from "./chat/stop";
 import { hasPendingReply, MAX_TURN_MESSAGES } from "./chat/turns";
+import { getAttachmentKind } from "./lib/attachments";
 import { appError, ERROR_CODES } from "./lib/errors";
 import { authorizeThreadAccess, getOwnThread } from "./lib/guards";
 import { replyModelIds } from "./lib/models";
-import { redactMessage, vSharedMessage } from "./lib/sharedMessages";
+import { isSharedFilePart, SHARED_FILES_PATH } from "./lib/sharedFiles";
+import {
+  redactMessage,
+  vSharedMessage,
+  type SharedMessage,
+  type SharedPart,
+} from "./lib/sharedMessages";
 import { refuseTemporaryThread } from "./lib/temporaryThreads";
 import { limitShare } from "./rateLimits";
 
@@ -199,8 +208,16 @@ async function copyMessages(
     : page;
 
   const modelIds = replyModelIds(batch);
+  // A prompt's UI message has its message's ID.
+  const promptFileIds = new Map(
+    batch.map((message) => [message._id, message.fileIds ?? []]),
+  );
   for (const message of toUIMessages(batch)) {
-    const shared = redactMessage(message, modelIds.get(message.order));
+    const shared = redactMessage(
+      message,
+      modelIds.get(message.order),
+      promptFileIds.get(message.id) ?? [],
+    );
     if (!shared) continue;
     await ctx.db.insert("sharedSnapshotMessages", {
       snapshotId,
@@ -300,7 +317,7 @@ export const deleteRows = internalMutation({
     }
     const files = await ctx.db
       .query("sharedSnapshotFiles")
-      .withIndex("by_snapshotId_and_version", (q) =>
+      .withIndex("by_snapshotId_and_version_and_fileId", (q) =>
         version === undefined
           ? q.eq("snapshotId", snapshotId)
           : q.eq("snapshotId", snapshotId).eq("version", version),
@@ -420,10 +437,108 @@ export const listSharedMessages = query({
       });
     return {
       ...result,
-      page: result.page.map(({ _id, message }) => ({ _id, message })),
+      page: result.page.map(({ _id, message }) => ({
+        _id,
+        message: withoutStorageUrls(message),
+      })),
     };
   },
 });
+
+/**
+ * A file the link's live version shows, for serveSharedFile. Null once the
+ * link is unshared or the file isn't one a8 accepts as an attachment.
+ */
+export const getSharedFile = internalQuery({
+  args: { publicId: v.string(), fileId: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({
+      storageId: v.id("_storage"),
+      mediaType: v.string(),
+      filename: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx, { publicId, fileId }) => {
+    const snapshot = await findLiveSnapshot(ctx, publicId);
+    if (!snapshot) return null;
+    const row = await ctx.db
+      .query("sharedSnapshotFiles")
+      .withIndex("by_snapshotId_and_version_and_fileId", (q) =>
+        q
+          .eq("snapshotId", snapshot._id)
+          .eq("version", snapshot.version)
+          .eq("fileId", fileId),
+      )
+      .unique();
+    if (!row) return null;
+    const file = await ctx.runQuery(components.agent.files.get, { fileId });
+    const mediaType = file?.mediaType ?? file?.mimeType;
+    if (!file || !mediaType || !getAttachmentKind(mediaType)) return null;
+    return {
+      // The Agent's files table types it as a string.
+      storageId: file.storageId as Id<"_storage">,
+      mediaType,
+      ...(file.filename !== undefined && { filename: file.filename }),
+    };
+  },
+});
+
+/**
+ * Serves a shared page's attachment at sharedFilePath. 404 unless the link
+ * is live and its live version shows the file. The response says not to
+ * store it, so a browser asks again and gets a 404 once it's unshared.
+ */
+export const serveSharedFile = httpAction(async (ctx, request) => {
+  const [publicId, fileId, ...rest] = new URL(request.url).pathname
+    .slice(SHARED_FILES_PATH.length)
+    .split("/");
+  const file =
+    publicId && fileId && rest.length === 0
+      ? await ctx.runQuery(internal.sharedSnapshots.getSharedFile, {
+          publicId,
+          fileId,
+        })
+      : null;
+  const blob = file && (await ctx.storage.get(file.storageId));
+  if (!file || !blob) return new Response("Not found", { status: 404 });
+  const headers = new Headers({
+    "Content-Type": file.mediaType,
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  if (file.filename !== undefined) {
+    headers.set(
+      "Content-Disposition",
+      // RFC 5987 doesn't allow the ' that encodeURIComponent keeps.
+      `inline; filename*=UTF-8''${encodeURIComponent(file.filename).replaceAll("'", "%27")}`,
+    );
+  }
+  return new Response(blob, { headers });
+});
+
+/**
+ * The message without the storage URLs that rows copied before a8 kept file
+ * IDs still hold, and without their file parts, which the page can't load
+ * until migrations:replaceSharedFileUrlsWithIds gives them file IDs.
+ */
+function withoutStorageUrls(message: SharedMessage): SharedMessage {
+  return {
+    ...message,
+    parts: message.parts.flatMap((part): SharedPart[] => {
+      if (!isSharedFilePart(part)) return [part];
+      if (part.fileId === undefined) return [];
+      return [
+        {
+          type: part.type,
+          mediaType: part.mediaType,
+          fileId: part.fileId,
+          ...(part.filename !== undefined && { filename: part.filename }),
+        },
+      ];
+    }),
+  };
+}
 
 /** Whether a shared snapshot shows the file. Upload cleanup keeps it then. */
 export async function isSharedFile(ctx: QueryCtx, fileId: string) {

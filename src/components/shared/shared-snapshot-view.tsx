@@ -2,7 +2,8 @@
 
 import { usePaginatedQuery, useQuery } from "convex-helpers/react/cache/hooks";
 import type { FunctionReturnType } from "convex/server";
-import { LinkIcon } from "lucide-react";
+import { ArrowRightIcon, LinkIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { AssistantMessage } from "@/components/chat/assistant-message";
 import {
@@ -10,6 +11,14 @@ import {
   ThreadActionsProvider,
 } from "@/components/chat/thread-actions-context";
 import { UserMessage } from "@/components/chat/user-message";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Empty,
   EmptyDescription,
@@ -22,8 +31,21 @@ import { Spinner } from "@/components/ui/spinner";
 import type { ThreadMessage } from "@/lib/stopped-turns";
 import { threadTitle } from "@/lib/thread-title";
 import { api } from "../../../convex/_generated/api";
+import {
+  isSharedFilePart,
+  sharedFilePath,
+} from "../../../convex/lib/sharedFiles";
 
 const PAGE_SIZE = 20;
+
+// The deployment's site URL, where shared files are served.
+const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
+
+if (!convexSiteUrl) {
+  throw new Error(
+    "Missing NEXT_PUBLIC_CONVEX_SITE_URL. Run `bunx convex dev` to create .env.local.",
+  );
+}
 
 type SharedRow = FunctionReturnType<
   typeof api.sharedSnapshots.listSharedMessages
@@ -56,7 +78,7 @@ export function SharedSnapshotView({ publicId }: { publicId: string }) {
             {threadTitle(snapshot)}
           </h1>
           <ThreadActionsProvider actions={READ_ONLY_ACTIONS}>
-            {results.map(toThreadMessage).map((message) =>
+            {results.map((row) => toThreadMessage(publicId, row)).map((message) =>
               message.role === "user" ? (
                 <UserMessage
                   key={message.key}
@@ -74,6 +96,7 @@ export function SharedSnapshotView({ publicId }: { publicId: string }) {
           {status === "LoadingMore" && (
             <Spinner className="mx-auto" aria-label="Loading more messages" />
           )}
+          {status === "Exhausted" && <TryA8Card />}
         </>
       )}
     </main>
@@ -82,9 +105,23 @@ export function SharedSnapshotView({ publicId }: { publicId: string }) {
 
 /**
  * A copied message as the chat's message components take it. The snapshot
- * keeps no status, so every message reads as finished.
+ * keeps no status, so every message reads as finished. Its attachments load
+ * through the link, so they stop loading once it's unshared.
  */
-function toThreadMessage({ _id, message }: SharedRow): ThreadMessage {
+function toThreadMessage(
+  publicId: string,
+  { _id, message }: SharedRow,
+): ThreadMessage {
+  const parts = message.parts.map((part) =>
+    isSharedFilePart(part) && part.fileId !== undefined
+      ? {
+          type: part.type,
+          mediaType: part.mediaType,
+          url: `${convexSiteUrl}${sharedFilePath(publicId, part.fileId)}`,
+          filename: part.filename,
+        }
+      : part,
+  );
   return {
     id: _id,
     key: _id,
@@ -94,10 +131,36 @@ function toThreadMessage({ _id, message }: SharedRow): ThreadMessage {
     status: "success",
     text: message.text,
     // The snapshot's parts are a subset of the UI message's.
-    parts: message.parts as ThreadMessage["parts"],
+    parts: parts as ThreadMessage["parts"],
     metadata: message.modelId ? { modelId: message.modelId } : undefined,
     _creationTime: 0,
   };
+}
+
+/** After the last turn: what a8 is, for people who haven't tried it. */
+function TryA8Card() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ask a8 your own questions</CardTitle>
+        <CardDescription>
+          a8 is an AI chat that works in your Gmail, Google Calendar, Notion,
+          Linear and more. It waits for your OK before it changes anything.
+        </CardDescription>
+      </CardHeader>
+      <CardFooter className="flex-wrap gap-x-4 gap-y-2">
+        <Button asChild size="lg">
+          <Link href="/sign-up">
+            Try a8 free
+            <ArrowRightIcon data-icon="inline-end" />
+          </Link>
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          Free plan, no card needed.
+        </span>
+      </CardFooter>
+    </Card>
+  );
 }
 
 /** Loads the next page when it scrolls near the viewport. */

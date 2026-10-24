@@ -11,11 +11,20 @@ const vSharedTextPart = v.object({
   text: v.string(),
 });
 
-/** An attachment on a prompt. Its URL is the file's storage URL. */
+/**
+ * An attachment on a prompt, by its file ID in the Agent's files table. The
+ * shared page loads it from sharedFilePath (lib/sharedFiles.ts), never from
+ * its storage URL, so unsharing cuts off the file too.
+ */
 const vSharedFilePart = v.object({
   type: v.literal("file"),
   mediaType: v.string(),
-  url: v.string(),
+  // Unset only on rows copied before a8 kept it, until
+  // migrations:replaceSharedFileUrlsWithIds sets it.
+  fileId: v.optional(v.string()),
+  // The file's storage URL, which a8 stopped storing. The same migration
+  // unsets it. Delete this field once it has run everywhere.
+  url: v.optional(v.string()),
   filename: v.optional(v.string()),
 });
 
@@ -66,7 +75,7 @@ export const vSharedMessage = v.object({
 });
 
 export type SharedMessage = Infer<typeof vSharedMessage>;
-type SharedPart = SharedMessage["parts"][number];
+export type SharedPart = SharedMessage["parts"][number];
 
 /**
  * The message as a shared snapshot keeps it, or null when nothing of it is
@@ -74,15 +83,22 @@ type SharedPart = SharedMessage["parts"][number];
  * its web searches, and the names of its connector and scheduled prompt
  * tool calls, and `modelId`, the model that wrote it (replyModelIds). It
  * drops every other field, such as IDs, metadata, status and errors.
+ *
+ * `fileIds` are the prompt's file IDs, in the order of its file parts, as
+ * sendPrompt saves them. A file part without one is dropped.
  */
 export function redactMessage(
   message: UIMessage,
   modelId: string | undefined,
+  fileIds: string[],
 ): SharedMessage | null {
   if (message.role !== "user" && message.role !== "assistant") return null;
-  const parts = message.parts.flatMap((part): SharedPart[] =>
-    message.role === "user" ? promptPart(part) : replyPart(part),
-  );
+  let fileIndex = 0;
+  const parts = message.parts.flatMap((part): SharedPart[] => {
+    if (message.role !== "user") return replyPart(part);
+    const fileId = part.type === "file" ? fileIds[fileIndex++] : undefined;
+    return promptPart(part, fileId);
+  });
   // A tool part's `type` is any string, so `type` can't narrow to text.
   const texts = parts.flatMap((part) => ("text" in part ? [part.text] : []));
   // Like replyText in the client, a reply's steps get a blank line between.
@@ -99,14 +115,14 @@ export function redactMessage(
 
 type Part = UIMessage["parts"][number];
 
-function promptPart(part: Part): SharedPart[] {
+function promptPart(part: Part, fileId: string | undefined): SharedPart[] {
   if (part.type === "text") return [{ type: "text", text: part.text }];
-  if (part.type === "file") {
+  if (part.type === "file" && fileId !== undefined) {
     return [
       {
         type: "file",
         mediaType: part.mediaType,
-        url: part.url,
+        fileId,
         ...(part.filename !== undefined && { filename: part.filename }),
       },
     ];

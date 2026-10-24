@@ -299,14 +299,19 @@ export default defineSchema({
     "position",
   ]),
   // One row per file a shared snapshot's version shows, so
-  // cleanUpUnsentUploads keeps the file while the snapshot holds it.
+  // cleanUpUnsentUploads keeps the file while the snapshot holds it. The
+  // link serves only the files its live version has a row for.
   sharedSnapshotFiles: defineTable({
     snapshotId: v.id("sharedSnapshots"),
     version: v.number(),
     fileId: v.string(),
   })
     .index("by_fileId", ["fileId"])
-    .index("by_snapshotId_and_version", ["snapshotId", "version"]),
+    .index("by_snapshotId_and_version_and_fileId", [
+      "snapshotId",
+      "version",
+      "fileId",
+    ]),
   // One row per paused queue. Stop and a failed reply add it, Resume
   // deletes it, and so does deleting the last queued prompt, since an empty
   // queue is never paused.
