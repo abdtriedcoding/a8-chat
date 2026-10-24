@@ -94,6 +94,9 @@ async function listSummaryMarks(
 /** The most Agent thread pages one call to `list` reads. */
 const MAX_PAGES_PER_LIST = 10;
 
+/** The most threads one page of `list` asks for. */
+const MAX_THREADS_PER_PAGE = 50;
+
 /**
  * The user's threads, newest first: the active ones but not the pinned ones,
  * or with `archived`, the archived ones. Never the temporary ones. The
@@ -108,9 +111,15 @@ export const list = query({
     archived: v.optional(v.boolean()),
   },
   returns: paginationResultValidator(vThreadSummary),
-  handler: async (ctx, { paginationOpts, archived = false }) => {
+  handler: async (ctx, { paginationOpts: requested, archived = false }) => {
     const user = await optionalUser(ctx);
     if (!user) return { page: [], isDone: true, continueCursor: "" };
+    // The client picks numItems, and each of up to MAX_PAGES_PER_LIST reads
+    // takes that many threads, so cap it.
+    const paginationOpts = {
+      ...requested,
+      numItems: Math.min(requested.numItems, MAX_THREADS_PER_PAGE),
+    };
 
     const status = archived ? "archived" : "active";
     // Archived threads can't be pinned, so only the active list skips pins.

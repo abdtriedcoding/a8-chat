@@ -78,6 +78,12 @@ export const checkout = action({
     if (plan.name === "pro") {
       throw appError(ERROR_CODES.ALREADY_ON_PLAN, "You're already on Pro.");
     }
+    if (plan.paymentFailed) {
+      throw appError(
+        ERROR_CODES.PAYMENT_FAILED,
+        "Your last Pro payment failed. Update your card from Billing in Settings to get Pro back.",
+      );
+    }
     const { url } = await polar.createCheckoutSession(ctx, {
       productIds: [PRO_PRODUCTS[interval]],
       userId,

@@ -120,6 +120,9 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Each user's shares and link updates. Each one copies a thread, so a
   // script can't fill the deployment with copies.
   userShares: { kind: "fixed window", rate: 30, period: HOUR },
+  // Each user's new scheduled prompts. Each one makes a thread, so a script
+  // can't fill the deployment with threads by creating and deleting them.
+  userScheduledPromptCreates: { kind: "fixed window", rate: 20, period: HOUR },
   // Each user's dictation sockets: one for each tap on the mic, and one for
   // each warm-up before a tap (ADR 0012). a8 can't see how long a dictation
   // runs, so these cap how often a socket opens. Warm-ups make this several
@@ -502,6 +505,23 @@ export async function limitShare(
 }
 
 /**
+ * Counts one new scheduled prompt against the user's limit. Returns the
+ * milliseconds until one would go through, or null if this one can go
+ * ahead.
+ */
+export async function limitScheduledPromptCreate(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<number | null> {
+  const { ok, retryAfter } = await rateLimiter.limit(
+    ctx,
+    "userScheduledPromptCreates",
+    { key: userId },
+  );
+  return ok ? null : retryAfter;
+}
+
+/**
  * Why a dictation start would be refused, or null if it fits under the
  * user's limits and the daily limit. Counts nothing. It checks the user's
  * limits first, so their messages win when both are hit.
@@ -582,6 +602,7 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userConnectorToolCalls", key);
   await rateLimiter.reset(ctx, "userConnectStarts", key);
   await rateLimiter.reset(ctx, "userShares", key);
+  await rateLimiter.reset(ctx, "userScheduledPromptCreates", key);
   await rateLimiter.reset(ctx, "userDictationStarts", key);
   await rateLimiter.reset(ctx, "userDailyDictationStarts", key);
   await rateLimiter.reset(ctx, "signInFailuresByEmail", {

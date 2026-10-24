@@ -33,8 +33,9 @@ import {
 
 /**
  * The user's plan and when its credits reset. Free users upgrade from here,
- * and Pro users open Polar's customer portal. Both leave a8 for Polar's
- * pages, and Polar sends them back here.
+ * and Pro users, or Free users whose Pro payment failed, open Polar's
+ * customer portal. Both leave a8 for Polar's pages, and Polar sends them
+ * back here.
  */
 export function PlanCard() {
   const credits = useCredits();
@@ -75,7 +76,7 @@ export function PlanCard() {
           <Skeleton className="h-16 w-full" />
         )}
       </CardContent>
-      {plan?.name === "free" && (
+      {plan?.name === "free" && !plan.paymentFailed && (
         <CardFooter className="flex-wrap gap-2">
           {BILLING_INTERVALS.map((interval) => (
             <Button
@@ -93,7 +94,7 @@ export function PlanCard() {
           ))}
         </CardFooter>
       )}
-      {plan?.name === "pro" && (
+      {(plan?.name === "pro" || plan?.paymentFailed) && (
         <CardFooter>
           <Button
             variant="outline"
@@ -101,7 +102,7 @@ export function PlanCard() {
             onClick={() => void open("portal", () => portal())}
           >
             {opening === "portal" && <Spinner data-icon="inline-start" />}
-            Manage subscription
+            {plan.paymentFailed ? "Update card" : "Manage subscription"}
           </Button>
         </CardFooter>
       )}
@@ -134,6 +135,11 @@ function PlanSummary({
         {plan.monthlyCredits} credits a month. They reset on{" "}
         {formatDate(period.periodEnd)}.
       </span>
+      {plan.paymentFailed && (
+        <span className="text-sm text-muted-foreground">
+          Your last Pro payment failed. Update your card to get Pro back.
+        </span>
+      )}
       {plan.endsAt !== null && (
         <span className="text-sm text-muted-foreground">
           Pro ends on {formatDate(plan.endsAt)}, and you move to Free.

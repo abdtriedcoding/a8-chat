@@ -383,6 +383,9 @@ export const getSharedSnapshot = query({
   },
 });
 
+/** The most messages one page of listSharedMessages returns. */
+const MAX_SHARED_MESSAGES_PER_PAGE = 50;
+
 /**
  * A page of a shared snapshot's messages, oldest first. Anyone can read it.
  * `version` comes from getSharedSnapshot, so a switch to a new version
@@ -407,7 +410,14 @@ export const listSharedMessages = query({
       .withIndex("by_snapshotId_and_version_and_position", (q) =>
         q.eq("snapshotId", snapshot._id).eq("version", version),
       )
-      .paginate(paginationOpts);
+      // Anyone can call this, and they pick numItems, so cap it.
+      .paginate({
+        ...paginationOpts,
+        numItems: Math.min(
+          paginationOpts.numItems,
+          MAX_SHARED_MESSAGES_PER_PAGE,
+        ),
+      });
     return {
       ...result,
       page: result.page.map(({ _id, message }) => ({ _id, message })),
