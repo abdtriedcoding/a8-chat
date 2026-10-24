@@ -9,7 +9,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `convex.config.ts`: the app's components (Better Auth, Agent, rate limiter, Resend, Polar) and every env var the backend reads. The root [`README.md`](../README.md) explains each one.
 - `schema.ts`: a8's own tables. Threads, messages and users live in the Agent and Better Auth components.
 - `auth.config.ts`: tells Convex to trust Better Auth's tokens, with the public keys inline when `JWKS` is set.
-- `http.ts`: the HTTP routes, Better Auth's, the connector OAuth callback and, when billing is on, Polar's webhooks.
+- `http.ts`: the HTTP routes, Better Auth's, the connector OAuth callback, the shared page's files and, when billing is on, Polar's webhooks.
 - `crons.ts`: the cleanup jobs. Attachments that were never sent, expired upload grants and orphaned storage go daily, and expired connector sign-ins go hourly.
 
 ### Accounts
@@ -32,7 +32,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `chat/turns.ts`: reads a thread's turns, such as its last turn and the turn a continuing reply picks up.
 - `chat/messages.ts`: `listThreadMessages`, the thread's messages for the UI.
 - `threads.ts`: listing, getting, searching, renaming and deleting threads.
-- `sharedSnapshots.ts`: sharing a thread through a public link (ADR 0011). It copies the thread's finished turns in batches, unshares, and serves the public page's queries.
+- `sharedSnapshots.ts`: sharing a thread through a public link (ADR 0011). It copies the thread's finished turns in batches, unshares, and serves the public page's queries and its attachments, which load only while the link is live.
 - `titles.ts`: a new thread's title, written by Claude Haiku from its first prompt at no credit cost.
 - `tools/webSearch.ts`: the web search tool, and the only code that calls Tavily (ADR 0001).
 - `tools/findTools.ts`: a8's own tool search, which finds deferred connector tools on models other than Claude (ADR 0016).
@@ -71,6 +71,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/replyFailure.ts`: the reason a failed reply shows.
 - `lib/timeZone.ts`: the browser's time zone, which a reply uses for the user's date.
 - `lib/sharedMessages.ts`: what a shared snapshot keeps of a message, and the redaction that drops the rest.
+- `lib/sharedFiles.ts`: the path a shared page loads its attachments from, shared with the client.
 - `lib/threadSearchSnippet.ts`: the snippet thread search shows around a match.
 - `lib/authEmails.ts`: the text and HTML of the auth emails.
 - `lib/runEmails.ts`: the subject, text and HTML of a scheduled run's emails.

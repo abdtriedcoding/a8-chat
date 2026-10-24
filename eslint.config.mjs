@@ -16,6 +16,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "prompt",
   "queue",
   "scheduleText",
+  "sharedFiles",
   "timeZone",
   "userName",
 ];
