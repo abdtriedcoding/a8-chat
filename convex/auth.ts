@@ -179,17 +179,19 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
           });
         }
       }),
-      // Counts a wrong password (a 401) once Better Auth has checked it, so a
-      // correct password never counts, and clears the email and IP's count
-      // after a sign-in goes through. Google sign-in and password reset use
-      // other paths and stay open while the limit is hit.
+      // Counts a wrong password once Better Auth has checked it, so a correct
+      // password never counts, and clears the email and IP's count after a
+      // sign-in goes through. Only INVALID_EMAIL_OR_PASSWORD counts: other
+      // 401s, like a failed session write after a correct password, aren't
+      // guesses. Google sign-in and password reset use other paths and stay
+      // open while the limit is hit.
       after: createAuthMiddleware(async (authCtx) => {
         const attempt = signInAttempt(authCtx);
         if (!attempt || !("runMutation" in ctx)) return;
         const returned = authCtx.context.returned;
         if (!isAPIError(returned)) {
           await clearSignInFailures(ctx, attempt);
-        } else if (returned.statusCode === 401) {
+        } else if (returned.body?.code === "INVALID_EMAIL_OR_PASSWORD") {
           await countFailedSignIn(ctx, attempt);
         }
       }),
