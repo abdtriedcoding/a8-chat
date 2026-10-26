@@ -4,7 +4,7 @@ This replaces the short model list of ADR 0015. a8 now offers every model on Ver
 
 `scripts/sync-models.ts` reads the gateway's public model list (`https://ai-gateway.vercel.sh/v1/models`) and writes the models to `convex/lib/gatewayModels.ts`, with each one's name, description, context window, prices, what it reads and its tags. It saves each lab's logo from models.dev to `public/labs`. Someone runs the script, reads the diff and merges it, so the list still changes only through a pull request.
 
-Prices set the plan. `convex/lib/models.ts` estimates a typical reply at 30,000 input tokens and 4,000 output tokens. A model whose typical reply costs 5 credits or less is on Free, and Pro gets every model. The seven models from before keep their plans, and their estimates stay within half a credit of the hand-set ones.
+Prices set the plan. `convex/lib/models.ts` estimates a typical reply at 30,000 input tokens and 4,000 output tokens. A model whose typical reply costs 5 credits or less is on Free, and Pro gets every model. A model whose typical reply costs over 100 credits isn't listed (issue #423). On Oct 21, 2026 that dropped GPT 5.5 Pro, GPT 5.4 Pro and GPT 5.2 Pro, whose typical reply costs over a fifth of Pro's month, and a burst of them could pass the daily spend ceiling before a cost landed. The seven models from before keep their plans, and their estimates stay within half a credit of the hand-set ones.
 
 ## Considered options
 

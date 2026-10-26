@@ -8,6 +8,7 @@ import {
   checkAttachmentCount,
   getAcceptedMediaTypes,
   UNNAMED_FILE,
+  withTokenNote,
 } from "../lib/attachments";
 import type { Model } from "../lib/models";
 
@@ -34,7 +35,10 @@ export type AttachmentNotFound = Infer<typeof vAttachmentNotFound>;
  * before uploading, so only a call that skips it gets these.
  *
  * The parts carry the files' storage URLs. The model's provider fetches the
- * files from there, so the reply runner never loads them.
+ * files from there, so the reply runner never loads them. Each part notes
+ * about how many tokens its file takes (withTokenNote), for capHistory and
+ * the reply's credit hold. A file uploaded before a8 counted them has no
+ * note.
  */
 export async function loadPromptAttachments(
   ctx: MutationCtx,
@@ -74,7 +78,7 @@ export async function loadPromptAttachments(
       return {
         fileId,
         filename: file.filename ?? UNNAMED_FILE,
-        part: imagePart ?? filePart,
+        part: withTokenNote(imagePart ?? filePart, userAttachment.tokens),
       };
     }),
   );
