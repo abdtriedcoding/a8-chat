@@ -25,7 +25,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `agents/chat.ts`: the Agent and the native tools.
 - `models.ts`: the model picker's functions, which set a thread's model and the user's default model.
 - `chat/send.ts`: the four Sends, which are `startThread`, `sendMessage`, `editPrompt` and `regenerateReply`, plus starting and resuming the queue. `sendMessage` queues its prompt while the thread is busy.
-- `chat/reply.ts`: `streamReply`, which writes a reply, and the reply's start and failure.
+- `chat/reply.ts`: `streamReply`, which writes a reply, and the reply's start and failure. `expireReply` fails a reply whose runner Convex stopped at its time limit.
 - `chat/stop.ts`: stopping a reply, and the text a stopped reply keeps.
 - `chat/queue.ts`: a thread's queued prompts and its paused flag, and editing and deleting them.
 - `chat/approval.ts`: the user's decision on an action card, and when a reply continues.
@@ -58,7 +58,7 @@ These modules hold helpers and register no Convex functions.
 - `lib/monthlyPeriod.ts`: the date math for a plan's monthly periods, shared with the Billing page.
 - `lib/credits.ts`: the credit ledger, and `currentCreditRow`, which opens a new period on the first usage in it or after an upgrade.
 - `lib/creditPeriod.ts`: which ledger row covers now, shared with the Billing page.
-- `lib/usage.ts`: sends reply steps, titles and web searches to the cost recorder. A model call costs what AI Gateway reports for it.
+- `lib/usage.ts`: sends reply steps, titles and web searches to the cost recorder. A model call costs what AI Gateway reports for it. `trackModelCalls` follows a reply's model calls, so a step the user stopped costs what the gateway reports too.
 - `lib/models.ts`: the model list, with each model's lab, gateway id, attachments, plans and rough credits per reply. Shared with the picker.
 - `lib/gateway.ts`: the AI Gateway client, and the language model for a model on the list.
 - `lib/threadModels.ts`: each thread's model and each user's default model, and the plan check on each send. A send whose thread model left the list or isn't on the user's plan replies on the default model and moves the thread to it.

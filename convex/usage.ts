@@ -48,10 +48,17 @@ const vModelCall = v.object({
 /**
  * Schedules recordGenerationCost for a model call, and holds credits for
  * it until the cost is recorded (holdCost). recordModelUsage (lib/usage.ts)
- * calls it from the usage handler, whose ctx can't schedule.
+ * calls it from the usage handler, whose ctx can't schedule, and
+ * recordStoppedStep calls it for a step the user stopped, with an
+ * `estimatedCostUsd` that recordGenerationCost records if the gateway never
+ * reports a cost.
  */
 export const scheduleCostLookup = internalMutation({
-  args: { generationId: v.string(), event: vModelCall },
+  args: {
+    generationId: v.string(),
+    event: vModelCall,
+    estimatedCostUsd: v.optional(v.number()),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
     const { userId, threadId, kind } = args.event;
@@ -71,18 +78,24 @@ export const scheduleCostLookup = internalMutation({
 /**
  * Asks AI Gateway what a model call cost and records it (ADR 0015). The
  * gateway can take a while to record a generation, so a lookup that fails
- * tries again, waiting longer each time, up to COST_LOOKUP_ATTEMPTS times. A cost the gateway never
- * reports is logged, not recorded. Either way, the model call's credit hold
- * ends (releaseCost).
+ * tries again, waiting longer each time, up to COST_LOOKUP_ATTEMPTS times.
+ * A cost the gateway never reports is logged, and `estimatedCostUsd` is
+ * recorded in its place if there is one. So is the cost of a cancelled
+ * call the gateway reports as free. Either way, the model call's credit
+ * hold ends (releaseCost).
  */
 export const recordGenerationCost = internalAction({
   args: {
     generationId: v.string(),
     event: vModelCall,
+    estimatedCostUsd: v.optional(v.number()),
     attempt: v.optional(v.number()),
   },
   returns: v.null(),
-  handler: async (ctx, { generationId, event, attempt = 1 }): Promise<null> => {
+  handler: async (
+    ctx,
+    { generationId, event, estimatedCostUsd, attempt = 1 },
+  ): Promise<null> => {
     let costUsd: number;
     try {
       // On a call made with a BYOK key, the gateway charges nothing
@@ -90,18 +103,29 @@ export const recordGenerationCost = internalAction({
       // TEMPORARY: revert to totalCost once spec #334 is done.
       const info = await gateway.getGenerationInfo({ id: generationId });
       costUsd = info.isByok ? info.upstreamInferenceCost : info.totalCost;
+      // A call stopped on a BYOK key comes back "cancelled", with no tokens
+      // and no cost, though Anthropic charged the key for what it read and
+      // wrote (Oct 26, 2026). Without BYOK, the gateway finishes the call
+      // and reports its full cost.
+      const unreported = info.finishReason === "cancelled" && costUsd === 0;
+      if (unreported && estimatedCostUsd !== undefined) {
+        costUsd = estimatedCostUsd;
+      }
     } catch (error) {
-      if (attempt >= COST_LOOKUP_ATTEMPTS) {
-        console.error(`No cost for generation ${generationId}`, event, error);
+      if (attempt < COST_LOOKUP_ATTEMPTS) {
+        await ctx.scheduler.runAfter(
+          COST_LOOKUP_DELAY_MS * 2 ** (attempt - 1),
+          internal.usage.recordGenerationCost,
+          { generationId, event, estimatedCostUsd, attempt: attempt + 1 },
+        );
+        return null;
+      }
+      console.error(`No cost for generation ${generationId}`, event, error);
+      if (estimatedCostUsd === undefined) {
         await releaseCostHold(ctx, generationId);
         return null;
       }
-      await ctx.scheduler.runAfter(
-        COST_LOOKUP_DELAY_MS * 2 ** (attempt - 1),
-        internal.usage.recordGenerationCost,
-        { generationId, event, attempt: attempt + 1 },
-      );
-      return null;
+      costUsd = estimatedCostUsd;
     }
     // A failed write is logged, like a failed lookup. Recording the cost
     // ends its hold in the same write.

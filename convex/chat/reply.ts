@@ -1,15 +1,18 @@
 // See the docs at https://docs.convex.dev/agents/streaming
 import {
+  abortStream,
   getThreadMetadata,
   listMessages,
   stepCountIs,
 } from "@convex-dev/agent";
 import { v, type Infer } from "convex/values";
 import { components, internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalAction,
   internalMutation,
   internalQuery,
+  type MutationCtx,
   type QueryCtx,
 } from "../_generated/server";
 import { chatAgent } from "../agents/chat";
@@ -28,7 +31,12 @@ import {
 import { findTemporaryThread } from "../lib/temporaryThreads";
 import { releaseReply as releaseReplyHold } from "../lib/creditHolds";
 import { resolveReplyModel } from "../lib/threadModels";
-import { recordEstimatedUsage } from "../lib/usage";
+import {
+  recordModelUsage,
+  recordStoppedStep,
+  trackModelCalls,
+  type ModelCall,
+} from "../lib/usage";
 import {
   CACHE_BREAKPOINT,
   createReplyTools,
@@ -39,8 +47,10 @@ import {
 import schema from "../schema";
 import { readToolLists } from "../toolLists";
 import { canSearchWeb } from "../tools/webSearch";
+import { syncPendingActions } from "./approval";
+import { pauseThreadQueue } from "./queue";
 import { getStoppedReply } from "./stop";
-import { getContinuedTurn, listTurnUpTo } from "./turns";
+import { getContinuedTurn, getLastTurn, listTurnUpTo } from "./turns";
 
 /** The error saved on a reply that failed before the model call. */
 const REPLY_START_FAILED = "The reply failed before the model call";
@@ -52,12 +62,22 @@ const REPLY_START_FAILED = "The reply failed before the model call";
 const REPLY_TIME_LIMIT_MS = 8 * 60 * 1000;
 
 /**
+ * How long after a reply starts expireReply ends it, if its runner hasn't.
+ * A runner Convex stops at 10 minutes never gets to end its reply. The two
+ * minutes past that leave time for a runner that ends right at the limit.
+ */
+const REPLY_DEADLINE_MS = 12 * 60 * 1000;
+
+/** The error saved on a reply that expireReply ended. */
+const REPLY_EXPIRED = "The reply ran out of time";
+
+/**
  * Gets the model's reply to a prompt and streams its text into the thread
  * as it arrives. sendPrompt schedules it, and decideAction schedules it
  * again to continue a reply that paused on action cards. Once the reply
  * ends, it records how a scheduled run went and how many cards wait, and
  * starts the thread's next queued prompt. Once it fails, it pauses the
- * queue.
+ * queue. If Convex stops it at its time limit, expireReply ends the reply.
  */
 export const streamReply = internalAction({
   args: {
@@ -102,6 +122,9 @@ export const streamReply = internalAction({
     // How the reply ended, for its scheduled run (recordRunOutcome). Unset
     // when the thread was deleted under it.
     let ending: RunEnding | undefined = "notStarted";
+    // The reply's deadline (startReplyDeadline), ended once the runner ends,
+    // however it ends.
+    let deadlineId: Id<"replyDeadlines"> | undefined;
     try {
       // Null if the user pressed Stop first, a regenerate or an edit
       // replaced this turn, or a new prompt came after the action cards
@@ -111,6 +134,10 @@ export const streamReply = internalAction({
         { threadId, promptMessageId, order, continuing },
       );
       if (!start) return;
+      deadlineId = await ctx.runMutation(
+        internal.chat.reply.startReplyDeadline,
+        { threadId, promptMessageId, order, continuing },
+      );
       const { modelId, userId, ...toolStart } = start;
       const model = modelOrDefault(modelId);
       const claude = isClaude(model);
@@ -124,18 +151,20 @@ export const streamReply = internalAction({
       });
       const { log, fitHistory, maxSteps, activeTools, promptNote } =
         replyTools;
-      // The step the model is on, from prepareStep until onStepFinish, with
-      // what it sent and how much it has streamed back. The Agent records a
-      // step's usage only once it finishes, so a Stop in between records an
-      // estimate instead (onAbort).
-      let openStep: { input: unknown; outputChars: number } | undefined;
+      // The model call of the step the model is on, until the Agent records
+      // its usage (usageHandler). The Agent records a step's usage when it
+      // saves the step, and saves the last step only once the stream ends.
+      // A Stop before that records the step from this instead (onAbort).
+      let openCall: ModelCall | undefined;
       const result = await chatAgent.streamText(
         ctx,
         // With the thread's user, the Agent doesn't look up the thread.
         { threadId, userId },
         {
           promptMessageId,
-          model: languageModelFor(model),
+          model: trackModelCalls(languageModelFor(model), (call) => {
+            openCall = call;
+          }),
           providerOptions: gatewayOptions(model),
           // On Claude, a cache breakpoint on the instructions. The tools
           // come before them in the request, so they cache too. Other
@@ -166,8 +195,7 @@ export const streamReply = internalAction({
           // Other models get toolChoice "none" on the last step instead.
           // On every step, they see the tools a8's own search has found so
           // far (activeTools, ADR 0016).
-          prepareStep: ({ stepNumber, instructions, messages }) => {
-            openStep = { input: { instructions, messages }, outputChars: 0 };
+          prepareStep: ({ stepNumber }) => {
             const lastStep =
               stepNumber === maxSteps - 1 ||
               Date.now() - startedAt >= REPLY_TIME_LIMIT_MS;
@@ -176,39 +204,23 @@ export const streamReply = internalAction({
               ? { activeTools: activeTools(), toolChoice: "none" }
               : { activeTools: activeTools() };
           },
-          onChunk: ({ chunk }) => {
-            if (!openStep) return;
-            if (
-              chunk.type === "text-delta" ||
-              chunk.type === "reasoning-delta"
-            ) {
-              openStep.outputChars += chunk.text.length;
-            } else if (chunk.type === "tool-input-delta") {
-              openStep.outputChars += chunk.delta.length;
-            }
-          },
-          onStepFinish: (step) => {
-            openStep = undefined;
-            log.addStep(step);
-          },
+          onStepFinish: (step) => log.addStep(step),
           onToolExecutionEnd: (event) => log.addToolRun(event),
           onAbort: async () => {
             aborted = true;
-            if (!openStep) return;
-            const { input, outputChars } = openStep;
-            openStep = undefined;
-            await recordEstimatedUsage(ctx, {
-              userId,
-              threadId,
-              model,
-              input,
-              outputChars,
-            });
+            if (!openCall) return;
+            const call = openCall;
+            openCall = undefined;
+            await recordStoppedStep(ctx, { userId, threadId, model, call });
           },
         },
         {
           // more custom delta options (`true` uses defaults)
           saveStreamDeltas: { chunking: "word", throttleMs: 100 },
+          usageHandler: async (usageCtx, usage) => {
+            openCall = undefined;
+            await recordModelUsage(usageCtx, "replyStep", usage);
+          },
           // Runs once per call, on the history saved before it, so a
           // continuation runs it again. Later steps add only tools this
           // reply offers. It changes what's sent, not what's saved. On
@@ -242,6 +254,13 @@ export const streamReply = internalAction({
       // We need to make sure the stream finishes - by awaiting each chunk
       // or using this call to consume it all.
       await result.consumeStream();
+      // A Stop after the model's last word skips the Agent's save of the
+      // last step, and its usage with it, without calling onAbort.
+      if (openCall) {
+        const call = openCall;
+        openCall = undefined;
+        await recordStoppedStep(ctx, { userId, threadId, model, call });
+      }
       endedNormally = !aborted;
       ending = "returned";
     } catch (error) {
@@ -279,6 +298,15 @@ export const streamReply = internalAction({
         );
       throw error;
     } finally {
+      // The Agent has ended the reply's messages by now. A deadline left by
+      // a failed end does nothing once the thread's next reply starts.
+      if (deadlineId) {
+        await ctx
+          .runMutation(internal.chat.reply.endReplyDeadline, { deadlineId })
+          .catch((endError: unknown) =>
+            console.error("Couldn't end the reply deadline", endError),
+          );
+      }
       await replyTools?.close();
       // Its model calls still hold credits until their costs land. A hold
       // left by a failed release stops counting after a while.
@@ -543,13 +571,139 @@ export const failReplyStart = internalMutation({
       paginationOpts: { numItems: 1, cursor: null },
     });
     if (page[0]?._id !== promptMessageId) return null;
-    await chatAgent.saveMessage(ctx, {
-      threadId,
-      promptMessageId,
-      message: { role: "assistant", content: [] },
-      metadata: { status: "failed", error: REPLY_START_FAILED },
-      skipEmbeddings: true,
-    });
+    await saveFailedReply(ctx, threadId, promptMessageId, REPLY_START_FAILED);
     return null;
   },
 });
+
+/**
+ * Starts a reply's deadline: a replyDeadlines row, and expireReply
+ * scheduled for REPLY_DEADLINE_MS from now. streamReply calls it once the
+ * reply starts. A reply that starts replaces the deadline of the thread's
+ * reply before it, whose runner has ended. So a deadline its runner failed
+ * to end can't end a later reply.
+ */
+export const startReplyDeadline = internalMutation({
+  args: {
+    threadId: v.string(),
+    promptMessageId: v.string(),
+    order: v.number(),
+    continuing: v.boolean(),
+  },
+  returns: v.id("replyDeadlines"),
+  handler: async (ctx, args) => {
+    const earlier = await ctx.db
+      .query("replyDeadlines")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .take(10);
+    for (const row of earlier) await deleteReplyDeadline(ctx, row);
+    const deadlineId = await ctx.db.insert("replyDeadlines", {
+      threadId: args.threadId,
+    });
+    const scheduledId = await ctx.scheduler.runAfter(
+      REPLY_DEADLINE_MS,
+      internal.chat.reply.expireReply,
+      { ...args, deadlineId },
+    );
+    await ctx.db.patch("replyDeadlines", deadlineId, { scheduledId });
+    return deadlineId;
+  },
+});
+
+/** Ends a reply's deadline. streamReply calls it once its runner ends. */
+export const endReplyDeadline = internalMutation({
+  args: { deadlineId: v.id("replyDeadlines") },
+  returns: v.null(),
+  handler: async (ctx, { deadlineId }) => {
+    const row = await ctx.db.get("replyDeadlines", deadlineId);
+    if (row) await deleteReplyDeadline(ctx, row);
+    return null;
+  },
+});
+
+/** Deletes a deadline's row and cancels its expireReply. */
+async function deleteReplyDeadline(
+  ctx: MutationCtx,
+  row: Doc<"replyDeadlines">,
+) {
+  if (row.scheduledId) await ctx.scheduler.cancel(row.scheduledId);
+  await ctx.db.delete("replyDeadlines", row._id);
+}
+
+/**
+ * Ends a reply whose runner Convex stopped at its time limit, so the thread
+ * doesn't wait for it forever. startReplyDeadline schedules it, and the
+ * runner ends the deadline when it ends. Fails the turn's pending messages,
+ * which keep the text they
+ * streamed, or saves a failed reply if the runner saved nothing. Then does
+ * what the runner would have done on a failure: releases the credit hold,
+ * records the scheduled run, recounts the waiting cards and pauses the
+ * queue.
+ *
+ * Does nothing if the deadline has ended, the turn isn't the thread's last
+ * anymore, or nothing in it waits for the runner. The step the runner was
+ * on isn't charged.
+ */
+export const expireReply = internalMutation({
+  args: {
+    threadId: v.string(),
+    promptMessageId: v.string(),
+    order: v.number(),
+    continuing: v.boolean(),
+    deadlineId: v.id("replyDeadlines"),
+  },
+  returns: v.null(),
+  handler: async (
+    ctx,
+    { threadId, promptMessageId, order, continuing, deadlineId },
+  ) => {
+    // Gone once the runner ended it, or the thread's next reply started.
+    if (!(await ctx.db.get("replyDeadlines", deadlineId))) return null;
+    await ctx.db.delete("replyDeadlines", deadlineId);
+    const turn = await getLastTurn(ctx, threadId);
+    if (turn[0]?.order !== order) return null;
+    const pending = turn.filter((message) => message.status === "pending");
+    const unanswered = turn[0]._id === promptMessageId;
+    if (pending.length === 0 && !unanswered) return null;
+    console.error(REPLY_EXPIRED, { threadId, promptMessageId });
+    await abortStream(ctx, components.agent, {
+      threadId,
+      order,
+      reason: REPLY_EXPIRED,
+    });
+    for (const message of pending) {
+      await ctx.runMutation(components.agent.messages.finalizeMessage, {
+        messageId: message._id,
+        result: { status: "failed", error: REPLY_EXPIRED },
+      });
+    }
+    if (unanswered) {
+      await saveFailedReply(ctx, threadId, promptMessageId, REPLY_EXPIRED);
+    }
+    await releaseReplyHold(ctx, promptMessageId);
+    await syncPendingActions(ctx, threadId);
+    await pauseThreadQueue(ctx, threadId);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.scheduledPrompts.recordRunOutcome,
+      { threadId, promptMessageId, order, continuing, ending: "failed" },
+    );
+    return null;
+  },
+});
+
+/** Saves an empty failed reply to the prompt, with `error`. */
+async function saveFailedReply(
+  ctx: MutationCtx,
+  threadId: string,
+  promptMessageId: string,
+  error: string,
+) {
+  await chatAgent.saveMessage(ctx, {
+    threadId,
+    promptMessageId,
+    message: { role: "assistant", content: [] },
+    metadata: { status: "failed", error },
+    skipEmbeddings: true,
+  });
+}

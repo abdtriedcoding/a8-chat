@@ -61,8 +61,8 @@ export type Model = {
   creditsPerReply: number;
   /**
    * What the gateway lists the model at, for estimates. Real charges come
-   * from each reply's cost, except for a step the user stopped
-   * (recordEstimatedUsage).
+   * from each reply's cost, except for a step the user stopped whose cost
+   * the gateway can't report (recordStoppedStep).
    */
   usdPerMillionTokens: { input: number; output: number };
   /** Ids its replies were saved under before, so older replies keep a label. */

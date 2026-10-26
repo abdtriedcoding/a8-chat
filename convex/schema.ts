@@ -125,6 +125,14 @@ export default defineSchema({
     threadId: v.string(),
     order: v.number(),
   }).index("by_threadId_and_order", ["threadId", "order"]),
+  // One row for each running reply, from its start until its runner ends or
+  // its deadline passes (startReplyDeadline in convex/chat/reply.ts).
+  // `scheduledId` is its expireReply. A thread's next reply deletes the row
+  // of the one before it, so a thread has at most one.
+  replyDeadlines: defineTable({
+    threadId: v.string(),
+    scheduledId: v.optional(v.id("_scheduled_functions")),
+  }).index("by_threadId", ["threadId"]),
   // One row for each thread that defers connector tools (ADR 0006). A reply
   // adds it the first time the user's connector tools pass the tool budget
   // (defersTools in convex/lib/replyTools.ts), and the thread defers from
