@@ -17,10 +17,11 @@ import { findModel, modelOrDefault } from "../../../convex/lib/models";
 import type { ModelSwitch } from "../../../convex/schema";
 
 /**
- * Says a Send moved the thread off a model it couldn't use, and why, above
- * the composer. `modelSwitch` is the old model and the reason, and `modelId`
- * the model the thread uses now. It shows until the user dismisses it,
- * picks a model or sends again.
+ * Says the thread moved off a model it can't use, and why, above the
+ * composer. It shows as soon as the model is off the user's plan or the
+ * list, before the next Send makes the switch. `modelSwitch` is the old
+ * model and the reason, and `modelId` the model the thread uses now. It
+ * shows until the user dismisses it, picks a model or sends again.
  */
 export function ModelSwitchNotice({
   threadId,

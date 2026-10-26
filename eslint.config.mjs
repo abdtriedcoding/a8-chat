@@ -10,6 +10,7 @@ const CLIENT_SAFE_CONVEX_LIB = [
   "autoApprove",
   "connectorView",
   "creditPeriod",
+  "emailKey",
   "errors",
   "models",
   "monthlyPeriod",

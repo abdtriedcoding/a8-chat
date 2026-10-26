@@ -10,7 +10,13 @@ import {
 } from "./_generated/server";
 import { authComponent } from "./auth";
 import { billingEnabled, getPlan } from "./lib/billing";
-import { CREDITS_PER_USD, currentCreditRow } from "./lib/credits";
+import {
+  addDeletedUsage,
+  CREDITS_PER_USD,
+  currentCreditRow,
+  findDeletedUsage,
+  storeDeletedUsage,
+} from "./lib/credits";
 import {
   addDailySpend,
   addUserDailySpend,
@@ -46,10 +52,10 @@ const vModelCall = v.object({
 });
 
 /**
- * Schedules recordGenerationCost for a model call, and holds credits for
- * it until the cost is recorded (holdCost). recordModelUsage (lib/usage.ts)
- * calls it from the usage handler, whose ctx can't schedule, and
- * recordStoppedStep calls it for a step the user stopped, with an
+ * Schedules recordGenerationCost for a model call, and holds what its
+ * tokens cost until the cost is recorded (holdCost). recordModelUsage
+ * (lib/usage.ts) calls it from the usage handler, whose ctx can't schedule,
+ * and recordStoppedStep calls it for a step the user stopped, with an
  * `estimatedCostUsd` that recordGenerationCost records if the gateway never
  * reports a cost.
  */
@@ -61,10 +67,16 @@ export const scheduleCostLookup = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { userId, threadId, kind } = args.event;
+    const { userId, threadId, kind, model, tokens } = args.event;
     // A title's cost doesn't come off the user's credits.
     if (userId && threadId && kind !== "title") {
-      await holdCost(ctx, { userId, threadId, generationId: args.generationId });
+      await holdCost(ctx, {
+        userId,
+        threadId,
+        generationId: args.generationId,
+        model,
+        tokens,
+      });
     }
     await ctx.scheduler.runAfter(
       COST_LOOKUP_DELAY_MS,
@@ -162,8 +174,9 @@ async function releaseCostHold(ctx: ActionCtx, generationId: string) {
  * Records one usage event. It doesn't know where the cost came from. Adds
  * the cost to the day's spend and the user's spend today, and in credits to
  * the user's current period, except for a title, whose cost a8 pays.
- * Records nothing for a user who deleted their account while a reply ran,
- * beyond the day's spend. With `generationId`, it ends that model call's
+ * For a user who deleted their account while a reply ran, it records the
+ * day's spend and adds the credits to what the deleted account used
+ * (keepDeletedUsage). With `generationId`, it ends that model call's
  * credit hold (releaseCost).
  */
 export const record = internalMutation({
@@ -187,9 +200,12 @@ export const record = internalMutation({
       await ctx.db.insert("usageEvents", { ...event, credits: 0 });
       return null;
     }
-    if (!(await authComponent.getAnyUserById(ctx, userId))) return null;
-    await addUserDailySpend(ctx, userId, now, event.costUsd);
     const credits = event.kind === "title" ? 0 : event.costUsd * CREDITS_PER_USD;
+    if (!(await authComponent.getAnyUserById(ctx, userId))) {
+      if (credits > 0) await addDeletedUsage(ctx, { userId, credits });
+      return null;
+    }
+    await addUserDailySpend(ctx, userId, now, event.costUsd);
     if (credits > 0) {
       const plan = await getPlan(ctx, userId, now);
       // getPlan returns null only when billing is off.
@@ -219,6 +235,41 @@ export const setCreditsUsed = internalMutation({
     if (!plan) throw new Error("Billing is off.");
     const row = await currentCreditRow(ctx, userId, plan, now);
     await ctx.db.patch("creditLedger", row._id, { creditsUsed });
+    return null;
+  },
+});
+
+/**
+ * Keeps the credits a user used in their current period until it ends
+ * (storeDeletedUsage). A new account for the same inbox starts with them
+ * (takeDeletedUsage). The deleteUser hook in createAuthOptions calls it
+ * before Better Auth deletes the user.
+ */
+export const keepDeletedUsage = internalMutation({
+  args: { userId: v.string(), email: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (!billingEnabled) return null;
+    const kept = await storeDeletedUsage(ctx, args);
+    if (kept) {
+      await ctx.scheduler.runAt(kept.periodEnd, internal.usage.dropDeletedUsage, {
+        emailKey: kept.emailKey,
+      });
+    }
+    return null;
+  },
+});
+
+/** Deletes the credits kept for an email key once their period has ended. */
+export const dropDeletedUsage = internalMutation({
+  args: { emailKey: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { emailKey }) => {
+    const kept = await findDeletedUsage(ctx, emailKey);
+    // A later deletion can push the end out.
+    if (kept && kept.periodEnd <= Date.now()) {
+      await ctx.db.delete("deletedUsage", kept._id);
+    }
     return null;
   },
 });

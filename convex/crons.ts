@@ -35,6 +35,15 @@ crons.interval(
   {},
 );
 
+// Emails are deleted a day after a8 queues them, so an hourly sweep keeps
+// each one about 25 hours.
+crons.interval(
+  "clean up old emails",
+  { hours: 1 },
+  internal.emails.cleanUpExpiredEmails,
+  {},
+);
+
 // A temporary thread is deleted after a day with no new message, so an
 // hourly sweep keeps it to about 25 hours.
 crons.interval(

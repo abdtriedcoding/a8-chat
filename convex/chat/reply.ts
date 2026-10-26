@@ -166,6 +166,9 @@ export const streamReply = internalAction({
             openCall = call;
           }),
           providerOptions: gatewayOptions(model),
+          // The cap applies to each step. It bounds what a step costs, and
+          // so the credits holdReply holds for one.
+          maxOutputTokens: model.maxOutputTokens,
           // On Claude, a cache breakpoint on the instructions. The tools
           // come before them in the request, so they cache too. Other
           // models get the gateway's automatic caching (gatewayOptions).

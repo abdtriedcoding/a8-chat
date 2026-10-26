@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { action, env, internalAction, query } from "./_generated/server";
 import {
   billingEnabled,
+  deleteCustomer,
   getPlanTerms,
   polar,
   PRO_PRODUCTS,
@@ -59,8 +60,20 @@ export const latestCredits = query({
     if (!user) return null;
     const row = await latestCreditRow(ctx, user._id);
     if (!row) return null;
-    const { periodStart, periodEnd, creditsGranted, creditsUsed } = row;
-    return { periodStart, periodEnd, creditsGranted, creditsUsed };
+    const {
+      periodStart,
+      periodEnd,
+      creditsGranted,
+      creditsUsed,
+      creditsUsedBefore,
+    } = row;
+    return {
+      periodStart,
+      periodEnd,
+      creditsGranted,
+      creditsUsed,
+      creditsUsedBefore,
+    };
   },
 });
 
@@ -118,6 +131,25 @@ export const cancelSubscriptions = internalAction({
   returns: v.null(),
   handler: async (ctx, { userId }) => {
     if (billingEnabled) await revokeSubscriptions(ctx, userId);
+    return null;
+  },
+});
+
+/**
+ * Deletes the deleted user's Polar customer and anonymizes its name and
+ * email (deleteCustomer). It logs a failure instead of throwing, like the
+ * connection revokes before it. Scheduled by purgeAccount (convex/auth.ts).
+ */
+export const purgeCustomer = internalAction({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId }) => {
+    if (!billingEnabled) return null;
+    try {
+      await deleteCustomer(ctx, userId);
+    } catch (error) {
+      console.error("Deleting the Polar customer failed", error);
+    }
     return null;
   },
 });
