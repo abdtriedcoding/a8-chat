@@ -16,6 +16,7 @@ import {
 } from "../agents/chat";
 import { createFindTools } from "../tools/findTools";
 import { createScheduledPromptTools } from "../tools/scheduledPrompts";
+import { withoutTokenNotes } from "./attachments";
 import {
   autoApproveActions,
   MAX_AUTO_APPROVED_ACTIONS,
@@ -145,7 +146,8 @@ export type ReplyTools = {
    * On Claude, each tool search result is cut down to the tools this reply
    * offers (dropGoneToolReferences). On other models, Anthropic's tool
    * search parts go (dropAnthropicToolSearch). Then the oldest turns go
-   * past the model's history budget (capHistory, historyBudgetTokens).
+   * past the model's history budget (capHistory, historyBudgetTokens), and
+   * the token notes come off the attachments (withoutTokenNotes).
    */
   fitHistory: (messages: ModelMessage[]) => ModelMessage[];
   /** The reply's log line. Feed it each step and each tool run. */
@@ -304,11 +306,13 @@ export function createReplyTools(
         : MAX_STEPS_WITHOUT_CONNECTORS) - stepsTaken,
     ),
     fitHistory: (messages) =>
-      capHistory(
-        claude
-          ? dropGoneToolReferences(messages, offered)
-          : dropAnthropicToolSearch(messages),
-        historyBudget,
+      withoutTokenNotes(
+        capHistory(
+          claude
+            ? dropGoneToolReferences(messages, offered)
+            : dropAnthropicToolSearch(messages),
+          historyBudget,
+        ),
       ),
     log,
     close: async () => {
