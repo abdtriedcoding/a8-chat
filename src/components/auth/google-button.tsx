@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
 import { withNext } from "@/lib/next-path";
+import { EMAIL_TAKEN_MESSAGE } from "../../../convex/lib/emailKey";
 
 const OAUTH_ERRORS: Record<string, string> = {
   // Account linking is off, so Google can't sign in to an email/password
@@ -13,6 +14,9 @@ const OAUTH_ERRORS: Record<string, string> = {
   account_not_linked:
     "That email already has a password account. Sign in with your email and password instead.",
   access_denied: "Google sign-in was cancelled.",
+  // Better Auth turns a sign-up hook's message into the code, with
+  // underscores for spaces.
+  [EMAIL_TAKEN_MESSAGE.replaceAll(" ", "_")]: EMAIL_TAKEN_MESSAGE,
 };
 
 /** A readable message for the `?error=` code Better Auth adds after OAuth. */

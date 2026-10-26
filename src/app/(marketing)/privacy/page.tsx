@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 23, 2026">
+    <LegalPage title="Privacy Policy" updated="October 26, 2026">
       <p>
         This policy covers the hosted a8 service. If you run a8 on your own
         server, your data stays with you and the services you set up, and this
@@ -128,7 +128,10 @@ export default function PrivacyPage() {
         delete everything, go to{" "}
         <Link href="/settings/account">Settings, then Account</Link> and delete
         your account. That removes your account, chats, files, connections and
-        tokens, and cancels your subscription. a8 can&apos;t undo it.
+        tokens, and cancels your subscription. a8 can&apos;t undo it. Until
+        your credits would have reset, a8 keeps a hash of your email address
+        and the credits you used, so a new account for the same inbox starts
+        with them.
       </p>
 
       <h2>Changes</h2>

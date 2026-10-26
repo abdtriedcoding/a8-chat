@@ -59,8 +59,20 @@ export const latestCredits = query({
     if (!user) return null;
     const row = await latestCreditRow(ctx, user._id);
     if (!row) return null;
-    const { periodStart, periodEnd, creditsGranted, creditsUsed } = row;
-    return { periodStart, periodEnd, creditsGranted, creditsUsed };
+    const {
+      periodStart,
+      periodEnd,
+      creditsGranted,
+      creditsUsed,
+      creditsUsedBefore,
+    } = row;
+    return {
+      periodStart,
+      periodEnd,
+      creditsGranted,
+      creditsUsed,
+      creditsUsedBefore,
+    };
   },
 });
 
