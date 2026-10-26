@@ -52,18 +52,24 @@ const vModelCall = v.object({
 });
 
 /**
- * Schedules recordGenerationCost for a model call, and holds credits for
- * it until the cost is recorded (holdCost). recordModelUsage (lib/usage.ts)
- * calls it from the usage handler, whose ctx can't schedule.
+ * Schedules recordGenerationCost for a model call, and holds what its
+ * tokens cost until the cost is recorded (holdCost). recordModelUsage
+ * (lib/usage.ts) calls it from the usage handler, whose ctx can't schedule.
  */
 export const scheduleCostLookup = internalMutation({
   args: { generationId: v.string(), event: vModelCall },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { userId, threadId, kind } = args.event;
+    const { userId, threadId, kind, model, tokens } = args.event;
     // A title's cost doesn't come off the user's credits.
     if (userId && threadId && kind !== "title") {
-      await holdCost(ctx, { userId, threadId, generationId: args.generationId });
+      await holdCost(ctx, {
+        userId,
+        threadId,
+        generationId: args.generationId,
+        model,
+        tokens,
+      });
     }
     await ctx.scheduler.runAfter(
       COST_LOOKUP_DELAY_MS,

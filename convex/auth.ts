@@ -279,16 +279,21 @@ export const getLatestJwks = internalAction({
 
 /**
  * Deletes everything a8 holds for a deleted user, except what Better Auth
- * deletes itself: threads and their messages, stopped-reply and
- * deferred-tool rows, uploads and their stored files, sign-ins in progress,
- * the auto-approve warning row, preferences, credit ledger rows and usage
- * events, rate limit counters, the email key, and connections (revoked at
- * the vendor first). The credits used this period stay with the email key
- * until the period ends (keepDeletedUsage, which the deleteUser hook runs
- * first). It takes the user ID because
- * the session is gone by the time it runs. Scheduled by the deleteUser
- * hook in createAuthOptions.
+ * deletes itself: scheduled prompts, threads and their messages,
+ * stopped-reply and deferred-tool rows, uploads and their stored files,
+ * sign-ins in progress, the auto-approve warning row, preferences, credit
+ * ledger rows and usage events, rate limit counters, the email key,
+ * connections (revoked at the vendor first), and the Polar customer. The
+ * credits used this period stay with the email key until the period ends
+ * (keepDeletedUsage, which the deleteUser hook runs first). It takes the
+ * user ID because the session is gone by the time it runs. Scheduled by
+ * the deleteUser hook in createAuthOptions.
  *
+ * It leaves the user's emails in the Resend component, which can't delete
+ * by recipient. The hourly sweep (cleanUpExpiredEmails in convex/emails.ts)
+ * deletes them a day after a8 queued them.
+ *
+ * Scheduled prompts go first, so no run fires into a thread being deleted.
  * The steps with more than a batch of rows schedule their own continuation.
  * The vendor calls go last, so a slow vendor delays nothing else.
  */
@@ -296,6 +301,9 @@ export const purgeAccount = internalAction({
   args: { userId: v.string(), email: v.string() },
   returns: v.null(),
   handler: async (ctx, { userId, email }): Promise<null> => {
+    await ctx.runMutation(internal.scheduledPrompts.purgeUserScheduledPrompts, {
+      userId,
+    });
     await ctx.runMutation(internal.threads.purgeUserThreads, { userId });
     await ctx.runMutation(internal.attachments.cleanup.purgeUserUploads, {
       userId,
@@ -311,6 +319,7 @@ export const purgeAccount = internalAction({
     await ctx.runAction(internal.connections.purgeUserConnections, {
       userId,
     });
+    await ctx.runAction(internal.billing.purgeCustomer, { userId });
     return null;
   },
 });

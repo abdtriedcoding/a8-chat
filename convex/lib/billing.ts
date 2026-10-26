@@ -4,7 +4,9 @@
  * through getPlan, or getPlanTerms in a query and in a Send.
  */
 import { Polar } from "@convex-dev/polar";
+import { customersDelete } from "@polar-sh/sdk/funcs/customersDelete.js";
 import { subscriptionsUpdate } from "@polar-sh/sdk/funcs/subscriptionsUpdate.js";
+import { ResourceNotFound } from "@polar-sh/sdk/models/errors/resourcenotfound.js";
 import { v, type Infer } from "convex/values";
 import { components } from "../_generated/api";
 import type { DataModel } from "../_generated/dataModel";
@@ -257,6 +259,23 @@ export async function revokeSubscriptions(ctx: ActionCtx, userId: string) {
     if (!result.ok) errors.push(result.error);
   }
   if (errors.length > 0) throw errors[0];
+}
+
+/**
+ * Deletes the user's Polar customer, if they ever opened a checkout, and has
+ * Polar anonymize its name and email. Polar keeps its order records. A
+ * customer Polar already deleted counts as done.
+ */
+export async function deleteCustomer(ctx: ActionCtx, userId: string) {
+  const customer = await polar.getCustomerByUserId(ctx, userId);
+  if (!customer) return;
+  const result = await customersDelete(polar.polar, {
+    id: customer.id,
+    anonymize: true,
+  });
+  if (!result.ok && !(result.error instanceof ResourceNotFound)) {
+    throw result.error;
+  }
 }
 
 /** The user's subscriptions that Polar hasn't ended. */

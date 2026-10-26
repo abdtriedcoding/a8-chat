@@ -65,6 +65,8 @@ export type Model = {
    * (recordEstimatedUsage).
    */
   usdPerMillionTokens: { input: number; output: number };
+  /** The most tokens one reply step writes, reasoning included. */
+  maxOutputTokens: number;
   /** Ids its replies were saved under before, so older replies keep a label. */
   formerIds?: string[];
 };
@@ -78,6 +80,22 @@ const TYPICAL_REPLY = { inputTokens: 30_000, outputTokens: 4_000 };
 
 /** The most credits a typical reply on a Free model costs. */
 const FREE_MAX_CREDITS_PER_REPLY = 5;
+
+/**
+ * The most credits a typical reply on a listed model costs. A model past it
+ * leaves the list. Pro's month of credits would buy a few replies on it, and
+ * a burst of them would cost more than a day's spend ceiling.
+ */
+const MAX_CREDITS_PER_REPLY = 100;
+
+/** The most tokens a reply step writes on any model. */
+const MAX_OUTPUT_TOKENS = 16_000;
+
+/**
+ * The most a reply step's output costs, in dollars. A model with pricey
+ * output gets fewer than MAX_OUTPUT_TOKENS.
+ */
+const MAX_STEP_OUTPUT_USD = 0.5;
 
 /** How long a model shows as new after it comes out. */
 const NEW_FOR_DAYS = 45;
@@ -109,25 +127,38 @@ export const FEATURED_MODEL_IDS = [
   "qwen3.8-max",
 ];
 
-/** About how many credits a typical reply costs at these prices. */
-function estimateCredits(usdPerMillionTokens: {
-  input: number;
-  output: number;
-}): number {
+/** What these tokens cost at these prices, in credits. */
+export function estimateCredits(
+  usdPerMillionTokens: { input: number; output: number },
+  { inputTokens, outputTokens }: { inputTokens: number; outputTokens: number },
+): number {
   const usd =
-    (TYPICAL_REPLY.inputTokens * usdPerMillionTokens.input +
-      TYPICAL_REPLY.outputTokens * usdPerMillionTokens.output) /
+    (inputTokens * usdPerMillionTokens.input +
+      outputTokens * usdPerMillionTokens.output) /
     1_000_000;
   // One credit is one US cent (lib/credits.ts, which the browser can't load).
   return usd * 100;
 }
 
+/** MAX_OUTPUT_TOKENS, or fewer when they'd cost over MAX_STEP_OUTPUT_USD. */
+function maxOutputTokensAt(usdPerMillionOutputTokens: number): number {
+  if (usdPerMillionOutputTokens <= 0) return MAX_OUTPUT_TOKENS;
+  return Math.min(
+    MAX_OUTPUT_TOKENS,
+    Math.floor((MAX_STEP_OUTPUT_USD / usdPerMillionOutputTokens) * 1_000_000),
+  );
+}
+
 const newSince =
   Date.parse(SYNCED_ON) - NEW_FOR_DAYS * 24 * 60 * 60 * 1000;
 
-export const MODELS: Model[] = GATEWAY_MODELS.map((entry) => {
+export const MODELS: Model[] = GATEWAY_MODELS.flatMap((entry) => {
   const id = entry.gatewayId.slice(entry.gatewayId.indexOf("/") + 1);
-  const creditsPerReply = estimateCredits(entry.usdPerMillionTokens);
+  const creditsPerReply = estimateCredits(
+    entry.usdPerMillionTokens,
+    TYPICAL_REPLY,
+  );
+  if (creditsPerReply > MAX_CREDITS_PER_REPLY) return [];
   return {
     id,
     name: entry.name,
@@ -146,6 +177,7 @@ export const MODELS: Model[] = GATEWAY_MODELS.map((entry) => {
         : ["pro"],
     creditsPerReply,
     usdPerMillionTokens: entry.usdPerMillionTokens,
+    maxOutputTokens: maxOutputTokensAt(entry.usdPerMillionTokens.output),
     formerIds: FORMER_IDS[id],
   };
 });

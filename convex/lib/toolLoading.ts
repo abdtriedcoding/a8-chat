@@ -5,6 +5,7 @@
 // search on Claude or a8's own on other models (ADR 0016).
 
 import type { ModelMessage, StepResult, Tool, ToolSet } from "ai";
+import { attachmentPartTokens } from "./attachments";
 import type { Connector } from "./connectors";
 import { findConnectorTool, type ConnectorView } from "./connectorView";
 
@@ -314,11 +315,30 @@ export function dropAnthropicToolSearch(
 }
 
 /**
+ * About how many tokens a message takes. Its JSON counts 4 characters as a
+ * token, as in estimateToolTokens, and its attachments add what they take
+ * (attachmentPartTokens). An attachment goes as a URL, so its JSON is short
+ * whatever the file's size.
+ */
+export function estimateMessageTokens(message: {
+  content: string | readonly { type: string }[];
+}): number {
+  const attachmentTokens =
+    typeof message.content === "string"
+      ? 0
+      : message.content.reduce(
+          (sum, part) => sum + attachmentPartTokens(part),
+          0,
+        );
+  return Math.ceil(JSON.stringify(message).length / 4) + attachmentTokens;
+}
+
+/**
  * The history without its oldest turns, once it passes `budgetTokens`. A
  * turn starts at a user message, and the messages before the first user
  * message count with the first turn. Whole turns go, so no tool result
  * loses its tool call. The newest turn stays however large it is. Tokens
- * are counted as in estimateToolTokens.
+ * are counted by estimateMessageTokens.
  *
  * The cut moves in steps of half the budget, not a turn at a time. Each
  * reply then sends the same oldest turns as the last one until the history
@@ -329,9 +349,7 @@ export function capHistory(
   messages: ModelMessage[],
   budgetTokens: number = HISTORY_BUDGET_TOKENS,
 ): ModelMessage[] {
-  const tokens = messages.map((message) =>
-    Math.ceil(JSON.stringify(message).length / 4),
-  );
+  const tokens = messages.map(estimateMessageTokens);
   const total = tokens.reduce((sum, count) => sum + count, 0);
   if (total <= budgetTokens) return messages;
 
@@ -349,6 +367,23 @@ export function capHistory(
     dropped += tokens[i];
   }
   return newestTurn === 0 ? messages : messages.slice(newestTurn);
+}
+
+/**
+ * About how many tokens of `messages`, oldest first, capHistory keeps with
+ * this budget: the newest turn, which it keeps whole, and at most
+ * `budgetTokens` of the turns before it.
+ */
+export function estimateSentHistoryTokens(
+  messages: { role: string; content: string | readonly { type: string }[] }[],
+  budgetTokens: number,
+): number {
+  const newestPrompt = messages.findLastIndex(({ role }) => role === "user");
+  const sum = (part: typeof messages) =>
+    part.reduce((total, message) => total + estimateMessageTokens(message), 0);
+  const older = sum(messages.slice(0, Math.max(newestPrompt, 0)));
+  const newestTurn = sum(messages.slice(Math.max(newestPrompt, 0)));
+  return newestTurn + Math.min(older, budgetTokens);
 }
 
 function isGoneReference(

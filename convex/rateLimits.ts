@@ -10,14 +10,11 @@ import {
   planAt,
   type PlanTerms,
 } from "./lib/billing";
+import { totalHeldCredits, userHeldCredits } from "./lib/creditHolds";
 import { creditPeriodAt, creditsLeft } from "./lib/creditPeriod";
-import { latestCreditRow } from "./lib/credits";
+import { CREDITS_PER_USD, latestCreditRow } from "./lib/credits";
 import { getDailySpend, getUserDailySpend } from "./lib/dailySpend";
 import { ERROR_CODES } from "./lib/errors";
-import {
-  countHolds,
-  REPLY_HOLD_CREDITS,
-} from "./lib/creditHolds";
 import { components } from "./_generated/api";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 
@@ -225,18 +222,19 @@ export async function limitSend(
 
 /**
  * Why the hosted a8 would refuse the user's Send for spend, or null if it
- * can go ahead: the user has no credits left, credit holds take what's
- * left, the user's spend today reached their share of the daily ceiling
- * (DAILY_SPEND_SHARES), or a8's spend today reached the ceiling. Null when
- * billing is off.
+ * can go ahead: the user has no credits left, the user's spend today
+ * reached their share of the daily ceiling (DAILY_SPEND_SHARES), or a8's
+ * spend today reached the ceiling. Credit holds count as spent
+ * (lib/creditHolds.ts), since a cost lands seconds after each model call.
+ * A refusal that only the holds cause says to wait, not that the limit is
+ * reached, since a hold can cost less than it holds. Null when billing is
+ * off.
  *
- * Each of the user's threads with a reply running or a cost on its way
- * holds REPLY_HOLD_CREDITS of the balance (lib/creditHolds.ts), since a
- * cost lands seconds after each model call. The caller holds the new reply
- * once it schedules it (holdReply). A reply that starts always finishes,
- * even if its cost takes the balance below zero.
- * limitSend calls this, and so does a queued prompt when it starts, since
- * queueing it counted it already. `plan` is the user's plan terms
+ * Only the holds of replies and costs already on their way count. The
+ * caller holds the new reply once it schedules it (holdReply). A reply
+ * that starts always finishes, even if its cost takes the balance below
+ * zero. limitSend calls this, and so does a queued prompt when it starts,
+ * since queueing it counted it already. `plan` is the user's plan terms
  * (getPlanTerms).
  */
 export async function checkSpend(
@@ -261,27 +259,38 @@ export async function checkSpend(
           : "You're out of credits until they reset.",
     };
   }
+  const held = await userHeldCredits(ctx, userId, now);
   // The balance still shows credits, so this says to wait, not to upgrade.
-  const held = (await countHolds(ctx, userId, now)) * REPLY_HOLD_CREDITS;
-  if (left - held <= 0) {
-    return rateLimited(
-      "Your other replies are still using credits. Try again once they finish.",
-    );
-  }
+  if (left - held <= 0) return waitForReplies();
   const share = dailySpendCeilingUsd * DAILY_SPEND_SHARES[plan.name];
-  if ((await getUserDailySpend(ctx, userId, now)) >= share) {
+  const userSpend = await getUserDailySpend(ctx, userId, now);
+  if (userSpend >= share) {
     return {
       code: ERROR_CODES.DAILY_SPEND_CEILING,
       message: "You hit today's usage limit. It resets at 00:00 UTC.",
     };
   }
-  if ((await getDailySpend(ctx, now)) >= dailySpendCeilingUsd) {
+  if (userSpend + held / CREDITS_PER_USD >= share) return waitForReplies();
+  const dailySpend = await getDailySpend(ctx, now);
+  if (dailySpend >= dailySpendCeilingUsd) {
     return {
       code: ERROR_CODES.DAILY_SPEND_CEILING,
       message: "a8 is at capacity for today. It resets at 00:00 UTC.",
     };
   }
+  const totalHeld = await totalHeldCredits(ctx, now);
+  if (dailySpend + totalHeld / CREDITS_PER_USD >= dailySpendCeilingUsd) {
+    return rateLimited(
+      "a8 is close to today's capacity. Try again in a few minutes.",
+    );
+  }
   return null;
+}
+
+function waitForReplies(): RateLimited {
+  return rateLimited(
+    "Your other replies are still using credits. Try again once they finish.",
+  );
 }
 
 /**

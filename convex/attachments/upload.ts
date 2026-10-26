@@ -19,8 +19,12 @@ import {
 } from "../rateLimits";
 import {
   cleanFilename,
+  countPdfPages,
+  estimatePdfTokens,
+  getAttachmentKind,
   getAttachmentRejectionReason,
   getOversizeReason,
+  IMAGE_TOKENS,
   readMediaType,
   UPLOAD_MEDIA_TYPES,
 } from "../lib/attachments";
@@ -216,11 +220,21 @@ export const registerUpload = action({
       return await rejectUpload(ctx, storageId, rejectionReason);
     }
 
+    // The check above passed, so the file is an image or a PDF.
+    const tokens =
+      getAttachmentKind(mediaType) === "pdf" && storedFile
+        ? estimatePdfTokens(
+            await countPdfPages(storedFile),
+            claimedUpload.size,
+          )
+        : IMAGE_TOKENS;
+
     return await ctx.runMutation(internal.attachments.upload.saveUpload, {
       storageId,
       filename: safeFilename,
       mediaType,
       sha256: claimedUpload.sha256,
+      tokens,
     });
   },
 });
@@ -237,7 +251,8 @@ async function rejectUpload(
 
 /**
  * Saves an upload registerUpload checked: adds it to the Agent's files
- * table, and records that the user uploaded it. Returns its file ID and URL.
+ * table, and records that the user uploaded it and about how many tokens it
+ * takes (estimatePdfTokens, IMAGE_TOKENS). Returns its file ID and URL.
  */
 export const saveUpload = internalMutation({
   args: {
@@ -245,11 +260,12 @@ export const saveUpload = internalMutation({
     filename: v.string(),
     mediaType: v.string(),
     sha256: v.string(),
+    tokens: v.number(),
   },
   returns: vRegisteredUpload,
   handler: async (
     ctx,
-    { storageId: uploadedStorageId, filename, mediaType, sha256 },
+    { storageId: uploadedStorageId, filename, mediaType, sha256, tokens },
   ) => {
     const user = await requireUser(ctx);
 
@@ -277,7 +293,10 @@ export const saveUpload = internalMutation({
         userId: user._id,
         fileId: agentFile.fileId,
         storageId: savedStorageId,
+        tokens,
       });
+    } else if (existingAttachment.tokens === undefined) {
+      await ctx.db.patch("attachments", existingAttachment._id, { tokens });
     }
     const fileUrl = await ctx.storage.getUrl(savedStorageId);
     if (!fileUrl) {

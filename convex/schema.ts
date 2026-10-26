@@ -346,6 +346,9 @@ export default defineSchema({
     userId: v.string(),
     fileId: v.string(),
     storageId: v.id("_storage"),
+    // About how many tokens the file takes (estimatePdfTokens,
+    // IMAGE_TOKENS). Unset on files uploaded before a8 counted them.
+    tokens: v.optional(v.number()),
   })
     .index("by_userId_and_fileId", ["userId", "fileId"])
     .index("by_fileId", ["fileId"])
@@ -505,10 +508,24 @@ export default defineSchema({
     promptMessageId: v.optional(v.string()),
     // A model call's: AI Gateway's id for it.
     generationId: v.optional(v.string()),
+    // The credits it holds. Unset on a hold made before a8 sized holds,
+    // which counts as DEFAULT_HOLD_CREDITS.
+    credits: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_promptMessageId", ["promptMessageId"])
     .index("by_generationId", ["generationId"]),
+  // The credits that every user's holds hold, summed, for the daily spend
+  // ceiling (lib/creditHolds.ts). Each hold adds its credits to one of its
+  // window's shards, picked at random, and takes them off again when it
+  // ends. A window is as long as a hold counts, so the last two windows hold
+  // every hold that still counts, and older rows are deleted.
+  heldCredits: defineTable({
+    // When the window starts, in ms.
+    window: v.number(),
+    shard: v.number(),
+    credits: v.number(),
+  }).index("by_window_and_shard", ["window", "shard"]),
   // OAuth client registrations: the client a8 registered with a connector's
   // authorization server (convex/signIns.ts). One row per connector per
   // deployment, shared by every user. Notion orphans earlier grants when a

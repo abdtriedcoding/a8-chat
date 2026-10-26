@@ -69,15 +69,22 @@ export async function cancelScheduledRun(
   }
 }
 
+/** Deletes a scheduled prompt and cancels its next run. */
+export async function deleteScheduledPrompt(
+  ctx: MutationCtx,
+  row: Doc<"scheduledPrompts">,
+) {
+  await cancelScheduledRun(ctx, row);
+  await ctx.db.delete("scheduledPrompts", row._id);
+}
+
 /** Deletes the thread's scheduled prompt, if any, and cancels its next run. */
 export async function deleteThreadScheduledPrompt(
   ctx: MutationCtx,
   threadId: string,
 ) {
   const row = await findThreadScheduledPrompt(ctx, threadId);
-  if (!row) return;
-  await cancelScheduledRun(ctx, row);
-  await ctx.db.delete("scheduledPrompts", row._id);
+  if (row) await deleteScheduledPrompt(ctx, row);
 }
 
 /**
