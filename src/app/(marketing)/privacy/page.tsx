@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 23, 2026">
+    <LegalPage title="Privacy Policy" updated="October 26, 2026">
       <p>
         This policy covers the hosted a8 service. If you run a8 on your own
         server, your data stays with you and the services you set up, and this
@@ -104,7 +104,9 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Resend</strong> sends account emails, like verification and
-          password reset links.
+          password reset links. If you turn on email for a scheduled prompt,
+          Resend also sends you its replies, which can include what a8 read from
+          your apps.
         </li>
         <li>
           <strong>Polar</strong> takes payments and manages subscriptions.
@@ -114,8 +116,9 @@ export default function PrivacyPage() {
       <h2>How long a8 keeps data</h2>
       <p>
         a8 keeps your chats and files until you delete them or your account. A
-        temporary chat is deleted about a day after its last message. A file
-        you upload but never send is deleted within a day. Disconnecting an
+        temporary chat is deleted about a day after its last message. A file you
+        upload but never send is deleted within a day. a8 keeps a copy of each
+        email it sends you for about a day, then deletes it. Disconnecting an
         app deletes its tokens from a8. You can also remove a8&apos;s access in
         your{" "}
         <a href="https://myaccount.google.com/permissions">Google Account</a>.
@@ -124,11 +127,14 @@ export default function PrivacyPage() {
       <h2>Deleting your data</h2>
       <p>
         Delete a chat from the sidebar to delete its messages. Its files are
-        deleted within a day. To
-        delete everything, go to{" "}
+        deleted within a day. To delete everything, go to{" "}
         <Link href="/settings/account">Settings, then Account</Link> and delete
-        your account. That removes your account, chats, files, connections and
-        tokens, and cancels your subscription. a8 can&apos;t undo it.
+        your account. That removes your account, chats, scheduled prompts,
+        files, connections and tokens, and cancels your subscription. a8
+        can&apos;t undo it. a8 deletes its copies of emails it sent you about a
+        day after sending them. If you ever started a checkout, a8 also asks
+        Polar to delete your customer profile and anonymize your name and
+        email. Polar keeps its records of past payments.
       </p>
 
       <h2>Changes</h2>

@@ -13,6 +13,31 @@ const resend = new Resend(components.resend, {
   testMode: env.RESEND_TEST_MODE === "true",
 });
 
+/** How long the Resend component keeps an email after a8 queues it. */
+const EMAIL_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Deletes the emails a8 queued more than EMAIL_RETENTION_MS ago, bodies
+ * included. It deletes them whatever their status, since a8 never reads them
+ * back. A scheduled run's email holds the reply text, which can quote the
+ * user's apps. The component can't delete by recipient, so this sweep also
+ * deletes a deleted account's emails. Runs hourly (convex/crons.ts).
+ *
+ * a8 has no Resend webhook, so a sent email never becomes "finalized", and
+ * cleanupOldEmails would skip it. cleanupAbandonedEmails goes by creation
+ * time instead, and schedules itself again until it's done.
+ */
+export const cleanUpExpiredEmails = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.runMutation(components.resend.lib.cleanupAbandonedEmails, {
+      olderThan: EMAIL_RETENTION_MS,
+    });
+    return null;
+  },
+});
+
 // Queues the email and returns. The component sends it from its own workpool,
 // so auth responses don't wait on Resend.
 export const sendAuthEmail = internalMutation({
