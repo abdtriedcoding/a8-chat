@@ -164,7 +164,8 @@ function PlanSummary({
         )}
       </span>
       <span className="text-sm">
-        {formatCredits(creditsLeft(period))} of{" "}
+        {/* An overspent reply or a refund takes the balance below zero. */}
+        {formatCredits(Math.max(0, creditsLeft(period)))} of{" "}
         {formatCredits(period.creditsGranted)} credits left
       </span>
       {!endsByReset && (

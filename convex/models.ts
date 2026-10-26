@@ -61,8 +61,9 @@ export const dismissModelSwitch = mutation({
   args: { threadId: v.string() },
   returns: v.null(),
   handler: async (ctx, { threadId }) => {
-    await authorizeThreadAccess(ctx, threadId);
-    await clearModelSwitch(ctx, threadId);
+    const user = await authorizeThreadAccess(ctx, threadId);
+    const plan = await getPlanTerms(ctx, user._id);
+    await clearModelSwitch(ctx, { threadId, userId: user._id, plan });
     return null;
   },
 });

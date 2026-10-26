@@ -135,6 +135,9 @@ export default function PrivacyPage() {
         day after sending them. If you ever started a checkout, a8 also asks
         Polar to delete your customer profile and anonymize your name and
         email. Polar keeps its records of past payments.
+        Until your credits would have reset, a8 keeps a hash of your email
+        address and the credits you used, so a new account for the same inbox
+        starts with them.
       </p>
 
       <h2>Changes</h2>

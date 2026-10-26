@@ -89,6 +89,9 @@ export const vCreditPeriod = v.object({
   // A decimal, since a short reply costs a fraction of a credit. It can
   // pass creditsGranted, since a reply that starts always finishes.
   creditsUsed: v.number(),
+  // Set on a row an upgrade opened: the credits used in the row it ended.
+  // A revoke or refund counts them again (resolveCreditPeriod).
+  creditsUsedBefore: v.optional(v.number()),
 });
 
 /** A model call's tokens. */
@@ -434,6 +437,31 @@ export default defineSchema({
     userId: v.string(),
     ...vCreditPeriod.fields,
   }).index("by_userId_and_periodStart", ["userId", "periodStart"]),
+  // One row per account, by the key of its email (lib/emailKey.ts). Email
+  // aliases of one inbox share a key. With billing on, sign-up refuses a
+  // second account whose email has the same key. Sign-up adds the row, and
+  // deleting the account deletes it.
+  accountEmails: defineTable({
+    emailKey: v.string(),
+    userId: v.string(),
+  })
+    .index("by_emailKey", ["emailKey"])
+    .index("by_userId", ["userId"]),
+  // The credits a deleted account used in its last credit period, by the
+  // key of its email, only when billing is on. A new account with the same
+  // key that signs up before `periodEnd` starts with them (usage.ts), so
+  // deleting the account doesn't reset its credits. Costs that land after
+  // the deletion add to it. Deleted at `periodEnd`, or when a new account
+  // takes it.
+  deletedUsage: defineTable({
+    emailKey: v.string(),
+    // The deleted account's, for costs that land after the deletion.
+    userId: v.string(),
+    creditsUsed: v.number(),
+    periodEnd: v.number(),
+  })
+    .index("by_emailKey", ["emailKey"])
+    .index("by_userId", ["userId"]),
   // One row per recorded cost (record in convex/usage.ts), only when
   // billing is on, so the bill can be checked against real usage. Deleting
   // the account deletes the user's rows.

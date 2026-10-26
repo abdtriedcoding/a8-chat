@@ -1,7 +1,9 @@
+import type { PaginationResult } from "convex/server";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./_generated/server";
+import { addAccountEmail } from "./lib/accountEmails";
 import { isSharedFilePart } from "./lib/sharedFiles";
 
 /** The fields a8 stopped storing, by table. */
@@ -134,6 +136,40 @@ export const replaceSharedFileUrlsWithIds = internalMutation({
         internal.migrations.replaceSharedFileUrlsWithIds,
         { cursor: continueCursor },
       );
+    }
+    return null;
+  },
+});
+
+/**
+ * Adds the email key of each account made before a8 kept one
+ * (accountEmails in schema.ts), so sign-up refuses aliases of their emails
+ * too. Run it once on each deployment:
+ *
+ *   npx convex run migrations:addAccountEmails
+ *
+ * Once it's done everywhere, delete this.
+ */
+export const addAccountEmails = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = (await ctx.runQuery(
+      components.betterAuth.adapter.findMany,
+      {
+        model: "user",
+        paginationOpts: { cursor: args.cursor ?? null, numItems: BATCH_SIZE },
+      },
+    )) as PaginationResult<{ _id: string; email: string }>;
+    for (const user of page) {
+      await addAccountEmail(ctx, { userId: user._id, email: user.email });
+    }
+    if (isDone) {
+      console.log("Account email keys added.");
+    } else {
+      await ctx.scheduler.runAfter(0, internal.migrations.addAccountEmails, {
+        cursor: continueCursor,
+      });
     }
     return null;
   },

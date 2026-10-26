@@ -74,23 +74,22 @@ export async function getDefaultModel(
 }
 
 /**
- * The model the composer's chip shows for the thread. That's the thread's
- * model, or its owner's default model when the thread has none or its
- * model left the list. `userId` is the thread's owner, from its metadata.
- *
- * It can be a model the owner's plan no longer includes. The next Send
- * moves the thread off it (resolveSendModel), and the composer says why.
- * It loads the owner's plan only when the thread has no listed model.
+ * The model the composer's chip shows for the thread, and the switch its
+ * note shows. The model is the one the next reply uses (resolveReplyModel),
+ * so a thread on a model the owner's plan no longer includes shows the
+ * default model as soon as the plan changes. The switch is the one the next
+ * Send makes, or else the one the last Send saved. `userId` is the
+ * thread's owner, from its metadata.
  */
 export async function getThreadModel(
   ctx: QueryCtx,
   { threadId, userId }: { threadId: string; userId: string | undefined },
-): Promise<Model> {
+): Promise<ReplyModel> {
+  const plan = userId ? await getPlanTerms(ctx, userId) : null;
+  const next = await resolveReplyModel(ctx, { threadId, userId, plan });
+  if (next.switchedFrom) return next;
   const row = await findThreadModel(ctx, threadId);
-  const model = row && findModel(row.modelId);
-  if (model) return model;
-  if (!userId) return defaultModel();
-  return await getDefaultModel(ctx, userId, await getPlanTerms(ctx, userId));
+  return { model: next.model, switchedFrom: row?.switchedFrom ?? null };
 }
 
 /**
@@ -131,8 +130,9 @@ export async function resolveReplyModel(
  * default model when the thread can't use its model (resolveReplyModel).
  * Pass the result to saveSendModel once the Send goes ahead.
  *
- * The chip can still show a model a queued prompt or a scheduled run just
- * moved the thread off. Sending that one counts as no pick.
+ * The chip can still show a model the thread is moving or just moved off,
+ * from before the plan changed or before a queued prompt or a scheduled
+ * run moved it. Sending that one counts as no pick.
  */
 export async function resolveSendModel(
   ctx: QueryCtx,
@@ -148,19 +148,16 @@ export async function resolveSendModel(
     modelId?: string;
   },
 ): Promise<ReplyModel | ModelLocked> {
-  if (modelId !== undefined) {
-    // The model the chip shows, as getThreadModel finds it.
+  const next = await resolveReplyModel(ctx, { threadId, userId, plan });
+  if (modelId !== undefined && modelId !== next.model.id) {
     const row = await findThreadModel(ctx, threadId);
-    const shown =
-      (row && findModel(row.modelId)) ??
-      (await getDefaultModel(ctx, userId, plan));
-    if (modelId !== shown.id && modelId !== row?.switchedFrom?.modelId) {
+    if (modelId !== row?.modelId && modelId !== row?.switchedFrom?.modelId) {
       const model = checkModelPick(plan, modelId);
       if ("code" in model) return model;
       return { model, switchedFrom: null };
     }
   }
-  return await resolveReplyModel(ctx, { threadId, userId, plan });
+  return next;
 }
 
 /**
@@ -273,8 +270,23 @@ export async function setThreadModelRow(
   }
 }
 
-/** Clears the note about the thread's last switch, if it has one. */
-export async function clearModelSwitch(ctx: MutationCtx, threadId: string) {
+/**
+ * Clears the note about the thread's switch (getThreadModel). A switch the
+ * next Send would make is made now, so the note doesn't come back.
+ */
+export async function clearModelSwitch(
+  ctx: MutationCtx,
+  {
+    threadId,
+    userId,
+    plan,
+  }: { threadId: string; userId: string; plan: PlanTerms | null },
+) {
+  const next = await resolveReplyModel(ctx, { threadId, userId, plan });
+  if (next.switchedFrom) {
+    await setThreadModelRow(ctx, { threadId, modelId: next.model.id });
+    return;
+  }
   const row = await findThreadModel(ctx, threadId);
   if (row?.switchedFrom) {
     await ctx.db.patch("threadModels", row._id, { switchedFrom: undefined });

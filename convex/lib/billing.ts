@@ -83,6 +83,12 @@ export const polar = new Polar<DataModel>(components.polar, {
   },
 });
 
+/**
+ * How long before its period's end a subscription has to end to count as
+ * revoked, so a cancel that Polar ends a moment early doesn't.
+ */
+const REVOKE_MARGIN_MS = 60_000;
+
 /** What each plan grants a month, in credits. */
 export const MONTHLY_CREDITS = { free: 100, pro: 800 } as const;
 
@@ -119,6 +125,13 @@ export const vPlanTerms = v.object({
    * update their card in Polar's portal instead.
    */
   paymentFailed: v.boolean(),
+  /**
+   * Free only: when the user's last Pro subscription ended before its
+   * billing period did, from a revoke or a refund, in ms. Null when it ran
+   * to its period's end. The credits Pro granted end there too
+   * (resolveCreditPeriod).
+   */
+  revokedAt: v.union(v.number(), v.null()),
 });
 
 export type PlanTerms = Infer<typeof vPlanTerms>;
@@ -180,6 +193,7 @@ export async function getPlanTerms(
       billingInterval,
       endsAt: endsAt === null ? null : Date.parse(endsAt),
       paymentFailed: false,
+      revokedAt: null,
     };
   }
   const user = await authComponent.getAnyUserById(ctx, userId);
@@ -194,7 +208,41 @@ export async function getPlanTerms(
       ({ status, productId }) =>
         status === "past_due" && proInterval(productId) !== null,
     ),
+    revokedAt: proRevokedAt(
+      await ctx.runQuery(components.polar.lib.listAllUserSubscriptions, {
+        userId,
+      }),
+    ),
   };
+}
+
+/**
+ * The revoke time for vPlanTerms' `revokedAt`. It looks at the Pro
+ * subscription that ended last. Polar ends a cancelled subscription at its
+ * period's end. A revoke, like the one a refund or chargeback makes, ends
+ * it at once and leaves the period's end as it was. So a subscription that
+ * ended before its period's end was revoked.
+ */
+function proRevokedAt(
+  subscriptions: {
+    endedAt: string | null;
+    currentPeriodEnd: string | null;
+    productId: string;
+  }[],
+): number | null {
+  let last: { endedAt: number; periodEnd: number } | null = null;
+  for (const { endedAt, currentPeriodEnd, productId } of subscriptions) {
+    if (!endedAt || !currentPeriodEnd || proInterval(productId) === null) {
+      continue;
+    }
+    const ended = Date.parse(endedAt);
+    if (!last || ended > last.endedAt) {
+      last = { endedAt: ended, periodEnd: Date.parse(currentPeriodEnd) };
+    }
+  }
+  return last && last.endedAt < last.periodEnd - REVOKE_MARGIN_MS
+    ? last.endedAt
+    : null;
 }
 
 /**

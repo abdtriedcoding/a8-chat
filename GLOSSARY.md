@@ -190,5 +190,5 @@ The most the hosted a8 spends on models across all users in a UTC day, set in do
 _Avoid_: daily cap, daily limit (those are self-hosted send caps)
 
 **Plan**:
-What a hosted user pays for: Free or Pro. Each plan grants a number of credits a month. Free can use the cheap models, those whose typical reply costs 5 credits or less, and Pro can use every model. a8 doesn't list a model whose typical reply costs over 100 credits. An upgrade grants the new plan's full credits at once and starts a new month from that day. A downgrade waits until the month ends. Hosted users can't bring their own model keys, and self-hosted a8 has no plans or credits.
+What a hosted user pays for: Free or Pro. Each plan grants a number of credits a month. Free can use the cheap models, those whose typical reply costs 5 credits or less, and Pro can use every model. a8 doesn't list a model whose typical reply costs over 100 credits. An upgrade grants the new plan's full credits at once and starts a new month from that day. A downgrade waits until the month ends. A revoke or refund puts the user on Free at once, and the credits they used so far count against Free's grant until Free's month ends. One inbox gets one account (ADR 0019). Hosted users can't bring their own model keys, and self-hosted a8 has no plans or credits.
 _Avoid_: tier, subscription (outside billing code), package
