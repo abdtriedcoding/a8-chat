@@ -10,13 +10,13 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `schema.ts`: a8's own tables. Threads, messages and users live in the Agent and Better Auth components.
 - `auth.config.ts`: tells Convex to trust Better Auth's tokens, with the public keys inline when `JWKS` is set.
 - `http.ts`: the HTTP routes, Better Auth's, the connector OAuth callback, the shared page's files and, when billing is on, Polar's webhooks.
-- `crons.ts`: the cleanup jobs. Attachments that were never sent, expired upload grants and orphaned storage go daily, and expired connector sign-ins go hourly.
+- `crons.ts`: the cleanup jobs. Attachments that were never sent, expired upload grants and orphaned storage go daily, and expired connector sign-ins, idle temporary threads and emails older than a day go hourly.
 
 ### Accounts
 
 - `auth.ts`: Better Auth's options, `getCurrentUser`, `getLatestJwks`, which returns the signing key for the `JWKS` env var, and `purgeAccount`, which deletes a user's data when they delete their account.
-- `emails.ts`: queues verification, password reset and scheduled run emails through Resend.
-- `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, and the action that cancels a deleted user's subscription.
+- `emails.ts`: queues verification, password reset and scheduled run emails through Resend, and deletes each one a day later.
+- `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, the action that cancels a deleted user's subscription, and the one that deletes their Polar customer.
 - `usage.ts`: the cost recorder, and the lookup of each model call's cost on AI Gateway. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.
 - `rateLimits.ts`: the rate limits on sends, web searches, attachments, wrong passwords at email sign-in, connector sign-ins, connector tool calls, shares and new scheduled prompts. Web searches also have a daily cap across all users. On the hosted a8, a send also needs credits left and the day's spend under the daily ceiling (`checkSpend`). Self-hosted a8 has no credits, so its sends keep daily caps per user and across all users.
 

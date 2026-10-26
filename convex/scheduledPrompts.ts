@@ -11,6 +11,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { authComponent } from "./auth";
 import { closeUnrunActions, waitingApprovalIds } from "./chat/approval";
 import {
   addQueuedPrompt,
@@ -27,6 +28,7 @@ import { buildPromptMessage, checkPrompt, checkTitle } from "./lib/prompt";
 import { MAX_QUEUED_PROMPTS } from "./lib/queue";
 import {
   cancelScheduledRun,
+  deleteScheduledPrompt,
   findThreadScheduledPrompt,
   listUnreadScheduledPrompts,
   vRunEnding,
@@ -163,10 +165,10 @@ export const updateForUser = internalMutation({
 });
 
 /**
- * Deletes the user's scheduled prompt (removeScheduledPrompt). The title,
- * prompt and schedule are what its action card showed, so a call where one
- * isn't the row's deletes nothing. Throws then, and when the row is gone or
- * someone else's.
+ * Deletes the user's scheduled prompt (deleteScheduledPrompt). Its thread
+ * stays as a regular thread. The title, prompt and schedule are what its
+ * action card showed, so a call where one isn't the row's deletes nothing.
+ * Throws then, and when the row is gone or someone else's.
  */
 export const removeForUser = internalMutation({
   args: {
@@ -188,7 +190,29 @@ export const removeForUser = internalMutation({
         checkPrompt(prompt, 0) === row.prompt &&
         sameSchedule(schedule, row.schedule),
     );
-    await removeScheduledPrompt(ctx, row);
+    await deleteScheduledPrompt(ctx, row);
+    return null;
+  },
+});
+
+/**
+ * Deletes a deleted user's scheduled prompts and cancels their next runs, so
+ * none fires while purgeUserThreads deletes the threads. It takes the user
+ * ID, not the session, since the account is already gone. Scheduled by
+ * purgeAccount (convex/auth.ts).
+ */
+export const purgeUserScheduledPrompts = internalMutation({
+  args: { userId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId }) => {
+    // A user has at most MAX_SCHEDULED_PROMPTS, so one transaction can
+    // delete them all.
+    const rows = ctx.db
+      .query("scheduledPrompts")
+      .withIndex("by_userId", (q) => q.eq("userId", userId));
+    for await (const row of rows) {
+      await deleteScheduledPrompt(ctx, row);
+    }
     return null;
   },
 });
@@ -328,7 +352,7 @@ export const remove = mutation({
   returns: v.null(),
   handler: async (ctx, { scheduledPromptId }) => {
     const { row } = await requireOwnScheduledPrompt(ctx, scheduledPromptId);
-    await removeScheduledPrompt(ctx, row);
+    await deleteScheduledPrompt(ctx, row);
     return null;
   },
 });
@@ -371,7 +395,9 @@ export const runNow = mutation({
  * includes no credits left and the daily spend ceiling (limitSend).
  *
  * Does nothing when the row is gone or isn't active, as when the job fired
- * just as the user paused.
+ * just as the user paused. Also does nothing when the user is gone, as when
+ * the job fired while purgeAccount (convex/auth.ts) was deleting the
+ * account.
  */
 export const run = internalMutation({
   args: { scheduledPromptId: v.id("scheduledPrompts") },
@@ -379,6 +405,7 @@ export const run = internalMutation({
   handler: async (ctx, { scheduledPromptId }) => {
     const row = await ctx.db.get("scheduledPrompts", scheduledPromptId);
     if (!row || row.status !== "active") return null;
+    if (!(await authComponent.getAnyUserById(ctx, row.userId))) return null;
     await scheduleNextRun(ctx, row);
     if (await isRunWaiting(ctx, row)) {
       await ctx.db.patch("scheduledPrompts", row._id, {
@@ -848,18 +875,6 @@ async function updateScheduledPrompt(
   await cancelScheduledRun(ctx, row);
   await ctx.db.patch("scheduledPrompts", row._id, { status: "active" });
   await scheduleRun(ctx, row._id, runAt);
-}
-
-/**
- * Deletes a scheduled prompt and cancels its next run. Its thread stays as
- * a regular thread.
- */
-async function removeScheduledPrompt(
-  ctx: MutationCtx,
-  row: Doc<"scheduledPrompts">,
-) {
-  await cancelScheduledRun(ctx, row);
-  await ctx.db.delete("scheduledPrompts", row._id);
 }
 
 /**
