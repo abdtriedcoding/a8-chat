@@ -40,6 +40,7 @@ import {
   forgetOAuthClientRegistration,
   isUntrustedOrigin,
   isVendorUnreachable,
+  readUserAccount,
   signInScope,
 } from "./lib/connectorAuth";
 import {
@@ -60,12 +61,13 @@ import {
   isMisconfigured,
 } from "./lib/encryption";
 import { vAppInstall, vConnectionStatus } from "./schema";
-import { readToolList, refreshConnectionToolList } from "./toolLists";
+import { checkConnectionAppInstall, readToolList } from "./toolLists";
 
 const vConnectorStatus = v.object({
   id: vConnectorId,
   status: v.union(vConnectionStatus, v.literal("disconnected")),
   accountLabel: v.optional(v.string()),
+  accountAvatarUrl: v.optional(v.string()),
   connectedAt: v.optional(v.number()),
   // False when the deployment lacks the connector's OAuth client env vars.
   setUp: v.boolean(),
@@ -79,7 +81,15 @@ const vConnectorStatus = v.object({
 export type ConnectorStatus = Infer<typeof vConnectorStatus>;
 
 const vConnectResult = v.union(
-  v.object({ connected: v.string() }),
+  v.object({
+    connected: v.string(),
+    // The account a `user` label source named, like a GitHub login and
+    // avatar. The vendor may skip its consent screen for an account it
+    // already trusts, so the page shows which one got connected.
+    account: v.optional(
+      v.object({ label: v.string(), avatarUrl: v.optional(v.string()) }),
+    ),
+  }),
   v.object({
     error: v.union(...CONNECT_ERRORS.map((error) => v.literal(error))),
   }),
@@ -125,6 +135,7 @@ export const list = query({
         id: connector.id,
         status: connection?.status ?? "disconnected",
         accountLabel: connection?.accountLabel,
+        accountAvatarUrl: connection?.accountAvatarUrl,
         connectedAt: connection?.connectedAt,
         setUp: isSetUp(connector),
         missingScopes: missesScopes(connector, connection?.grantedScopes),
@@ -221,7 +232,7 @@ async function connectWithoutSignIn(
   userId: string,
 ): Promise<ConnectResult> {
   try {
-    const { toolList, accountLabel } = await readToolList(
+    const { toolList, accountLabel, accountAvatarUrl } = await readToolList(
       connector,
       undefined,
       { needsLabel: true },
@@ -230,6 +241,7 @@ async function connectWithoutSignIn(
       userId,
       connectorId: connector.id,
       accountLabel,
+      accountAvatarUrl,
       toolList,
     });
     return { connected: connector.id };
@@ -307,6 +319,8 @@ export const finishConnect = action({
       });
       const tokens = provider.savedTokens;
       if (!tokens) throw new Error("auth() returned without tokens.");
+      // Empty unless the label comes from a `user` source.
+      const account = await readUserAccount(connector, tokens.access_token);
       // Saves right after the exchange, so a failing tool list can't drop
       // tokens the vendor already granted. saveConnection schedules the tool
       // list refresh, which also reads a tool-based account label.
@@ -329,13 +343,23 @@ export const finishConnect = action({
               : Date.now() + tokens.expires_in * 1000,
           resource: provider.resource,
           grantedScopes: tokens.scope?.split(" ").filter(Boolean),
-          accountLabel: provider.accountLabel,
+          accountLabel: provider.accountLabel ?? account.accountLabel,
+          accountAvatarUrl: account.accountAvatarUrl,
         },
       );
       if (replaced) {
         await revokeReplacedConnection(ctx, connector, replaced, tokens);
       }
-      return { connected: connector.id };
+      return {
+        connected: connector.id,
+        account:
+          account.accountLabel === undefined
+            ? undefined
+            : {
+                label: account.accountLabel,
+                avatarUrl: account.accountAvatarUrl,
+              },
+      };
     } catch (error) {
       console.error(`Finishing ${connector.name} sign-in failed`, error);
       const connectError = finishConnectError(error);
@@ -353,23 +377,31 @@ export const finishConnect = action({
 
 /**
  * Checks again whether the user's connections reach anything where their
- * connector has an app to install, like after the user installs a8's
- * GitHub App, which sends the browser back to the Connectors page. Each
- * check refreshes the connection's tool list, which runs it.
+ * connector has an app to install (checkConnectionAppInstall). The
+ * Connectors page calls it each time it opens. GitHub sends no redirect
+ * when the user uninstalls a8's GitHub App, so without this check the card
+ * would show the old answer until the next tool list refresh.
  */
 export const checkAppInstalls = action({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    // Each check calls the vendor, so it counts as a connect start.
-    await ctx.runMutation(internal.signIns.checkConnectStart, {});
+    const connections = [];
     for (const connector of CONNECTORS) {
       if (!connector.appInstall) continue;
       const connection = await ctx.runQuery(
         internal.connections.getConnection,
         { by: { connectorId: connector.id } },
       );
-      if (connection) await refreshConnectionToolList(ctx, connection._id);
+      if (connection) connections.push(connection);
+    }
+    if (connections.length === 0) return null;
+    // Past the limit, the cards keep the stored answer.
+    if (!(await ctx.runMutation(internal.connections.limitAppInstallChecks))) {
+      return null;
+    }
+    for (const connection of connections) {
+      await checkConnectionAppInstall(ctx, connection._id);
     }
     return null;
   },

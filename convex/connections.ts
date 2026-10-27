@@ -18,6 +18,7 @@ import {
 import { requireUser } from "./lib/guards";
 import { revokeConnection } from "./lib/connectorAuth";
 import { REFRESH_LEASE_MS } from "./lib/connectionTokens";
+import { limitAppInstallCheck } from "./rateLimits";
 import { findConnector, type Connector } from "./lib/connectors";
 import {
   decryptOrUndefined,
@@ -83,6 +84,19 @@ export const getConnection = internalQuery({
 });
 
 /**
+ * Counts one app install check (checkAppInstalls) against the signed-in
+ * user's rate limit. Returns false once the limit is hit.
+ */
+export const limitAppInstallChecks = internalMutation({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    return await limitAppInstallCheck(ctx, user._id);
+  },
+});
+
+/**
  * Creates or replaces the user's connection to the connector. Stores
  * `toolList` as its tool list, or schedules refreshToolList to fetch one.
  * A connector with no sign-in has no tokens to store.
@@ -100,6 +114,7 @@ export const saveConnection = internalMutation({
     resource: v.optional(v.string()),
     grantedScopes: connectionFields.grantedScopes,
     accountLabel: v.optional(v.string()),
+    accountAvatarUrl: v.optional(v.string()),
     toolList: v.optional(vStoredToolList),
   },
   returns: v.union(vConnectionTokens, v.null()),
@@ -273,7 +288,9 @@ export const settleTokens = internalMutation({
  * A reply may refresh the tokens between the revoke and the delete, and if
  * the vendor rotated the refresh token, revoking the old one may leave the
  * new one working. So when the deleted row's tokens changed, it revokes
- * again with those. Returns whether the last revocation worked.
+ * again with those. Revoking a GitHub grant ends every token issued under
+ * it, so a connector with grantRevocation needs no second revoke once the
+ * first worked. Returns whether the last revocation worked.
  */
 export async function revokeAndDeleteConnection(
   ctx: ActionCtx,
@@ -286,7 +303,8 @@ export async function revokeAndDeleteConnection(
   if (
     connector &&
     deleted &&
-    deleted.tokenVersion !== connection.tokenVersion
+    deleted.tokenVersion !== connection.tokenVersion &&
+    !(revoked && connector.grantRevocation)
   ) {
     revoked = await tryRevoke(ctx, connector, deleted);
   }
@@ -300,8 +318,10 @@ export async function revokeAndDeleteConnection(
  * It skips the revoke when the vendor sent back the same token. It also
  * skips it for a connector whose revocation ends every grant to a8's
  * client, like Google's. In both cases the revoke would end the new
- * connection too. A failed revoke only logs, since the new connection
- * works either way.
+ * connection too. GitHub's revocation ends the grant of one GitHub
+ * account, so a reconnect to the same account revokes only the old token
+ * (revokeConnection's `replacedBy`). A failed revoke only logs, since the
+ * new connection works either way.
  */
 export async function revokeReplacedConnection(
   ctx: ActionCtx,
@@ -325,10 +345,13 @@ export async function revokeReplacedConnection(
     ) {
       return;
     }
-    await revokeConnection(ctx, connector, encryptionKey, {
-      encryptedAccessToken,
-      encryptedRefreshToken,
-    });
+    await revokeConnection(
+      ctx,
+      connector,
+      encryptionKey,
+      { ...replaced, encryptedAccessToken },
+      current.access_token,
+    );
   } catch (error) {
     console.error(
       `Revoking a8's replaced ${connector.name} grant failed`,
@@ -344,14 +367,15 @@ export async function revokeReplacedConnection(
 async function tryRevoke(
   ctx: ActionCtx,
   connector: Connector,
-  { encryptedAccessToken, encryptedRefreshToken }: ConnectionTokens,
+  tokens: ConnectionTokens,
 ): Promise<boolean> {
+  const { encryptedAccessToken } = tokens;
   if (encryptedAccessToken === undefined) return true;
   try {
     const encryptionKey = await getEncryptionKey();
     return await revokeConnection(ctx, connector, encryptionKey, {
+      ...tokens,
       encryptedAccessToken,
-      encryptedRefreshToken,
     });
   } catch (error) {
     console.error(`Revoking a8's ${connector.name} access failed`, error);

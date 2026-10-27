@@ -13,10 +13,15 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
 import { isConnected } from "@/lib/connection-status";
-import { CONNECT_TOAST_ID, showConnectResult } from "@/lib/connect-result";
+import {
+  CONNECT_TOAST_ID,
+  showConnectResult,
+  showDisconnectResult,
+} from "@/lib/connect-result";
 import { takeConnectCallback } from "@/lib/connect-callback";
 import { readConnectReturn } from "@/lib/connect-return";
 import { searchConnectors } from "@/lib/connector-search";
+import { errorMessage } from "@/lib/errors";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectResult } from "../../../convex/connectors";
 import { CONNECTOR_VIEWS } from "../../../convex/lib/connectorView";
@@ -112,6 +117,7 @@ export function ConnectorList() {
 function useFinishSignIn() {
   const router = useRouter();
   const finishConnect = useAction(api.connectors.finishConnect);
+  const disconnect = useAction(api.connectors.disconnect);
 
   useEffect(() => {
     // Taking the callback clears it, so a second run, like React's in
@@ -126,7 +132,17 @@ function useFinishSignIn() {
     void finishConnect(callback.finish)
       .catch((): ConnectResult => ({ error: "failed" }))
       .then((result) => {
-        showConnectResult(result);
+        showConnectResult(result, ({ id, name }) => {
+          toast.loading(`Disconnecting ${name}…`, { id: CONNECT_TOAST_ID });
+          disconnect({ connectorId: id })
+            .then(({ revoked }) => {
+              toast.dismiss(CONNECT_TOAST_ID);
+              showDisconnectResult(name, revoked);
+            })
+            .catch((error: unknown) => {
+              toast.error(errorMessage(error), { id: CONNECT_TOAST_ID });
+            });
+        });
         const started = readConnectReturn();
         if (
           "connected" in result &&
@@ -135,23 +151,23 @@ function useFinishSignIn() {
           router.replace(started.path);
         }
       });
-  }, [router, finishConnect]);
+  }, [router, finishConnect, disconnect]);
 }
 
 /**
- * Checks the user's app installs again when a vendor's install page sent
- * the browser back, like GitHub's with `?setup_action=install`, then drops
- * the query. The cards update once the check stores what it found.
+ * Checks the user's app installs again each time the page opens. A vendor
+ * may say nothing when the user uninstalls its app, like GitHub, so the
+ * stored answer can be out of date. Drops the `?setup_action=` query a
+ * vendor's install page sends the browser back with. The cards update once
+ * the check stores what it found.
  */
 function useCheckAppInstalls() {
   const checkAppInstalls = useAction(api.connectors.checkAppInstalls);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has("setup_action")) return;
-    // Dropped at once, so a second run, like React's in development, finds
-    // nothing and can't check twice.
-    window.history.replaceState(null, "", "/connectors");
+    if (new URLSearchParams(window.location.search).has("setup_action")) {
+      window.history.replaceState(null, "", "/connectors");
+    }
     void checkAppInstalls().catch((error: unknown) => {
       console.error("Checking app installs failed", error);
     });

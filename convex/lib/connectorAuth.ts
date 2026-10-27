@@ -21,6 +21,7 @@ import {
   signInServer,
   type Connector,
   type ConnectorServer,
+  type GrantRevocation,
 } from "./connectors";
 import {
   authorizationServerMetadataUrls,
@@ -438,6 +439,51 @@ export function labelAt(data: unknown, path: string): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/** How long reading a `user` account label can take. */
+const USER_ACCOUNT_TIMEOUT_MS = 10_000;
+
+/** The signed-in account, as a connected card names it. */
+export type Account = { accountLabel?: string; accountAvatarUrl?: string };
+
+/**
+ * The account label, and the avatar if it's an https URL, from a `user`
+ * label source. Empty for any other source, or when the request fails.
+ */
+export async function readUserAccount(
+  connector: Connector,
+  accessToken: string,
+): Promise<Account> {
+  const source = connector.accountLabel;
+  if (source?.from !== "user") return {};
+  try {
+    const response = await pinnedFetch(connector)(source.url, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        // GitHub refuses a request without one.
+        "User-Agent": "a8",
+      },
+      signal: AbortSignal.timeout(USER_ACCOUNT_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`${source.url} answered ${response.status}.`);
+    }
+    const body: unknown = await response.json();
+    const avatarUrl =
+      source.avatarField === undefined
+        ? undefined
+        : labelAt(body, source.avatarField);
+    return {
+      accountLabel: labelAt(body, source.field),
+      accountAvatarUrl:
+        avatarUrl?.startsWith("https://") === true ? avatarUrl : undefined,
+    };
+  } catch (error) {
+    console.error(`Reading the ${connector.name} account failed`, error);
+    return {};
+  }
+}
+
 /**
  * Deletes the connector's client registration, so the next sign-in
  * registers again. Only for a client the vendor rejected or whose secret
@@ -714,20 +760,41 @@ export async function refreshTokens(
 /** How long each revocation request can take before a8 gives up on it. */
 const REVOKE_TIMEOUT_MS = 10_000;
 
+/** The tokens of a connection a8 revokes. */
+type RevokedTokens = Pick<
+  Doc<"connections">,
+  "encryptedRefreshToken" | "tokenExpiresAt" | "resource"
+> & {
+  encryptedAccessToken: string;
+};
+
 /**
  * Revokes a connection's grant at the vendor (RFC 7009). It revokes the
  * refresh token when there is one, which revokes the access tokens issued
- * with it. Returns false if the vendor has no revocation endpoint or a8 has
- * no client to authenticate with. Throws if a request fails.
+ * with it. A connector with grantRevocation revokes through that instead
+ * (revokeAsApp). Returns false if the vendor has no revocation endpoint or
+ * a8 has no client to authenticate with. Throws if a request fails.
+ *
+ * `replacedBy` is the access token of the connection a reconnect stored.
+ * Only revokeAsApp reads it.
  */
 export async function revokeConnection(
   ctx: ActionCtx,
   connector: Connector,
   encryptionKey: EncryptionKey,
-  connection: Pick<Doc<"connections">, "encryptedRefreshToken"> & {
-    encryptedAccessToken: string;
-  },
+  connection: RevokedTokens,
+  replacedBy?: string,
 ): Promise<boolean> {
+  if (connector.grantRevocation) {
+    return await revokeAsApp(
+      ctx,
+      connector,
+      connector.grantRevocation,
+      encryptionKey,
+      connection,
+      replacedBy,
+    );
+  }
   const registration = await readClientInformation(
     ctx,
     connector,
@@ -764,6 +831,73 @@ export async function revokeConnection(
     );
   }
   return true;
+}
+
+/**
+ * revokeConnection for a connector with grantRevocation, like GitHub. It
+ * revokes the whole grant, unless `replacedBy` acts as the same vendor
+ * account. The new connection shares that grant, so a8 revokes only the
+ * old token then. Returns false when a8 has no live access token to call
+ * the vendor with, like when the vendor refused the refresh token. The
+ * grant may still be live then, and only the user can remove it.
+ */
+async function revokeAsApp(
+  ctx: ActionCtx,
+  connector: Connector,
+  grantRevocation: GrantRevocation,
+  encryptionKey: EncryptionKey,
+  connection: RevokedTokens,
+  replacedBy: string | undefined,
+): Promise<boolean> {
+  const client = preRegisteredCredentials(connector);
+  if (!client) return false;
+  const accessToken = await liveAccessToken(
+    ctx,
+    connector,
+    encryptionKey,
+    connection,
+  );
+  if (accessToken === undefined) return false;
+  const fetchPinned = pinnedFetch(connector);
+  let target: "grant" | "token" = "grant";
+  if (replacedBy !== undefined) {
+    const [account, newAccount] = await Promise.all([
+      grantRevocation.accountId(fetchPinned, accessToken),
+      grantRevocation.accountId(fetchPinned, replacedBy),
+    ]);
+    if (account === newAccount) target = "token";
+  }
+  await grantRevocation.revoke(fetchPinned, client, accessToken, target);
+  return true;
+}
+
+/**
+ * The connection's access token if it hasn't expired, or else a new one
+ * from its refresh token. Undefined if the vendor refuses the refresh
+ * token or a8 has none. The refresh skips the lease and saves nothing, so
+ * only call it for a connection a8 is deleting or replacing.
+ */
+async function liveAccessToken(
+  ctx: ActionCtx,
+  connector: Connector,
+  encryptionKey: EncryptionKey,
+  connection: RevokedTokens,
+): Promise<string | undefined> {
+  const { encryptedAccessToken, encryptedRefreshToken, tokenExpiresAt } =
+    connection;
+  // A token with under a minute left could expire before the vendor reads it.
+  if (tokenExpiresAt === undefined || tokenExpiresAt - Date.now() > 60_000) {
+    return await decryptSecret(encryptionKey, encryptedAccessToken);
+  }
+  if (encryptedRefreshToken === undefined) return undefined;
+  const refreshed = await refreshTokens(
+    ctx,
+    connector,
+    encryptionKey,
+    await decryptSecret(encryptionKey, encryptedRefreshToken),
+    connection.resource,
+  );
+  return refreshed?.accessToken;
 }
 
 /**

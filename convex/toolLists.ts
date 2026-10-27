@@ -16,8 +16,10 @@ import {
 } from "./_generated/server";
 import {
   pinnedFetch,
+  readUserAccount,
   withMcpClients,
   withoutFailedServers,
+  type Account,
   type ServerClient,
 } from "./lib/connectorAuth";
 import {
@@ -107,16 +109,42 @@ export const refreshToolList = internalAction({
   args: { connectionId: v.id("connections") },
   returns: v.null(),
   handler: async (ctx, { connectionId }) => {
-    await refreshConnectionToolList(ctx, connectionId);
+    const connection = await ctx.runQuery(internal.connections.getConnection, {
+      by: { connectionId },
+    });
+    const connector = connection && findConnector(connection.connectorId);
+    if (connection?.status !== "connected" || !connector) return null;
+    // Reads the account label while a client is open, if sign-in found none.
+    const needsLabel = connection.accountLabel === undefined;
+    const result = await withAccessToken(
+      ctx,
+      connector,
+      connection,
+      async (accessToken) =>
+        await readToolList(connector, accessToken, { needsLabel }),
+    );
+    if ("needsReconnect" in result) return null;
+    const { toolList, accountLabel, accountAvatarUrl, appInstall } =
+      result.value;
+    await ctx.runMutation(internal.toolLists.saveToolList, {
+      connectionId,
+      connectedAt: connection.connectedAt,
+      toolList,
+      accountLabel,
+      accountAvatarUrl,
+      appInstall,
+    });
     return null;
   },
 });
 
 /**
- * What refreshToolList does, for an action that refreshes a connection's
- * list at once, without the cooldown, like checkAppInstalls.
+ * Checks only whether the connection's app is installed (readAppInstall),
+ * without fetching its tool list, and stores what it found. Does nothing
+ * for a connection that's gone or needs reconnecting, or whose connector
+ * has no app to install.
  */
-export async function refreshConnectionToolList(
+export async function checkConnectionAppInstall(
   ctx: ActionCtx,
   connectionId: Id<"connections">,
 ) {
@@ -124,23 +152,18 @@ export async function refreshConnectionToolList(
     by: { connectionId },
   });
   const connector = connection && findConnector(connection.connectorId);
-  if (connection?.status !== "connected" || !connector) return;
-  // Reads the account label while a client is open, if sign-in found none.
-  const needsLabel = connection.accountLabel === undefined;
+  if (connection?.status !== "connected" || !connector?.appInstall) return;
   const result = await withAccessToken(
     ctx,
     connector,
     connection,
-    async (accessToken) =>
-      await readToolList(connector, accessToken, { needsLabel }),
+    async (accessToken) => await readAppInstall(connector, accessToken),
   );
-  if ("needsReconnect" in result) return;
-  await ctx.runMutation(internal.toolLists.saveToolList, {
+  if ("needsReconnect" in result || result.value === undefined) return;
+  await ctx.runMutation(internal.toolLists.saveAppInstall, {
     connectionId,
     connectedAt: connection.connectedAt,
-    toolList: result.value.toolList,
-    accountLabel: result.value.accountLabel,
-    appInstall: result.value.appInstall,
+    appInstall: result.value,
   });
 }
 
@@ -149,8 +172,8 @@ export async function refreshConnectionToolList(
  * replaced since `connectedAt`. A reconnect keeps the row's ID but stores
  * its own list, which an older refresh mustn't overwrite. A token refresh
  * keeps `connectedAt`, so it doesn't stop the write. Also stores
- * `accountLabel` if the connection has none, and what the app install
- * check found.
+ * `accountLabel` and `accountAvatarUrl` if the connection has no label,
+ * and what the app install check found.
  */
 export const saveToolList = internalMutation({
   args: {
@@ -158,27 +181,65 @@ export const saveToolList = internalMutation({
     connectedAt: v.number(),
     toolList: vStoredToolList,
     accountLabel: v.optional(v.string()),
+    accountAvatarUrl: v.optional(v.string()),
     appInstall: v.optional(vAppInstallCheck),
   },
   returns: v.null(),
   handler: async (
     ctx,
-    { connectionId, connectedAt, toolList, accountLabel, appInstall },
+    {
+      connectionId,
+      connectedAt,
+      toolList,
+      accountLabel,
+      accountAvatarUrl,
+      appInstall,
+    },
   ) => {
     const connection = await ctx.db.get("connections", connectionId);
     if (connection?.connectedAt !== connectedAt) return null;
     if (accountLabel !== undefined && connection.accountLabel === undefined) {
-      await ctx.db.patch("connections", connectionId, { accountLabel });
+      await ctx.db.patch("connections", connectionId, {
+        accountLabel,
+        accountAvatarUrl,
+      });
     }
     if (appInstall !== undefined) {
-      await ctx.db.patch("connections", connectionId, {
-        appInstall: appInstall === "installed" ? undefined : appInstall,
-      });
+      await storeAppInstall(ctx, connectionId, appInstall);
     }
     await writeToolList(ctx, connectionId, toolList);
     return null;
   },
 });
+
+/**
+ * Stores what checkConnectionAppInstall found, if the connection still
+ * exists and wasn't replaced since `connectedAt`, like saveToolList.
+ */
+export const saveAppInstall = internalMutation({
+  args: {
+    connectionId: v.id("connections"),
+    connectedAt: v.number(),
+    appInstall: vAppInstallCheck,
+  },
+  returns: v.null(),
+  handler: async (ctx, { connectionId, connectedAt, appInstall }) => {
+    const connection = await ctx.db.get("connections", connectionId);
+    if (connection?.connectedAt !== connectedAt) return null;
+    await storeAppInstall(ctx, connectionId, appInstall);
+    return null;
+  },
+});
+
+async function storeAppInstall(
+  ctx: MutationCtx,
+  connectionId: Id<"connections">,
+  appInstall: AppInstallCheck,
+) {
+  await ctx.db.patch("connections", connectionId, {
+    appInstall: appInstall === "installed" ? undefined : appInstall,
+  });
+}
 
 /**
  * Stores the connection's tool list, fetched now. A `stale` list is stored
@@ -254,26 +315,41 @@ async function listAllTools(client: MCPClient): Promise<McpTool[]> {
 
 /**
  * The connector's tool list (fetchToolList), read with `accessToken`, its
- * account label (readAccountLabel) if `needsLabel`, and whether its app is
- * installed (readAppInstall). A connector with no sign-in has no token to
- * pass.
+ * account (readAccount) if `needsLabel`, and whether its app is installed
+ * (readAppInstall). A connector with no sign-in has no token to pass.
  */
 export async function readToolList(
   connector: Connector,
   accessToken: string | undefined,
   { needsLabel }: { needsLabel: boolean },
-): Promise<{
-  toolList: StoredToolList;
-  accountLabel: string | undefined;
-  appInstall: AppInstallCheck | undefined;
-}> {
+): Promise<
+  Account & {
+    toolList: StoredToolList;
+    appInstall: AppInstallCheck | undefined;
+  }
+> {
   return await withMcpClients(connector, accessToken, async (clients) => ({
     toolList: await fetchToolList(connector, clients),
-    accountLabel: needsLabel
-      ? await readAccountLabel(connector, clients)
-      : undefined,
+    ...(needsLabel ? await readAccount(connector, clients, accessToken) : {}),
     appInstall: await readAppInstall(connector, accessToken),
   }));
+}
+
+/**
+ * The signed-in account: from a `user` source with `accessToken`
+ * (readUserAccount), or else from the label tool (readAccountLabel).
+ */
+async function readAccount(
+  connector: Connector,
+  clients: ServerClient[],
+  accessToken: string | undefined,
+): Promise<Account> {
+  if (connector.accountLabel?.from === "user") {
+    return accessToken === undefined
+      ? {}
+      : await readUserAccount(connector, accessToken);
+  }
+  return { accountLabel: await readAccountLabel(connector, clients) };
 }
 
 /**
