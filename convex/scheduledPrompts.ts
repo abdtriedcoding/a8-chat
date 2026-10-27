@@ -1,4 +1,9 @@
-import { createThread, type MessageDoc } from "@convex-dev/agent";
+import {
+  createThread,
+  getThreadMetadata,
+  updateThreadMetadata,
+  type MessageDoc,
+} from "@convex-dev/agent";
 import { pick } from "convex-helpers";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
@@ -40,7 +45,7 @@ import {
   type Schedule,
 } from "./lib/schedule";
 import type { RunEmailKind } from "./lib/runEmails";
-import { resolveTimeZone } from "./lib/timeZone";
+import { currentTimeZoneName, resolveTimeZone } from "./lib/timeZone";
 import { settleReplyModel } from "./lib/threadModels";
 import { limitScheduledPromptCreate, limitSend } from "./rateLimits";
 import { vLastRun, vScheduledPromptStatus } from "./schema";
@@ -151,7 +156,8 @@ export const updateForUser = internalMutation({
     const row = await findOwnScheduledPrompt(ctx, userId, scheduledPromptId);
     refuseMismatch(
       row,
-      checkTitle(title) === row.title && timeZone === row.timeZone,
+      checkTitle(title) === row.title &&
+        currentTimeZoneName(timeZone) === currentTimeZoneName(row.timeZone),
     );
     await updateScheduledPrompt(ctx, userId, row, {
       title: newTitle ?? row.title,
@@ -557,8 +563,8 @@ export const nextRun = internalQuery({
     }),
     v.null(),
   ),
-  handler: async (ctx, { schedule, timeZone, from }) => {
-    checkSchedule(schedule, timeZone);
+  handler: async (ctx, { schedule, from, ...args }) => {
+    const timeZone = checkSchedule(schedule, args.timeZone);
     const at = findNextRun(schedule, timeZone, from);
     if (at === null) return null;
     return {
@@ -769,12 +775,14 @@ function toView(row: Doc<"scheduledPrompts">) {
       "title",
       "prompt",
       "schedule",
-      "timeZone",
       "email",
       "status",
       "nextRunAt",
       "lastRun",
     ]),
+    // A row saved before zones went by their current names can have an
+    // old one.
+    timeZone: currentTimeZoneName(row.timeZone),
     pausedAfterFailures:
       row.status === "paused" && row.consecutiveFailures >= MAX_FAILED_RUNS
         ? row.consecutiveFailures
@@ -793,13 +801,12 @@ async function createScheduledPrompt(
   userId: string,
   {
     schedule,
-    timeZone,
     ...fields
   }: { title: string; prompt: string; schedule: Schedule; timeZone: string },
 ) {
   const title = checkTitle(fields.title);
   const prompt = checkPrompt(fields.prompt, 0);
-  checkSchedule(schedule, timeZone);
+  const timeZone = checkSchedule(schedule, fields.timeZone);
   const runAt = requireNextRun(schedule, timeZone);
   await refuseAtActiveCap(ctx, userId);
   await refuseAtTotalCap(ctx, userId);
@@ -835,7 +842,8 @@ async function createScheduledPrompt(
  * Changes the user's scheduled prompt. Edits apply to future runs only. A
  * new schedule or time zone cancels the pending run and schedules the next
  * one from now. That makes a done one-off active again, which the active
- * cap can refuse. A paused one stays paused, and resume schedules it.
+ * cap can refuse. A paused one stays paused, and resume schedules it. A
+ * new title renames its thread too (renameThread).
  * Throws on a bad field, or a new time that has passed.
  */
 async function updateScheduledPrompt(
@@ -844,7 +852,6 @@ async function updateScheduledPrompt(
   row: Doc<"scheduledPrompts">,
   {
     schedule,
-    timeZone,
     email,
     ...fields
   }: {
@@ -857,7 +864,7 @@ async function updateScheduledPrompt(
 ) {
   const title = checkTitle(fields.title);
   const prompt = checkPrompt(fields.prompt, 0);
-  checkSchedule(schedule, timeZone);
+  const timeZone = checkSchedule(schedule, fields.timeZone);
   await ctx.db.patch("scheduledPrompts", row._id, {
     title,
     prompt,
@@ -865,8 +872,12 @@ async function updateScheduledPrompt(
     timeZone,
     email,
   });
+  if (title !== row.title) await renameThread(ctx, row, title);
+  // A row saved before zones went by their current names can have an old
+  // one, which is the same zone.
   const timingChanged =
-    timeZone !== row.timeZone || !sameSchedule(schedule, row.schedule);
+    timeZone !== currentTimeZoneName(row.timeZone) ||
+    !sameSchedule(schedule, row.schedule);
   if (!timingChanged) return;
 
   const runAt = requireNextRun(schedule, timeZone);
@@ -875,6 +886,25 @@ async function updateScheduledPrompt(
   await cancelScheduledRun(ctx, row);
   await ctx.db.patch("scheduledPrompts", row._id, { status: "active" });
   await scheduleRun(ctx, row._id, runAt);
+}
+
+/**
+ * Gives the scheduled prompt's thread its new title, unless the user
+ * renamed the thread by hand, so its title is no longer the row's.
+ */
+async function renameThread(
+  ctx: MutationCtx,
+  row: Doc<"scheduledPrompts">,
+  title: string,
+) {
+  const thread = await getThreadMetadata(ctx, components.agent, {
+    threadId: row.threadId,
+  });
+  if (thread.title !== row.title) return;
+  await updateThreadMetadata(ctx, components.agent, {
+    threadId: row.threadId,
+    patch: { title },
+  });
 }
 
 /**
@@ -978,13 +1008,18 @@ function sameSchedule(a: Schedule, b: Schedule) {
   return key(a) === key(b);
 }
 
-/** Throws on a malformed schedule or an unknown time zone. */
+/**
+ * The time zone by its current name, such as Asia/Kolkata for
+ * Asia/Calcutta. Throws on a malformed schedule or an unknown time zone.
+ */
 function checkSchedule(schedule: Schedule, timeZone: string) {
   const problem = scheduleProblem(schedule);
   if (problem) throw appError(ERROR_CODES.INVALID_SCHEDULE, problem);
-  if (resolveTimeZone(timeZone) !== timeZone) {
+  const name = currentTimeZoneName(timeZone);
+  if (resolveTimeZone(name) !== name) {
     throw appError(ERROR_CODES.INVALID_SCHEDULE, "Pick a time zone.");
   }
+  return name;
 }
 
 /**

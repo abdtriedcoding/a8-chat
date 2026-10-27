@@ -37,6 +37,7 @@
     "cn": "^0.4.0",
     "convex": "^1.46.0",
     "convex-helpers": "^0.1.103",
+    "countries-and-timezones": "3.10.0",
     "cron-parser": "^5.10.2",
     "jose": "^6.2.12",
     "katex": "^0.16.27",

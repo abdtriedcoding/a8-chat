@@ -249,18 +249,51 @@ function cleanAccountLabel(label: string | undefined): string {
 /**
  * e.g. "Today is Friday, October 2, 2026, in the user's time zone,
  * Pacific/Kiritimati (GMT+14:00)." Only the date, not the time, so the
- * instructions stay the same all day.
+ * instructions stay the same all day. The time goes with the prompt
+ * (timeNote).
  */
 function dateInstruction(timeZone: string, now: Date): string {
-  const date = new Intl.DateTimeFormat("en-US", {
+  return `Today is ${fullDate(timeZone, now)}, in the user's time zone, ${zoneWithOffset(timeZone, now)}.`;
+}
+
+/**
+ * The note on when the user sent the prompt, which the reply adds to it
+ * (withPromptNote), e.g. "The user sent this at 3:42 PM on Tuesday,
+ * October 27, 2026, in their time zone, Asia/Kolkata (GMT+05:30)." The
+ * model needs it for times like "in 10 minutes". It goes with the prompt
+ * rather than the instructions, which would then change every minute and
+ * miss the prompt cache. It's the prompt's time, not the reply's, so a
+ * reply continuing after action cards mostly sends the same note and
+ * reads its turn from the cache. A queued prompt's continuation is the
+ * exception: it has only the time the prompt was saved, which comes after
+ * the send time its first reply had.
+ *
+ * @param timeZone A time zone already checked by resolveTimeZone.
+ * @param sentAt When the user sent the prompt.
+ */
+export function timeNote(timeZone: string, sentAt: Date): string {
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeStyle: "short",
+  }).format(sentAt);
+  return `The user sent this at ${time} on ${fullDate(timeZone, sentAt)}, in their time zone, ${zoneWithOffset(timeZone, sentAt)}.`;
+}
+
+/** e.g. "Tuesday, October 27, 2026". */
+function fullDate(timeZone: string, at: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
     timeZone,
     dateStyle: "full",
-  }).format(now);
+  }).format(at);
+}
+
+/** e.g. "Asia/Kolkata (GMT+05:30)". */
+function zoneWithOffset(timeZone: string, at: Date): string {
   const offset = new Intl.DateTimeFormat("en-US", {
     timeZone,
     timeZoneName: "longOffset",
   })
-    .formatToParts(now)
+    .formatToParts(at)
     .find((part) => part.type === "timeZoneName")?.value;
-  return `Today is ${date}, in the user's time zone, ${timeZone}${offset ? ` (${offset})` : ""}.`;
+  return `${timeZone}${offset ? ` (${offset})` : ""}`;
 }

@@ -606,6 +606,7 @@ async function startNextQueuedPrompt(
     message: buildPromptMessage(next.prompt, attachments.parts),
     attachmentFileIds: attachments.fileIds,
     timeZone: next.timeZone,
+    sentAt: next._creationTime,
   });
   if (next.scheduledPromptId) {
     await moveWaitingRun(
@@ -653,6 +654,9 @@ export async function isThreadBusy(
  *
  * `attachmentFileIds` are the files the prompt attaches. Saving them with
  * the prompt keeps the Agent from counting them as unused.
+ *
+ * `sentAt` is when the user sent a queued prompt, which is earlier than
+ * this save. The reply tells the model the time from it (timeNote).
  */
 export async function sendPrompt(
   ctx: MutationCtx,
@@ -662,12 +666,14 @@ export async function sendPrompt(
     message,
     attachmentFileIds,
     timeZone,
+    sentAt,
   }: {
     userId: string;
     threadId: string;
     message: Message | ModelMessage;
     attachmentFileIds: string[];
     timeZone: string | undefined;
+    sentAt?: number;
   },
 ) {
   const { messageId, message: savedPrompt } = await chatAgent.saveMessage(ctx, {
@@ -684,6 +690,7 @@ export async function sendPrompt(
     promptMessageId: messageId,
     order: savedPrompt.order,
     timeZone: resolveTimeZone(timeZone),
+    promptSentAt: sentAt,
   });
   await holdReply(ctx, { userId, threadId, promptMessageId: messageId });
   return messageId;
