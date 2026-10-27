@@ -114,6 +114,15 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: MINUTE,
     capacity: 10,
   },
+  // Each user's app install checks. The Connectors page runs one each time
+  // it opens, and each calls the vendor, so reloads can't hammer it. Apart
+  // from userConnectStarts, so reloading never blocks a connect.
+  userAppInstallChecks: {
+    kind: "token bucket",
+    rate: 10,
+    period: MINUTE,
+    capacity: 10,
+  },
   // Each user's shares and link updates. Each one copies a thread, so a
   // script can't fill the deployment with copies.
   userShares: { kind: "fixed window", rate: 30, period: HOUR },
@@ -499,6 +508,20 @@ export async function limitConnectStart(
 }
 
 /**
+ * Counts one app install check against the user's limit. Returns false,
+ * and counts nothing, once the limit is hit.
+ */
+export async function limitAppInstallCheck(
+  ctx: MutationCtx,
+  userId: string,
+): Promise<boolean> {
+  const { ok } = await rateLimiter.limit(ctx, "userAppInstallChecks", {
+    key: userId,
+  });
+  return ok;
+}
+
+/**
  * Counts one share or link update against the user's limit. Returns the
  * milliseconds until one would go through, or null if this one can go
  * ahead.
@@ -610,6 +633,7 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userDailyUploadBytes", key);
   await rateLimiter.reset(ctx, "userConnectorToolCalls", key);
   await rateLimiter.reset(ctx, "userConnectStarts", key);
+  await rateLimiter.reset(ctx, "userAppInstallChecks", key);
   await rateLimiter.reset(ctx, "userShares", key);
   await rateLimiter.reset(ctx, "userScheduledPromptCreates", key);
   await rateLimiter.reset(ctx, "userDictationStarts", key);

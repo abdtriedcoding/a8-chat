@@ -53,6 +53,10 @@ export type ConnectorServer = {
  *   `field` is a dot path into its result, like `organization.name`. a8
  *   reads the result's structured content, or else its first text part as
  *   JSON.
+ * - `user`: a GET to the vendor's API with the access token, right after
+ *   the code exchange, like GitHub's `/user`. `field` is a dot path into
+ *   its JSON. `avatarField` names the account's avatar URL, which the card
+ *   shows next to the label.
  */
 type AccountLabelSource<Tool extends string = string> =
   | { from: "tokenResponse"; field: string }
@@ -61,7 +65,8 @@ type AccountLabelSource<Tool extends string = string> =
       tool: Tool;
       arguments?: Record<string, unknown>;
       field: string;
-    };
+    }
+  | { from: "user"; url: string; field: string; avatarField?: string };
 
 /**
  * How a user's connection to a connector gets its access:
@@ -106,6 +111,38 @@ type AppInstallation = {
    * origins. Throws when the vendor doesn't answer.
    */
   check: (fetch: PinnedFetch, accessToken: string) => Promise<AppInstallCheck>;
+  /**
+   * Whether a tool call's error text says the vendor refused the call or
+   * didn't find what it asked for. The app may be gone then, so a8 checks
+   * again.
+   */
+  refusedCall: (errorText: string) => boolean;
+};
+
+/** A pre-registered client's ID and secret (preRegisteredCredentials). */
+type ClientCredentials = { clientId: string; clientSecret: string };
+
+/**
+ * How a8 revokes at a vendor with no RFC 7009 revocation endpoint, like
+ * GitHub. Each call authenticates as the pre-registered client, takes an
+ * access token that hasn't expired, and throws if the vendor refuses.
+ */
+export type GrantRevocation = {
+  /**
+   * Revokes the token's `grant`, with every token the vendor issued under
+   * it, or only the `token`.
+   */
+  revoke: (
+    fetch: PinnedFetch,
+    client: ClientCredentials,
+    accessToken: string,
+    target: "grant" | "token",
+  ) => Promise<void>;
+  /**
+   * The vendor account the token acts as. A reconnect to the same account
+   * shares the old grant, so a8 revokes only the old token then.
+   */
+  accountId: (fetch: PinnedFetch, accessToken: string) => Promise<string>;
 };
 
 /** How a8 signs in to a connector and what it may contact. */
@@ -151,6 +188,11 @@ type ConnectorAccess<Tool extends string> = {
    * that, like GitHub.
    */
   refreshAuthMethod?: ConnectorAccess<Tool>["revocationAuthMethod"];
+  /**
+   * Replaces the RFC 7009 revocation endpoint, for a pre-registered client
+   * at a vendor that has none.
+   */
+  grantRevocation?: GrantRevocation;
   /** For a connector whose token only reaches its app installations. */
   appInstall?: AppInstallation;
   /**
@@ -250,8 +292,31 @@ const DRIVE_FILE_OWNER = {
 
 const GITHUB_API = "https://api.github.com";
 
-/** How long each GitHub API request of the app install check can take. */
+/** How long each request a8 sends the GitHub API can take. */
 const GITHUB_API_TIMEOUT_MS = 10_000;
+
+/** What every request to the GitHub API sends. */
+const GITHUB_API_HEADERS = {
+  Accept: "application/vnd.github+json",
+  "User-Agent": "a8",
+  "X-GitHub-Api-Version": "2022-11-28",
+};
+
+/** The JSON of a GET to the GitHub API. Throws on any status but a 2xx. */
+async function getFromGitHub(
+  fetchPinned: PinnedFetch,
+  accessToken: string,
+  path: string,
+): Promise<unknown> {
+  const response = await fetchPinned(`${GITHUB_API}${path}`, {
+    headers: { ...GITHUB_API_HEADERS, Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub answered ${path} with ${response.status}.`);
+  }
+  return await response.json();
+}
 
 /**
  * Whether the user installed the deployment's GitHub App, and whether an
@@ -262,21 +327,7 @@ async function checkGitHubAppInstall(
   fetchPinned: PinnedFetch,
   accessToken: string,
 ): Promise<AppInstallCheck> {
-  async function get(path: string): Promise<unknown> {
-    const response = await fetchPinned(`${GITHUB_API}${path}`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${accessToken}`,
-        "User-Agent": "a8",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub answered ${path} with ${response.status}.`);
-    }
-    return await response.json();
-  }
+  const get = (path: string) => getFromGitHub(fetchPinned, accessToken, path);
   const { installations } = (await get("/user/installations?per_page=100")) as {
     installations: { id: number }[];
   };
@@ -289,6 +340,45 @@ async function checkGitHubAppInstall(
   }
   return "noRepos";
 }
+
+/**
+ * GitHub has no RFC 7009 endpoint. Its app endpoints take the token in a
+ * JSON body, with the app's client ID and secret as HTTP Basic. Deleting
+ * the grant also takes a8 off the user's authorized apps.
+ */
+const GITHUB_GRANT_REVOCATION: GrantRevocation = {
+  revoke: async (
+    fetchPinned,
+    { clientId, clientSecret },
+    accessToken,
+    target,
+  ) => {
+    const response = await fetchPinned(
+      `${GITHUB_API}/applications/${encodeURIComponent(clientId)}/${target}`,
+      {
+        method: "DELETE",
+        headers: {
+          ...GITHUB_API_HEADERS,
+          Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ access_token: accessToken }),
+        signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `GitHub refused to delete the ${target}: ${response.status} ${await response.text()}`,
+      );
+    }
+  },
+  accountId: async (fetchPinned, accessToken) => {
+    const { id } = (await getFromGitHub(fetchPinned, accessToken, "/user")) as {
+      id: number;
+    };
+    return String(id);
+  },
+};
 
 const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
   notion: {
@@ -385,14 +475,27 @@ const ENTRIES: { [Id in ConnectorId]: ConnectorEntry<Id> } = {
       GITHUB_API,
     ],
     refreshAuthMethod: "client_secret_post",
+    grantRevocation: GITHUB_GRANT_REVOCATION,
     appInstall: {
       url: () =>
         env.GITHUB_APP_SLUG
           ? `https://github.com/apps/${env.GITHUB_APP_SLUG}/installations/new`
           : undefined,
       check: checkGitHubAppInstall,
+      // GitHub's MCP server passes on the API's status, like "404 Not Found"
+      // or "403 Resource not accessible by integration".
+      refusedCall: (errorText) =>
+        /\b(?:403 Forbidden|403 Resource not accessible|404 Not Found)\b/i.test(
+          errorText,
+        ),
     },
-    accountLabel: { from: "tool", tool: "get_me", field: "login" },
+    // finishConnect reads it, so the toast can name the account it connected.
+    accountLabel: {
+      from: "user",
+      url: `${GITHUB_API}/user`,
+      field: "login",
+      avatarField: "avatar_url",
+    },
   },
   googlecalendar: {
     servers: {

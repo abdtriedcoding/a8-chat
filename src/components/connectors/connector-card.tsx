@@ -4,18 +4,19 @@ import { useAction } from "convex/react";
 import { InfoIcon, MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, type ReactNode } from "react";
-import { toast } from "sonner";
 import {
   Alert,
   AlertAction,
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useConfirm } from "@/hooks/use-confirm";
 import { useConnectConnector } from "@/hooks/use-connect-connector";
+import { showDisconnectResult } from "@/lib/connect-result";
 import { isConnected } from "@/lib/connection-status";
 import { api } from "../../../convex/_generated/api";
 import type { ConnectorStatus } from "../../../convex/connectors";
@@ -76,13 +77,7 @@ export function ConnectorCard({
       returnFocus: () => document.getElementById(switchId),
       onConfirm: async () => {
         const { revoked } = await disconnect({ connectorId: id });
-        if (revoked) {
-          toast.success(`${name} is disconnected.`);
-        } else {
-          toast.warning(
-            `${name} is disconnected, but a8 couldn't revoke its access in ${name}. You can remove a8 in ${name}'s connection settings.`,
-          );
-        }
+        showDisconnectResult(name, revoked);
         // The dialog stays open until the list query drops the connection,
         // which can land after the action returns. The card moves to
         // Available then and remounts, taking the dialog with it. If it
@@ -100,10 +95,22 @@ export function ConnectorCard({
         <ConnectorLogo connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
           <h3 className="font-heading font-medium">{name}</h3>
-          <p className="truncate text-muted-foreground">
-            @{handle}
-            {connected && <> · {connection?.accountLabel ?? "Connected"}</>}
-            {notSetUp && !connected && <> · Not set up</>}
+          <p className="flex items-center gap-1 text-muted-foreground">
+            <span className="truncate">
+              @{handle}
+              {(connected || notSetUp) && " ·"}
+            </span>
+            {connected && connection?.accountAvatarUrl && (
+              <Avatar className="size-4">
+                <AvatarImage src={connection.accountAvatarUrl} alt="" />
+              </Avatar>
+            )}
+            {connected && (
+              <span className="truncate">
+                {connection?.accountLabel ?? "Connected"}
+              </span>
+            )}
+            {notSetUp && !connected && <span>Not set up</span>}
           </p>
         </div>
         {notSetUp && !connected ? (

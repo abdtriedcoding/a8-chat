@@ -399,6 +399,9 @@ export default defineSchema({
     refreshLeaseExpiresAt: v.optional(v.number()),
     // Names the signed-in account, like the Notion workspace.
     accountLabel: v.optional(v.string()),
+    // The signed-in account's avatar, an https URL, for a connector whose
+    // label comes from a `user` source, like GitHub's.
+    accountAvatarUrl: v.optional(v.string()),
     // Set while the connector's app isn't installed or reaches nothing, as
     // the last tool list refresh found. Unset once it reaches something, or
     // for a connector with no app to install.

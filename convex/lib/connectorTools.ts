@@ -155,7 +155,9 @@ export function createConnectorTools(
           }
           const { text } = readToolResult(result);
           if (!result.isError) return wrapResult(connector, text);
-          await refreshIfUnknownTool(ctx, connection, text);
+          if (!(await refreshIfUnknownTool(ctx, connection, text))) {
+            await recheckAppInstallIfRefused(ctx, connector, connection, text);
+          }
           throw new Error(
             `${connector.name} returned an error.\n${wrapResult(connector, text)}`,
           );
@@ -488,6 +490,23 @@ async function refreshIfUnknownTool(
 }
 
 /**
+ * Schedules a tool list refresh, which checks the app install again, when
+ * the connector has an app to install and the vendor refused the call or
+ * didn't find what it asked for. The user may have uninstalled the app,
+ * and the vendor doesn't tell a8 when that happens.
+ */
+async function recheckAppInstallIfRefused(
+  ctx: ActionCtx,
+  connector: Connector,
+  connection: Doc<"connections">,
+  errorText: string,
+) {
+  if (connector.appInstall?.refusedCall(errorText)) {
+    await scheduleToolListRefresh(ctx, connection);
+  }
+}
+
+/**
  * The tool error the model gets when a call doesn't reach a result. When
  * the server didn't know the tool, this also schedules a tool list refresh.
  * When the vendor refused only this tool, it passes on RefusedToolError's
@@ -505,7 +524,11 @@ async function callFailedMessage(
     return `${connector.name} no longer has this tool. Answer without it.`;
   }
   console.error(`Calling a ${connector.name} tool failed`, error);
-  if (error instanceof RefusedToolError) return error.message;
+  if (error instanceof RefusedToolError) {
+    // Its 403 never reached the tool result's text.
+    if (connector.appInstall) await scheduleToolListRefresh(ctx, connection);
+    return error.message;
+  }
   if (isMisconfigured(error)) {
     return `Calling ${connector.name} failed: ${error.data.message} Reconnecting ${connector.name} won't fix it. Tell the user, and answer without it.`;
   }
