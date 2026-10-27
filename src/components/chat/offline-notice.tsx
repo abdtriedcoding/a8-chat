@@ -16,6 +16,9 @@ const SHOW_AFTER_MS = 1500;
  * Says the app is offline while the Convex connection is down, including a
  * page that loads offline. A Send made meanwhile waits in the Convex client
  * and goes once it reconnects.
+ *
+ * The status region stays on the page, empty while online, since screen
+ * readers only announce a change to a region that was already there.
  */
 export function OfflineNotice({ className }: { className?: string }) {
   const down = !useConvexConnectionState().isWebSocketConnected;
@@ -27,12 +30,17 @@ export function OfflineNotice({ className }: { className?: string }) {
     const timeout = setTimeout(() => setShown(true), SHOW_AFTER_MS);
     return () => clearTimeout(timeout);
   }, [down]);
-  if (!down || !shown) return null;
+  const visible = down && shown;
   return (
-    <Alert role="status" className={className}>
-      <WifiOffIcon />
-      <AlertTitle>You&apos;re offline</AlertTitle>
-      <AlertDescription>It&apos;ll send when you reconnect.</AlertDescription>
-    </Alert>
+    <div role="status" className={visible ? className : undefined}>
+      {visible && (
+        // The region above announces it, so the Alert drops its own role.
+        <Alert role={undefined}>
+          <WifiOffIcon />
+          <AlertTitle>You&apos;re offline</AlertTitle>
+          <AlertDescription>It&apos;ll send when you reconnect.</AlertDescription>
+        </Alert>
+      )}
+    </div>
   );
 }
