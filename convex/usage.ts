@@ -1,6 +1,6 @@
 // The cost recorder (ADR 0015). lib/usage.ts sends model calls, with the
-// cost AI Gateway reports, and web searches here. Only the hosted a8
-// records costs.
+// cost AI Gateway reports, web searches and dictations here. Only the
+// hosted a8 records costs.
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {

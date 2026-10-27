@@ -6,14 +6,23 @@
 import { v, type Infer } from "convex/values";
 import { z } from "zod";
 import { internal } from "./_generated/api";
-import { action, env, internalMutation, query } from "./_generated/server";
+import {
+  action,
+  env,
+  internalMutation,
+  query,
+  type MutationCtx,
+} from "./_generated/server";
+import { getPlanTerms, type PlanTerms } from "./lib/billing";
 import { appError, ERROR_CODES } from "./lib/errors";
-import { requireIdentity } from "./lib/guards";
+import { requireUser } from "./lib/guards";
+import { recordDictation } from "./lib/usage";
 import {
   checkDictationStart,
-  limitDictationStart,
-  vRateLimited,
-  type RateLimited,
+  checkSpend,
+  countDictationStart,
+  vSendLimited,
+  type SendLimited,
 } from "./rateLimits";
 
 const DEEPGRAM_GRANT_URL = "https://api.deepgram.com/v1/auth/grant";
@@ -43,7 +52,7 @@ const vGrantFailed = v.object({
 export type GrantFailed = Infer<typeof vGrantFailed>;
 
 /** What `token` returns. */
-export type TokenResult = { token: string } | RateLimited | GrantFailed;
+export type TokenResult = { token: string } | SendLimited | GrantFailed;
 
 /** Whether dictation is set up. It needs the optional DEEPGRAM_API_KEY. */
 export const available = query({
@@ -54,17 +63,22 @@ export const available = query({
 
 /**
  * A token that opens one Deepgram socket, for the signed-in user. Counts a
- * dictation start against the rate limits, and returns the refusal instead
- * of throwing when one is hit, like the Send mutations. It counts only once
- * Deepgram grants the token, so a failed grant doesn't use up a start. A
- * grant that fails on the network, is rate limited by Deepgram or fails on
- * its side is retried, and then returned as GrantFailed.
+ * dictation start against the rate limits and, on the hosted a8, charges a
+ * credit for it (recordDictation). Returns the refusal instead of throwing
+ * when a limit is hit, like the Send mutations. It counts and charges only
+ * once Deepgram grants the token, so a failed grant costs nothing. A grant
+ * that fails on the network, is rate limited by Deepgram or fails on its
+ * side is retried, and then returned as GrantFailed.
  */
 export const token = action({
   args: {},
-  returns: v.union(v.object({ token: v.string() }), vRateLimited, vGrantFailed),
+  returns: v.union(v.object({ token: v.string() }), vSendLimited, vGrantFailed),
   handler: async (ctx): Promise<TokenResult> => {
-    const userId = await requireIdentity(ctx);
+    // Refuses before calling Deepgram, so a user over a limit, or whose
+    // session has ended, can't make a8 call it. countStart checks again in
+    // one transaction with the count.
+    const refused = await ctx.runMutation(internal.dictation.checkStart, {});
+    if (refused) return refused;
     const apiKey = env.DEEPGRAM_API_KEY;
     if (!apiKey) {
       throw appError(
@@ -72,10 +86,6 @@ export const token = action({
         "Dictation isn't set up on this deployment.",
       );
     }
-    // Refuses before calling Deepgram, so a user over the limit can't make
-    // a8 call it. countStart checks again in one transaction with the count.
-    const overLimit = await checkDictationStart(ctx, userId);
-    if (overLimit) return overLimit;
 
     const response = await requestGrant(apiKey);
     if (!response) {
@@ -96,10 +106,11 @@ export const token = action({
       throw new Error(`Deepgram didn't grant a token: ${response.status}`);
     }
     const { access_token } = grantResponse.parse(await response.json());
-    const refused = await ctx.runMutation(internal.dictation.countStart, {
-      userId,
-    });
-    return refused ?? { token: access_token };
+    const refusedAtCount = await ctx.runMutation(
+      internal.dictation.countStart,
+      {},
+    );
+    return refusedAtCount ?? { token: access_token };
   },
 });
 
@@ -128,9 +139,45 @@ async function requestGrant(apiKey: string): Promise<Response | null> {
   return null;
 }
 
-/** Counts a dictation start for `token`. */
-export const countStart = internalMutation({
-  args: { userId: v.string() },
-  returns: v.union(vRateLimited, v.null()),
-  handler: (ctx, { userId }) => limitDictationStart(ctx, userId),
+/**
+ * Why `token` would refuse the signed-in user, or null. Counts nothing.
+ * Throws when signed out. requireUser reads the session row, since the JWT
+ * an action sees stays valid for up to 15 minutes after sign-out.
+ */
+export const checkStart = internalMutation({
+  args: {},
+  returns: v.union(vSendLimited, v.null()),
+  handler: async (ctx) => (await checkUserStart(ctx)).refused,
 });
+
+/** Counts a dictation start for `token`, and charges for it. */
+export const countStart = internalMutation({
+  args: {},
+  returns: v.union(vSendLimited, v.null()),
+  handler: async (ctx) => {
+    const { userId, plan, refused } = await checkUserStart(ctx);
+    if (refused) return refused;
+    await countDictationStart(ctx, userId, plan);
+    await recordDictation(ctx, userId);
+    return null;
+  },
+});
+
+/**
+ * The signed-in user, their plan terms, and why a dictation start would be
+ * refused: a rate limit, or on the hosted a8, no credits left or the daily
+ * spend ceiling (checkSpend). `refused` is null if it can go ahead. Counts
+ * nothing. Throws when signed out.
+ */
+async function checkUserStart(ctx: MutationCtx): Promise<{
+  userId: string;
+  plan: PlanTerms | null;
+  refused: SendLimited | null;
+}> {
+  const { _id: userId } = await requireUser(ctx);
+  const plan = await getPlanTerms(ctx, userId);
+  const refused =
+    (await checkDictationStart(ctx, userId, plan)) ??
+    (await checkSpend(ctx, userId, plan));
+  return { userId, plan, refused };
+}
