@@ -15,7 +15,8 @@ Getting a token and opening the socket take about 2s from India. So the composer
 
 ## Consequences
 
-- a8 sees when a socket opens but not how long a dictation runs, so usage is capped by how often a user can open one, warm-ups included, and the client ends a session after 5 minutes. The Deepgram token only has to be valid when the socket opens, so the provider doesn't enforce that cap.
+- a8 sees when a socket opens but not how long a dictation runs, so usage is capped by how often a user can open one, warm-ups included, and the client ends a session after 5 minutes. The Deepgram token only has to be valid when the socket opens, so the provider doesn't enforce that cap, and a script can hold a socket open for as long as it likes. Deepgram's grant has no option to cap a session or scope a token. For its 30 seconds, a token also works for Deepgram's prerecorded, text-to-speech and Voice Agent APIs. Only a relay or Soniox's session-capped token would bound minutes.
+- So the token action checks the session row, not just the JWT, which outlives a sign-out by up to 15 minutes. On the hosted a8, each token costs one credit, about 1.3 minutes of Flux, and needs credits left and the day's spend under the ceiling, like a send. a8 can't tell a warm-up from a dictation, so a warm-up costs the same. The daily limit on starts is 60 on Free, 300 on Pro and 600 self-hosted.
 - Deepgram bills for the audio sent, so a warm socket that's never used costs nothing.
 - Every connection must pass `mip_opt_out=true`, or Deepgram trains on users' audio.
 - Hindi words come back in Devanagari and English words in Latin script.

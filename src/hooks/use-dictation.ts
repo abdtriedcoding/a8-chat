@@ -3,7 +3,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { prefetchDNS } from "react-dom";
 import { errorMessage, throwIfRefused } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
-import type { RateLimited } from "../../convex/rateLimits";
+import type { SendLimited } from "../../convex/rateLimits";
 
 // Dictation's client, and with convex/dictation.ts the only code that knows
 // about Deepgram (ADR 0012). It streams the mic straight to Deepgram's Flux
@@ -134,7 +134,7 @@ type Session = {
   markClosed: () => void;
 };
 
-type GetToken = () => Promise<{ token: string } | RateLimited>;
+type GetToken = () => Promise<{ token: string } | SendLimited>;
 
 /**
  * A socket opened before the user taps the mic (useDictation's prewarm), so

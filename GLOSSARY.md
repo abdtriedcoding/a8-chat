@@ -182,7 +182,7 @@ The model a new thread starts on. The user sets it. If the user's plan doesn't i
 _Avoid_: preferred model, global model
 
 **Credit**:
-A unit of hosted usage worth one US cent of model cost. A reply on a premium model uses more credits than the same reply on a cheap one, and a web search costs one credit. Thread titles cost nothing. a8 checks the balance at each send: a reply that starts always finishes, even if it takes the balance below zero, and then sends wait until the plan renews. A reply's cost lands seconds after it, so a reply holds what its first model call could cost at the model's prices until it ends, and each model call holds what its tokens cost until the cost lands. A send that the holds leave no credits for waits. A scheduled run with no credits counts as a failed run. Credits reset every month, and leftovers expire.
+A unit of hosted usage worth one US cent of model cost. A reply on a premium model uses more credits than the same reply on a cheap one, a web search costs one credit, and so does each dictation, warm-ups included. Thread titles cost nothing. a8 checks the balance at each send: a reply that starts always finishes, even if it takes the balance below zero, and then sends wait until the plan renews. A reply's cost lands seconds after it, so a reply holds what its first model call could cost at the model's prices until it ends, and each model call holds what its tokens cost until the cost lands. A send that the holds leave no credits for waits. A scheduled run with no credits counts as a failed run. Credits reset every month, and leftovers expire.
 _Avoid_: token (for credits), point, coin
 
 **Daily spend ceiling**:

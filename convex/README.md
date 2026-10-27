@@ -18,7 +18,7 @@ This folder is a8's backend. Before writing Convex code, read `_generated/ai/gui
 - `emails.ts`: queues verification, password reset and scheduled run emails through Resend, and deletes each one a day later.
 - `billing.ts`: the Billing page's plan and credits queries, Pro checkout and Polar's customer portal, the action that cancels a deleted user's subscription, and the one that deletes their Polar customer.
 - `usage.ts`: the cost recorder, and the lookup of each model call's cost on AI Gateway. It adds each usage event's cost to the day's spend and, in credits, to the user's credit period.
-- `rateLimits.ts`: the rate limits on sends, web searches, attachments, wrong passwords at email sign-in, connector sign-ins, connector tool calls, shares and new scheduled prompts. Web searches also have a daily cap across all users. On the hosted a8, a send also needs credits left and the day's spend under the daily ceiling (`checkSpend`). Self-hosted a8 has no credits, so its sends keep daily caps per user and across all users.
+- `rateLimits.ts`: the rate limits on sends, web searches, attachments, wrong passwords at email sign-in, connector sign-ins, connector tool calls, shares, new scheduled prompts and dictation starts. On the hosted a8, a send or a dictation also needs credits left and the day's spend under the daily ceiling (`checkSpend`), and a dictation's daily limit depends on the plan. Self-hosted a8 has no credits, so its sends and web searches keep daily caps per user and across all users.
 
 ### Chat
 
@@ -58,9 +58,10 @@ These modules hold helpers and register no Convex functions.
 - `lib/monthlyPeriod.ts`: the date math for a plan's monthly periods, shared with the Billing page.
 - `lib/credits.ts`: the credit ledger, and `currentCreditRow`, which opens a new period on the first usage in it or after an upgrade.
 - `lib/creditPeriod.ts`: which ledger row covers now, shared with the Billing page.
-- `lib/usage.ts`: sends reply steps, titles and web searches to the cost recorder. A model call costs what AI Gateway reports for it. `trackModelCalls` follows a reply's model calls, so a step the user stopped costs what the gateway reports too.
+- `lib/usage.ts`: sends reply steps, titles, web searches and dictations to the cost recorder. A model call costs what AI Gateway reports for it. `trackModelCalls` follows a reply's model calls, so a step the user stopped costs what the gateway reports too.
 - `lib/models.ts`: the model list, with each model's lab, gateway id, attachments, plans and rough credits per reply. Shared with the picker.
 - `lib/gateway.ts`: the AI Gateway client, and the language model for a model on the list.
+- `lib/signInDevice.ts`: the device cookie a browser gets after a password sign-in. With it, that browser's wrong passwords count per device instead of per email, so guesses from other IPs can't lock the owner out.
 - `lib/threadModels.ts`: each thread's model and each user's default model, and the plan check on each send. A send whose thread model left the list or isn't on the user's plan replies on the default model and moves the thread to it.
 - `lib/guards.ts`: session and ownership checks. See the rules below.
 - `lib/errors.ts`: the error codes and `appError`. See the rules below.

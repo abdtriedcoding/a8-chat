@@ -1,7 +1,8 @@
 /**
- * Sends what a reply, a title or a web search cost to the cost recorder
- * (record in convex/usage.ts). A model call costs what AI Gateway reports
- * for its generation (ADR 0015), and a web search costs one credit. A
+ * Sends what a reply, a title, a web search or a dictation cost to the cost
+ * recorder (record in convex/usage.ts). A model call costs what AI Gateway
+ * reports for its generation (ADR 0015), and a web search or a dictation
+ * token costs one credit. A
  * reply step the user stopped costs the same, and an estimate only when
  * the gateway can't say (recordStoppedStep).
  */
@@ -24,7 +25,8 @@ import { billingEnabled } from "./billing";
 import { CREDITS_PER_USD } from "./credits";
 import type { Model } from "./models";
 
-// Replies, titles and the web search tool each pass a different action ctx.
+// Replies, titles and the web search tool each pass a different action ctx,
+// and dictation passes a mutation ctx.
 type RecorderCtx = Pick<GenericActionCtx<GenericDataModel>, "runMutation">;
 
 type ModelUsage = Parameters<UsageHandler>[1];
@@ -36,6 +38,13 @@ type TokenCounts = Infer<typeof vTokenCounts>;
 
 /** What a successful web search costs, in credits. */
 const WEB_SEARCH_CREDITS = 1;
+
+/**
+ * What a dictation token costs, in credits. a8 can't see how long a
+ * dictation runs, or whether a warm-up's socket is ever used (ADR 0012), so
+ * each token costs the same. One credit is about 1.3 minutes of Flux.
+ */
+const DICTATION_CREDITS = 1;
 
 /**
  * How many characters count as a token in an estimate, as in
@@ -71,7 +80,7 @@ const GENERATION_ID_HEADER = "x-generation-id";
  */
 export async function recordModelUsage(
   ctx: RecorderCtx,
-  kind: Exclude<Infer<typeof vUsageKind>, "webSearch">,
+  kind: Exclude<Infer<typeof vUsageKind>, "webSearch" | "dictation">,
   { userId, threadId, provider, model, usage, providerMetadata }: ModelUsage,
 ): Promise<void> {
   const tokens = tokenCounts(usage);
@@ -288,6 +297,19 @@ export async function recordWebSearch(
     threadId,
     kind: "webSearch",
     costUsd: WEB_SEARCH_CREDITS / CREDITS_PER_USD,
+  });
+}
+
+/** Records one dictation token that Deepgram granted (convex/dictation.ts). */
+export async function recordDictation(
+  ctx: RecorderCtx,
+  userId: string,
+): Promise<void> {
+  if (!billingEnabled) return;
+  await sendToRecorder(ctx, {
+    userId,
+    kind: "dictation",
+    costUsd: DICTATION_CREDITS / CREDITS_PER_USD,
   });
 }
 

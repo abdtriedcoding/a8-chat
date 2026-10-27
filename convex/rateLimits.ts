@@ -61,10 +61,11 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // open at 00:00 UTC, like dailySends.
   userDailySends: { kind: "fixed window", rate: 100, period: DAY, start: 0 },
   // Everyone's web searches together. 30 a day stays inside Tavily's free
-  // tier of 1,000 a month. Windows open at 00:00 UTC, like dailySends.
+  // tier of 1,000 a month. Self-hosted only: on the hosted a8 each search
+  // costs a credit, so credits and the daily spend ceiling cap them instead.
+  // Windows open at 00:00 UTC, like dailySends.
   dailyWebSearches: { kind: "fixed window", rate: 30, period: DAY, start: 0 },
-  // One user's share of dailyWebSearches, a third of it. Windows open at
-  // 00:00 UTC, like dailySends.
+  // One user's web searches. Windows open at 00:00 UTC, like dailySends.
   userDailyWebSearches: {
     kind: "fixed window",
     rate: 10,
@@ -94,8 +95,14 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   signInFailures: { kind: "fixed window", rate: 5, period: MINUTE },
   // Wrong passwords for one email from any IP, so guesses spread over many
   // IPs still stop. Better Auth lets one IP try 10 sign-ins a minute, so one
-  // IP alone can't hit this limit. The key is the lowercased email.
+  // IP alone can't hit this limit. The key is the lowercased email. A
+  // browser that signed in to the email before uses signInFailuresByDevice
+  // instead, so guesses from other IPs can't lock the owner out.
   signInFailuresByEmail: { kind: "fixed window", rate: 20, period: MINUTE },
+  // Wrong passwords for one email from a browser that signed in to it before,
+  // in place of signInFailuresByEmail. The key is the lowercased email and the
+  // device ID from the browser's device cookie (lib/signInDevice.ts).
+  signInFailuresByDevice: { kind: "fixed window", rate: 5, period: MINUTE },
   // Each user's connector tool calls, reads and actions both, so a reply
   // stuck calling tools can't run up the bill or hammer the vendor. Web
   // searches don't count here. Windows open at 00:00 UTC, like dailySends.
@@ -125,17 +132,32 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // runs, so these cap how often a socket opens. Warm-ups make this several
   // times the number of dictations. A start isn't a Send.
   userDictationStarts: { kind: "fixed window", rate: 120, period: HOUR },
-  // Windows open at 00:00 UTC, like dailySends.
+  // Each user's dictation sockets in a day, by plan (dailyDictationLimit).
+  // Self-hosted a8 has no plans and uses userDailyDictationStarts. Windows
+  // open at 00:00 UTC, like dailySends.
   userDailyDictationStarts: {
     kind: "fixed window",
     rate: 600,
     period: DAY,
     start: 0,
   },
+  freeUserDailyDictationStarts: {
+    kind: "fixed window",
+    rate: 60,
+    period: DAY,
+    start: 0,
+  },
+  proUserDailyDictationStarts: {
+    kind: "fixed window",
+    rate: 300,
+    period: DAY,
+    start: 0,
+  },
   // Everyone's dictation sockets together, a ceiling on the day's speech
-  // spend. A warm-up that's never used costs nothing (ADR 0012). A
-  // dictation runs 5 minutes at most, so this is 5,000 minutes a day at
-  // worst. Windows open at 00:00 UTC, like dailySends.
+  // spend. A warm-up that's never used costs nothing (ADR 0012). The client
+  // ends a dictation after 5 minutes, so this is 5,000 minutes a day unless
+  // a script holds its sockets open. Windows open at 00:00 UTC, like
+  // dailySends.
   dailyDictationStarts: {
     kind: "fixed window",
     rate: 1000,
@@ -155,7 +177,7 @@ export type RateLimited = Infer<typeof vRateLimited>;
 /**
  * Why limitSend refused a Send: a rate limit, or on the hosted a8, no
  * credits left or the daily spend ceiling (checkSpend). The Send mutations
- * return it instead of throwing.
+ * return it instead of throwing, and so does the dictation token action.
  */
 export const vSendLimited = v.object({
   code: v.union(
@@ -295,7 +317,8 @@ function waitForReplies(): RateLimited {
 
 /**
  * Whether a web search fits under the user's daily cap and the daily cap.
- * Counts nothing. Without a user ID it only checks the daily cap. Call
+ * Counts nothing. Without a user ID it only checks the daily cap, and on the
+ * hosted a8 with one it only checks the user's (usesDailyWebSearches). Call
  * countWebSearch once the search has gone through.
  */
 export async function checkWebSearch(
@@ -308,13 +331,14 @@ export async function checkWebSearch(
     });
     if (!user.ok) return false;
   }
+  if (!usesDailyWebSearches(userId)) return true;
   const daily = await rateLimiter.check(ctx, "dailyWebSearches");
   return daily.ok;
 }
 
 /**
- * Counts one web search against the daily cap and the user's daily cap.
- * Without a user ID it only counts against the daily cap.
+ * Counts one web search against the user's daily cap and the daily cap, as
+ * checkWebSearch checks them.
  *
  * An action can't check and count in one transaction. Searches that run at
  * the same time can all get through checkWebSearch, so they can go over a
@@ -324,17 +348,32 @@ export async function countWebSearch(
   ctx: GenericActionCtx<GenericDataModel>,
   userId: string | undefined,
 ): Promise<void> {
-  await rateLimiter.limit(ctx, "dailyWebSearches");
+  if (usesDailyWebSearches(userId)) {
+    await rateLimiter.limit(ctx, "dailyWebSearches");
+  }
   if (userId) {
     await rateLimiter.limit(ctx, "userDailyWebSearches", { key: userId });
   }
 }
 
 /**
- * A password sign-in: the email as typed, and the client IP, or null when
- * Better Auth can't read it.
+ * Whether a web search counts against dailyWebSearches. On the hosted a8 a
+ * user's search costs them a credit, so only a search without a user does.
  */
-export type SignInAttempt = { email: string; ip: string | null };
+function usesDailyWebSearches(userId: string | undefined) {
+  return !billingEnabled || !userId;
+}
+
+/**
+ * A password sign-in: the email as typed, the client IP, or null when
+ * Better Auth can't read it, and the device ID from the browser's device
+ * cookie for the email (lib/signInDevice.ts), or null without one.
+ */
+export type SignInAttempt = {
+  email: string;
+  ip: string | null;
+  device: string | null;
+};
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -343,6 +382,20 @@ function normalizeEmail(email: string) {
 /** The signInFailures key, or null without an IP. */
 function emailAndIpKey({ email, ip }: SignInAttempt) {
   return ip ? `${normalizeEmail(email)}|${ip}` : null;
+}
+
+/**
+ * The limit for a sign-in's wrong passwords from any IP, and its key:
+ * signInFailuresByDevice from a browser with a device cookie, or else
+ * signInFailuresByEmail.
+ */
+function emailWideLimit({ email, device }: SignInAttempt) {
+  return device
+    ? {
+        name: "signInFailuresByDevice" as const,
+        key: `${normalizeEmail(email)}|${device}`,
+      }
+    : { name: "signInFailuresByEmail" as const, key: normalizeEmail(email) };
 }
 
 /**
@@ -361,11 +414,10 @@ export async function checkSignIn(
     });
     if (!ok) return retryAfter;
   }
-  const { ok, retryAfter } = await rateLimiter.check(
-    ctx,
-    "signInFailuresByEmail",
-    { key: normalizeEmail(attempt.email) },
-  );
+  const { name, key: wideKey } = emailWideLimit(attempt);
+  const { ok, retryAfter } = await rateLimiter.check(ctx, name, {
+    key: wideKey,
+  });
   return ok ? null : retryAfter;
 }
 
@@ -376,15 +428,14 @@ export async function countFailedSignIn(
 ): Promise<void> {
   const key = emailAndIpKey(attempt);
   if (key) await rateLimiter.limit(ctx, "signInFailures", { key });
-  await rateLimiter.limit(ctx, "signInFailuresByEmail", {
-    key: normalizeEmail(attempt.email),
-  });
+  const { name, key: wideKey } = emailWideLimit(attempt);
+  await rateLimiter.limit(ctx, name, { key: wideKey });
 }
 
 /**
- * Clears the email and IP's wrong passwords after a sign-in goes through, so
- * the owner's own typos stop counting. The email-only count stays, since it
- * holds other IPs' guesses too. Without an IP there's nothing to clear.
+ * Clears the email and IP's wrong passwords, and the device's, after a
+ * sign-in goes through, so the owner's own typos stop counting. The
+ * email-only count stays, since it holds other IPs' guesses too.
  */
 export async function clearSignInFailures(
   ctx: RunMutationCtx,
@@ -392,6 +443,10 @@ export async function clearSignInFailures(
 ): Promise<void> {
   const key = emailAndIpKey(attempt);
   if (key) await rateLimiter.reset(ctx, "signInFailures", { key });
+  const wide = emailWideLimit(attempt);
+  if (wide.name === "signInFailuresByDevice") {
+    await rateLimiter.reset(ctx, wide.name, { key: wide.key });
+  }
 }
 
 /**
@@ -530,14 +585,30 @@ export async function limitScheduledPromptCreate(
   return ok ? null : retryAfter;
 }
 
+/** Each plan's daily dictation start limit on the hosted a8. */
+const DAILY_DICTATION_LIMITS = {
+  free: "freeUserDailyDictationStarts",
+  pro: "proUserDailyDictationStarts",
+} as const;
+
+/**
+ * The user's daily dictation start limit: their plan's on the hosted a8,
+ * or userDailyDictationStarts on self-hosted a8, where `plan` is null.
+ */
+function dailyDictationLimit(plan: PlanTerms | null) {
+  return plan ? DAILY_DICTATION_LIMITS[plan.name] : "userDailyDictationStarts";
+}
+
 /**
  * Why a dictation start would be refused, or null if it fits under the
  * user's limits and the daily limit. Counts nothing. It checks the user's
- * limits first, so their messages win when both are hit.
+ * limits first, so their messages win when both are hit. `plan` is the
+ * user's plan terms (getPlanTerms), for the daily limit.
  */
 export async function checkDictationStart(
-  ctx: RunMutationCtx,
+  ctx: MutationCtx,
   userId: string,
+  plan: PlanTerms | null,
 ): Promise<RateLimited | null> {
   const key = { key: userId };
   const user = await rateLimiter.check(ctx, "userDictationStarts", key);
@@ -549,7 +620,7 @@ export async function checkDictationStart(
   }
   const userDaily = await rateLimiter.check(
     ctx,
-    "userDailyDictationStarts",
+    dailyDictationLimit(plan),
     key,
   );
   if (!userDaily.ok) {
@@ -568,33 +639,32 @@ export async function checkDictationStart(
 
 /**
  * Counts one dictation start against the user's limits and the daily limit.
- * Returns why it can't, or null if the dictation can start. Like limitSend,
- * it checks every limit before counting against any.
+ * Call it only once checkDictationStart has passed in the same transaction,
+ * so no limit is counted unless all of them have room.
  */
-export async function limitDictationStart(
+export async function countDictationStart(
   ctx: MutationCtx,
   userId: string,
-): Promise<RateLimited | null> {
-  const refused = await checkDictationStart(ctx, userId);
-  if (refused) return refused;
+  plan: PlanTerms | null,
+): Promise<void> {
   const key = { key: userId };
   // Every check passed in this transaction, so none of these can fail.
   await rateLimiter.limit(ctx, "userDictationStarts", {
     ...key,
     throws: true,
   });
-  await rateLimiter.limit(ctx, "userDailyDictationStarts", {
+  await rateLimiter.limit(ctx, dailyDictationLimit(plan), {
     ...key,
     throws: true,
   });
   await rateLimiter.limit(ctx, "dailyDictationStarts", { throws: true });
-  return null;
 }
 
 /**
  * Deletes a deleted user's rate limit counters. The email alone can't find
- * the signInFailures counters, whose keys hold an IP too. Better Auth's own
- * counters are keyed by IP and path, not user.
+ * the signInFailures and signInFailuresByDevice counters, whose keys hold
+ * an IP or a device ID too. Better Auth's own counters are keyed by IP and
+ * path, not user.
  */
 export async function resetUserLimits(
   ctx: RunMutationCtx,
@@ -614,6 +684,8 @@ export async function resetUserLimits(
   await rateLimiter.reset(ctx, "userScheduledPromptCreates", key);
   await rateLimiter.reset(ctx, "userDictationStarts", key);
   await rateLimiter.reset(ctx, "userDailyDictationStarts", key);
+  await rateLimiter.reset(ctx, "freeUserDailyDictationStarts", key);
+  await rateLimiter.reset(ctx, "proUserDailyDictationStarts", key);
   await rateLimiter.reset(ctx, "signInFailuresByEmail", {
     key: normalizeEmail(email),
   });
