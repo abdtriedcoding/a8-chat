@@ -98,7 +98,7 @@ const OPTIMISTIC_ID_PREFIX = "optimistic-";
 
 /**
  * Whether the queued prompt is one optimisticallyQueuePrompt shows, which
- * the server hasn't saved yet, so it can't be edited or deleted.
+ * the server hasn't saved yet. An edit or a delete waits for the saved one.
  */
 export function isOptimisticQueuedPrompt(id: Id<"queuedPrompts">): boolean {
   return id.startsWith(OPTIMISTIC_ID_PREFIX);
@@ -106,7 +106,8 @@ export function isOptimisticQueuedPrompt(id: Id<"queuedPrompts">): boolean {
 
 /**
  * Shows a prompt at the end of the thread's queue stack before the server
- * queues it.
+ * queues it. The row gets the Send's queueKey as its key, as the saved
+ * prompt does, so the saved prompt keeps the row.
  */
 export function optimisticallyQueuePrompt(
   localStore: OptimisticLocalStore,
@@ -114,7 +115,13 @@ export function optimisticallyQueuePrompt(
     threadId,
     prompt,
     attachments,
-  }: { threadId: string; prompt: string; attachments: UploadedAttachment[] },
+    queueKey,
+  }: {
+    threadId: string;
+    prompt: string;
+    attachments: UploadedAttachment[];
+    queueKey: string;
+  },
 ) {
   const queueQuery = api.chat.queue.getQueue;
   const queue = localStore.getQuery(queueQuery, { threadId });
@@ -131,6 +138,7 @@ export function optimisticallyQueuePrompt(
           // once the Send returns.
           _id: `${OPTIMISTIC_ID_PREFIX}${crypto.randomUUID()}` as Id<"queuedPrompts">,
           _creationTime: Date.now(),
+          key: queueKey,
           // The server saves the text trimmed.
           prompt: prompt.trim(),
           attachmentCount: attachments.length,

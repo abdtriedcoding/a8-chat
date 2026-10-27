@@ -43,7 +43,7 @@ A reply that picks up again once the user has approved or cancelled every action
 _Avoid_: continuation, resumed reply
 
 **Queued prompt**:
-A prompt the user sent while a reply was still running, or a scheduled run that couldn't start right away, waiting in line to start its own turn. Queued prompts start oldest first, each once the thread is free. The model doesn't see one until it starts.
+A prompt the user sent while a reply was still running, or a scheduled run that couldn't start right away, waiting in line to start its own turn. Queued prompts start oldest first, each once the thread is free. One the user is editing waits until the edit is saved or cancelled, and the prompts behind it wait too. The model doesn't see one until it starts.
 _Avoid_: pending message, queued message, draft
 
 **Queue**:

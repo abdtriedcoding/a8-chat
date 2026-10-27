@@ -25,11 +25,14 @@ export function useSendPrompt(
   return async (prompt: string, attachments: UploadedAttachment[]) => {
     // Set up for each Send, since the optimistic prompt shows the
     // attachments' URLs, and the mutation only takes their IDs.
+    // The server keeps the key only if it queues the prompt.
+    const queueKey = crypto.randomUUID();
     const showPrompt = shouldQueue
       ? optimisticallyQueuePrompt
       : optimisticallySendPrompt;
     const sendWithOptimisticPrompt = sendMessage.withOptimisticUpdate(
-      (localStore) => showPrompt(localStore, { threadId, prompt, attachments }),
+      (localStore) =>
+        showPrompt(localStore, { threadId, prompt, attachments, queueKey }),
     );
     throwIfRefused(
       await sendWithOptimisticPrompt({
@@ -38,6 +41,7 @@ export function useSendPrompt(
         attachmentFileIds: attachments.map(({ fileId }) => fileId),
         timeZone: browserTimeZone(),
         modelId,
+        queueKey,
       }),
     );
   };
