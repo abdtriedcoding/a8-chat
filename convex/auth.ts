@@ -26,7 +26,7 @@ import {
 import { billingEnabled } from "./lib/billing";
 import { takeDeletedUsage } from "./lib/credits";
 import { EMAIL_TAKEN_MESSAGE } from "./lib/emailKey";
-import { checkUserName } from "./lib/userName";
+import { checkUserImage, checkUserName } from "./lib/userName";
 import {
   checkSignIn,
   clearSignInFailures,
@@ -198,24 +198,31 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       },
     },
     hooks: {
-      // Refuses a password sign-in once its email has too many wrong
-      // passwords, from its IP or from all IPs (rateLimits.ts).
+      // Checks the name and image a sign-up or profile change sends. Refuses
+      // a password sign-in once its email has too many wrong passwords, from
+      // its IP or from all IPs (rateLimits.ts).
       before: createAuthMiddleware(async (authCtx) => {
         if (
           authCtx.path === "/sign-up/email" ||
           authCtx.path === "/update-user"
         ) {
           const name: unknown = authCtx.body?.name;
-          // Update-user can change other fields without the name.
-          if (name === undefined && authCtx.path === "/update-user") return;
-          let checked: string;
+          // Sign-up needs a name. Update-user can change other fields
+          // without it.
+          const checkName =
+            name !== undefined || authCtx.path === "/sign-up/email";
+          let checked: string | undefined;
           try {
-            checked = checkUserName(typeof name === "string" ? name : "");
+            checkUserImage(authCtx.body?.image);
+            if (checkName) {
+              checked = checkUserName(typeof name === "string" ? name : "");
+            }
           } catch (error) {
             throw new APIError("BAD_REQUEST", {
               message: (error as Error).message,
             });
           }
+          if (checked === undefined) return;
           return { context: { body: { ...authCtx.body, name: checked } } };
         }
         const attempt = signInAttempt(authCtx);

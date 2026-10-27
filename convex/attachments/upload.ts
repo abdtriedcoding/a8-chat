@@ -49,7 +49,11 @@ const vUploadUrlRejected = v.object({
 });
 
 /** What claimUpload reads from the stored file's metadata. */
-const vClaimedUpload = v.object({ size: v.number(), sha256: v.string() });
+const vClaimedUpload = v.object({
+  size: v.number(),
+  sha256: v.string(),
+  contentType: v.optional(v.string()),
+});
 
 type RegisteredUpload = Infer<typeof vRegisteredUpload>;
 type UploadRejected = Infer<typeof vUploadRejected>;
@@ -104,8 +108,8 @@ export const generateUploadUrl = mutation({
 
 /**
  * Ties an uploaded file to the user registering it, and returns the file's
- * size and hash, or refuses. Actions can't read storage metadata, so it
- * returns them for registerUpload. A user can claim a file if:
+ * size, hash and declared type, or refuses. Actions can't read storage
+ * metadata, so it returns them for registerUpload. A user can claim a file if:
  * - nobody has claimed it, and the user has a grant from the last 24 hours
  *   that's older than the file, which the claim then spends, or
  * - the user already claimed it, as on a retry.
@@ -143,7 +147,11 @@ export const claimUpload = internalMutation({
     };
     const storedFile = await ctx.db.system.get("_storage", storageId);
     if (!storedFile) return notFound;
-    const claimedUpload = { size: storedFile.size, sha256: storedFile.sha256 };
+    const claimedUpload = {
+      size: storedFile.size,
+      sha256: storedFile.sha256,
+      contentType: storedFile.contentType,
+    };
 
     const claim = await ctx.db
       .query("uploadGrants")
@@ -173,8 +181,10 @@ export const claimUpload = internalMutation({
 /**
  * Registers a file the user uploaded, so a Send can attach it. The browser's
  * checks can be skipped, so it checks the file again: its size, and the type
- * its first bytes show, which is the type it's saved with. The browser sets
- * the type the upload declared, so registerUpload ignores it.
+ * its first bytes show, which is the type it's saved with. Storage serves the
+ * file with the type the upload declared, so registerUpload refuses a file
+ * declared as any other type. Otherwise a file that starts like a GIF could
+ * be declared text/html, and its storage URL would serve it as a page.
  *
  * It's an action because only actions can read a stored file. saveUpload
  * then adds the file to the Agent's files table, and records that the user
@@ -219,8 +229,17 @@ export const registerUpload = action({
     if (rejectionReason) {
       return await rejectUpload(ctx, storageId, rejectionReason);
     }
+    // a8's browser declares the type the bytes show, so only a hand-made
+    // upload gets here.
+    if (claimedUpload.contentType !== mediaType) {
+      return await rejectUpload(
+        ctx,
+        storageId,
+        `${safeFilename} was sent as a different type than its contents.`,
+      );
+    }
 
-    // The check above passed, so the file is an image or a PDF.
+    // The checks above passed, so the file is an image or a PDF.
     const tokens =
       getAttachmentKind(mediaType) === "pdf" && storedFile
         ? estimatePdfTokens(
@@ -270,10 +289,12 @@ export const saveUpload = internalMutation({
     const user = await requireUser(ctx);
 
     // The Agent reuses its row for a file with the same hash and name. That
-    // row keeps its own storage object, so this upload isn't needed.
+    // row keeps its own storage object, so this upload isn't needed. The hash
+    // carries the user's ID so only their own files are reused. Reusing
+    // anyone's would tell a user whether someone else uploaded a file.
     const agentFile = await ctx.runMutation(components.agent.files.addFile, {
       storageId: uploadedStorageId,
-      hash: sha256,
+      hash: `${user._id}:${sha256}`,
       filename,
       mediaType,
     });
