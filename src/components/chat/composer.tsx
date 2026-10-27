@@ -35,6 +35,7 @@ import { useCredits } from "@/hooks/use-credits";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
+import { warnOnLeaveWhile } from "@/lib/leave-warning";
 import {
   getAcceptedMediaTypes,
   getAttachmentKind,
@@ -198,7 +199,7 @@ export function Composer({
     setText("");
     clearAttachments();
     try {
-      await onSend(prompt, uploadedAttachments);
+      await warnOnLeaveWhile(onSend(prompt, uploadedAttachments));
       freePreviews(attachmentsToSend);
     } catch (error) {
       // Put the prompt back, unless something new was typed meanwhile.

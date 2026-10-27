@@ -44,6 +44,14 @@ export function isOutOfCredits(error: unknown): boolean {
   return hasErrorCode(error, ERROR_CODES.OUT_OF_CREDITS);
 }
 
+/**
+ * Whether a connection failed in a way that may work if tried again, such as
+ * dictation's token when Deepgram couldn't be reached.
+ */
+export function isConnectFailed(error: unknown): boolean {
+  return hasErrorCode(error, ERROR_CODES.CONNECT_FAILED);
+}
+
 function hasErrorCode(error: unknown, code: ErrorCode): boolean {
   if (!(error instanceof ConvexError)) return false;
   const data: unknown = error.data;

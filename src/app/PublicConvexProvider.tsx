@@ -12,7 +12,10 @@ if (!convexUrl) {
   );
 }
 
-const convex = new ConvexReactClient(convexUrl);
+// Public pages send nothing worth a "Leave site?" prompt.
+const convex = new ConvexReactClient(convexUrl, {
+  unsavedChangesWarning: false,
+});
 
 /**
  * Convex without a session, for public pages. A signed-in visitor reads them

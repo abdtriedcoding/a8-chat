@@ -5,6 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useState, type ReactNode } from "react";
+import { QuietBoundary } from "@/components/quiet-boundary";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -64,7 +65,9 @@ export function ThreadSearchProvider({ children }: { children: ReactNode }) {
         description="Find a chat by its title or by text in its messages."
         className="sm:max-w-lg"
       >
-        <ThreadSearch onSelect={openThread} />
+        <QuietBoundary>
+          <ThreadSearch onSelect={openThread} />
+        </QuietBoundary>
       </CommandDialog>
     </ThreadSearchContext>
   );
