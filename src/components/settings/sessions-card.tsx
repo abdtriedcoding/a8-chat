@@ -33,6 +33,14 @@ export function SessionsCard() {
 
   // Bumped to load the list again, such as after a sign-out.
   const [reloads, setReloads] = useState(0);
+  const currentToken = current?.session.token;
+  // Changing the password ends every session and starts a new one here.
+  // The new token loads the list again.
+  const [listedToken, setListedToken] = useState(currentToken);
+  if (listedToken !== currentToken) {
+    setListedToken(currentToken);
+    if (listedToken !== undefined) setReloads((count) => count + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +72,6 @@ export function SessionsCard() {
     }
   }
 
-  const currentToken = current?.session.token;
   const others = sessions?.filter(({ token }) => token !== currentToken) ?? [];
 
   return (

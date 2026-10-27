@@ -85,7 +85,7 @@ export function ResetPasswordForm() {
       return;
     }
     startNavigation(() => {
-      router.replace("/sign-in");
+      router.replace("/sign-in?reset=1");
     });
   };
 
@@ -124,9 +124,10 @@ export function ResetPasswordForm() {
                   disabled={pending}
                   autoComplete="new-password"
                 />
-                <FieldDescription>At least 8 characters.</FieldDescription>
-                {fieldState.invalid && (
+                {fieldState.invalid ? (
                   <FieldError errors={[fieldState.error]} />
+                ) : (
+                  <FieldDescription>At least 8 characters.</FieldDescription>
                 )}
               </Field>
             )}

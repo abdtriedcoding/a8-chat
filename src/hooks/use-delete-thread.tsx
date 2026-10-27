@@ -10,7 +10,9 @@ import { api } from "../../convex/_generated/api";
 
 /**
  * Asks before deleting a thread. `deleteThread` resolves true once it's
- * deleted. Render `dialog` once in the component that calls it.
+ * deleted. Render `dialog` once in the component that calls it. The button
+ * that opened the dialog may go with the thread, so `returnFocus` names
+ * where focus goes after.
  */
 export function useDeleteThread() {
   const [dialog, confirm] = useConfirm();
@@ -23,7 +25,10 @@ export function useDeleteThread() {
     },
   );
 
-  function deleteThread(thread: { _id: string; title?: string }) {
+  function deleteThread(
+    thread: { _id: string; title?: string },
+    returnFocus?: () => HTMLElement | null,
+  ) {
     return confirm({
       title: "Delete this chat?",
       description: (
@@ -35,6 +40,7 @@ export function useDeleteThread() {
       confirmLabel: "Delete",
       destructive: true,
       onConfirm: () => removeThread({ threadId: thread._id }),
+      returnFocus,
     });
   }
 
