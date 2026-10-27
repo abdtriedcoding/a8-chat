@@ -9,7 +9,7 @@ import {
   PlayIcon,
   XIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -19,40 +19,70 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useErrorToast } from "@/hooks/use-error-toast";
+import type { QueueActions } from "@/hooks/use-queue-actions";
 import { errorMessage } from "@/lib/errors";
 import { isOptimisticQueuedPrompt } from "@/lib/optimistic-prompt";
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { QueuedPromptView } from "../../../convex/chat/queue";
+import { QUEUED_EDIT_RENEW_MS } from "../../../convex/lib/queue";
 import { PromptEditor } from "./prompt-editor";
 
 /**
  * The thread's queued prompts, oldest first, above the composer. Each one
- * can have its text edited or be deleted. A paused queue shows Resume,
- * which `onResume` leaves out while a reply is running. `full` says Send
- * is off until a prompt starts.
+ * can have its text edited or be deleted, from the moment it shows. A
+ * prompt doesn't start while its editor is open (startQueuedPromptEdit in
+ * convex/chat/queue.ts). If it starts anyway, or another tab deletes it, a
+ * toast says the edit was lost. A paused queue shows Resume, which `onResume` leaves out while a
+ * reply is running. `full` says Send is off until a prompt starts. Shows
+ * nothing while the queue is empty.
  */
 export function QueueStack({
   prompts,
   paused,
   full,
-  onEdit,
-  onDelete,
+  actions,
   onResume,
   className,
 }: {
   prompts: QueuedPromptView[];
   paused: boolean;
   full: boolean;
-  onEdit: (
-    queuedPromptId: Id<"queuedPrompts">,
-    prompt: string,
-  ) => Promise<void>;
-  onDelete: (queuedPromptId: Id<"queuedPrompts">) => Promise<void>;
+  actions: QueueActions;
   onResume?: () => Promise<void>;
   className?: string;
 }) {
   const [resuming, setResuming] = useState(false);
   const showError = useErrorToast();
+  // The rows whose editor is open, by key. Kept here, so a row that goes
+  // away with its editor open still counts as editing.
+  const [editingKeys, setEditingKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  // The last row that went away with its editor open: it started, or
+  // another tab deleted it.
+  const [lostEditKey, setLostEditKey] = useState<string | null>(null);
+  const lostKey = [...editingKeys].find(
+    (key) => !prompts.some((queued) => queued.key === key),
+  );
+  if (lostKey !== undefined) {
+    setEditingKeys(new Set([...editingKeys].filter((key) => key !== lostKey)));
+    setLostEditKey(lostKey);
+  }
+  useEffect(() => {
+    if (lostEditKey === null) return;
+    toast.error(
+      "The prompt you were editing started or was deleted, so your edit was lost.",
+    );
+  }, [lostEditKey]);
+
+  function setEditing(key: string, editing: boolean) {
+    setEditingKeys((keys) => {
+      const next = new Set(keys);
+      if (editing) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
 
   async function resume() {
     if (resuming || !onResume) return;
@@ -65,6 +95,8 @@ export function QueueStack({
       setResuming(false);
     }
   }
+
+  if (prompts.length === 0) return null;
 
   return (
     <section
@@ -105,10 +137,11 @@ export function QueueStack({
       <ol className="max-h-48 overflow-y-auto border-t">
         {prompts.map((queued) => (
           <QueuedPromptRow
-            key={queued._id}
+            key={queued.key}
             queued={queued}
-            onEdit={(prompt) => onEdit(queued._id, prompt)}
-            onDelete={() => onDelete(queued._id)}
+            editing={editingKeys.has(queued.key)}
+            onEditingChange={(editing) => setEditing(queued.key, editing)}
+            actions={actions}
           />
         ))}
       </ol>
@@ -123,22 +156,49 @@ export function QueueStack({
 
 function QueuedPromptRow({
   queued,
-  onEdit,
-  onDelete,
+  editing,
+  onEditingChange,
+  actions,
 }: {
   queued: QueuedPromptView;
-  onEdit: (prompt: string) => Promise<void>;
-  onDelete: () => Promise<void>;
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  actions: QueueActions;
 }) {
-  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const saved = !isOptimisticQueuedPrompt(queued._id);
+  const { saved, waitForSavedId } = useSavedId(queued._id);
+
+  // Keeps the prompt from starting while its editor is open, once the
+  // server has it. If the call fails because the prompt already started,
+  // the row goes away and QueueStack says the edit was lost.
+  const startEdit = useEffectEvent(() => {
+    actions.startEdit(queued._id).catch(() => {});
+  });
+  const cancelEdit = useEffectEvent(() => {
+    actions.cancelEdit(queued._id).catch(() => {});
+  });
+  useEffect(() => {
+    if (!editing || !saved) return;
+    startEdit();
+    const renew = setInterval(startEdit, QUEUED_EDIT_RENEW_MS);
+    // A background tab's timers can run late, so coming back renews too.
+    const renewOnShow = () => {
+      if (document.visibilityState === "visible") startEdit();
+    };
+    document.addEventListener("visibilitychange", renewOnShow);
+    return () => {
+      clearInterval(renew);
+      document.removeEventListener("visibilitychange", renewOnShow);
+      // After a save or a delete no edit is open, and this does nothing.
+      cancelEdit();
+    };
+  }, [editing, saved]);
 
   async function remove() {
     if (deleting) return;
     setDeleting(true);
     try {
-      await onDelete();
+      await actions.remove(await waitForSavedId());
     } catch (error) {
       toast.error(errorMessage(error));
       setDeleting(false);
@@ -152,10 +212,10 @@ function QueuedPromptRow({
           text={queued.prompt}
           attachmentCount={queued.attachmentCount}
           onSave={async (prompt) => {
-            await onEdit(prompt);
-            setEditing(false);
+            await actions.edit(await waitForSavedId(), prompt);
+            onEditingChange(false);
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={() => onEditingChange(false)}
         />
       </li>
     );
@@ -186,8 +246,8 @@ function QueuedPromptRow({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground"
-            disabled={!saved}
-            onClick={() => setEditing(true)}
+            disabled={deleting}
+            onClick={() => onEditingChange(true)}
           >
             <PencilIcon />
             <span className="sr-only">Edit</span>
@@ -201,7 +261,7 @@ function QueuedPromptRow({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground"
-            disabled={!saved || deleting}
+            disabled={deleting}
             onClick={() => void remove()}
           >
             <XIcon />
@@ -212,4 +272,29 @@ function QueuedPromptRow({
       </Tooltip>
     </li>
   );
+}
+
+/**
+ * Whether the server has saved the queued prompt, and `waitForSavedId`,
+ * which resolves to its saved id. Until the Send returns, the stack shows
+ * the prompt under a stand-in id, and `waitForSavedId` waits for the saved
+ * one. If the Send is refused, the row goes away and it never resolves.
+ */
+function useSavedId(id: Id<"queuedPrompts">) {
+  const saved = !isOptimisticQueuedPrompt(id);
+  const waiting = useRef<((id: Id<"queuedPrompts">) => void)[]>([]);
+  useEffect(() => {
+    if (!saved) return;
+    for (const resolve of waiting.current) resolve(id);
+    waiting.current = [];
+  }, [saved, id]);
+  return {
+    saved,
+    waitForSavedId: () =>
+      saved
+        ? Promise.resolve(id)
+        : new Promise<Id<"queuedPrompts">>((resolve) => {
+            waiting.current.push(resolve);
+          }),
+  };
 }
