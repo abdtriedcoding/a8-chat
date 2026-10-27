@@ -263,11 +263,13 @@ function dateInstruction(timeZone: string, now: Date): string {
  * model needs it for times like "in 10 minutes". It goes with the prompt
  * rather than the instructions, which would then change every minute and
  * miss the prompt cache. It's the prompt's time, not the reply's, so a
- * reply continuing after action cards sends the same note and reads its
- * turn from the cache.
+ * reply continuing after action cards mostly sends the same note and
+ * reads its turn from the cache. A queued prompt's continuation is the
+ * exception: it has only the time the prompt was saved, which comes after
+ * the send time its first reply had.
  *
  * @param timeZone A time zone already checked by resolveTimeZone.
- * @param sentAt When the prompt was saved.
+ * @param sentAt When the user sent the prompt.
  */
 export function timeNote(timeZone: string, sentAt: Date): string {
   const time = new Intl.DateTimeFormat("en-US", {

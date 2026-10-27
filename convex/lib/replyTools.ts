@@ -170,8 +170,8 @@ export type ReplyTools = {
  *
  * @param promptText The text of the prompt the reply answers, for its
  *   mentions.
- * @param promptSentAt When the prompt was saved, for its time note. Now
- *   when undefined.
+ * @param promptSentAt When the user sent the prompt, for its time note.
+ *   Now when undefined.
  * @param connections The thread owner's connections, of any status.
  * @param toolLists The stored tool lists of the `connected` connections.
  * @param threadDefersTools Whether the thread already defers connector

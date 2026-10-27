@@ -87,6 +87,9 @@ export const streamReply = internalAction({
     // The prompt's order. The reply gets the same one.
     order: v.number(),
     timeZone: v.string(),
+    // When the user sent the prompt, for a queued prompt, which is saved
+    // only once it starts. Otherwise the prompt's save time stands in.
+    promptSentAt: v.optional(v.number()),
     // Whether the reply continues after action cards.
     continuing: v.optional(v.boolean()),
     // The steps the reply took before it paused on action cards.
@@ -102,6 +105,7 @@ export const streamReply = internalAction({
       threadId,
       order,
       timeZone,
+      promptSentAt,
       continuing = false,
       stepsTaken = 0,
       autoApprovedCount = 0,
@@ -138,12 +142,13 @@ export const streamReply = internalAction({
         internal.chat.reply.startReplyDeadline,
         { threadId, promptMessageId, order, continuing },
       );
-      const { modelId, userId, ...toolStart } = start;
+      const { modelId, userId, promptSavedAt, ...toolStart } = start;
       const model = modelOrDefault(modelId);
       const claude = isClaude(model);
       replyTools = createReplyTools(ctx, {
         threadId,
         ...toolStart,
+        promptSentAt: promptSentAt ?? promptSavedAt,
         timeZone,
         stepsTaken,
         autoApprovedCount,
@@ -368,7 +373,7 @@ const vReplyStart = v.union(
   v.null(),
   v.object({
     promptText: v.string(),
-    promptSentAt: v.optional(v.number()),
+    promptSavedAt: v.optional(v.number()),
     connections: v.array(schema.doc("connections")),
     toolLists: v.array(schema.doc("connectionToolLists")),
     threadDefersTools: v.boolean(),
@@ -384,8 +389,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
 
 /**
  * Everything streamReply reads before it builds tools, in one query. The
- * fields other than `modelId` and `userId` go to createReplyTools as they
- * are.
+ * fields other than `modelId`, `userId` and `promptSavedAt` go to
+ * createReplyTools as they are.
  *
  * Null if streamReply shouldn't call the model. That's when the user pressed
  * Stop before the runner started, or the prompt is gone. A regenerate or an
@@ -399,8 +404,9 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   mentions. `promptMessageId` is the prompt, or the user's decisions on
  *   action cards when the reply continues. The turn's prompt is at or
  *   before it. Empty if the prompt has no text.
- * - `promptSentAt`: when the prompt was saved, for its time note
- *   (timeNote). Undefined if the turn has no prompt.
+ * - `promptSavedAt`: when the prompt was saved, for its time note
+ *   (timeNote) when streamReply has no send time. Undefined if the turn
+ *   has no prompt.
  * - `connections`: the thread owner's connections, tokens included, without
  *   their tool lists. The reply runs from the scheduler with no signed-in
  *   user, so the thread names the user.
@@ -467,7 +473,7 @@ export const getReplyStart = internalQuery({
     ]);
     return {
       promptText: prompt?.text ?? "",
-      promptSentAt: prompt?._creationTime,
+      promptSavedAt: prompt?._creationTime,
       connections,
       toolLists,
       threadDefersTools: deferredToolThread !== null,
