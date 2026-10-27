@@ -1,5 +1,6 @@
 "use client";
 
+import { getCountry, getTimezone } from "countries-and-timezones";
 import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,47 +17,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-
-/**
- * The zones Chrome still lists under an old IANA name, such as
- * Asia/Calcutta, mapped to the name they have now.
- */
-const CURRENT_NAMES: Record<string, string> = {
-  "Africa/Asmera": "Africa/Asmara",
-  "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
-  "America/Catamarca": "America/Argentina/Catamarca",
-  "America/Coral_Harbour": "America/Atikokan",
-  "America/Cordoba": "America/Argentina/Cordoba",
-  "America/Godthab": "America/Nuuk",
-  "America/Indianapolis": "America/Indiana/Indianapolis",
-  "America/Jujuy": "America/Argentina/Jujuy",
-  "America/Louisville": "America/Kentucky/Louisville",
-  "America/Mendoza": "America/Argentina/Mendoza",
-  "Asia/Calcutta": "Asia/Kolkata",
-  "Asia/Katmandu": "Asia/Kathmandu",
-  "Asia/Rangoon": "Asia/Yangon",
-  "Asia/Saigon": "Asia/Ho_Chi_Minh",
-  "Atlantic/Faeroe": "Atlantic/Faroe",
-  "Europe/Kiev": "Europe/Kyiv",
-  "Pacific/Enderbury": "Pacific/Kanton",
-  "Pacific/Ponape": "Pacific/Pohnpei",
-  "Pacific/Truk": "Pacific/Chuuk",
-};
-
-/** `zone`'s current IANA name, which can differ from the browser's. */
-function currentName(zone: string): string {
-  return CURRENT_NAMES[zone] ?? zone;
-}
+import { currentTimeZoneName } from "../../../convex/lib/timeZone";
 
 type TimeZoneOption = {
-  /** The browser's name for the zone, which the form saves. */
+  /** The browser's name for the zone, which can be an old one. */
   zone: string;
-  /** Its current name, which the list shows. */
+  /** Its current name, which the list shows and the form saves. */
   name: string;
   /** Such as "(UTC+05:30) Asia/Kolkata". */
   label: string;
   /** Minutes ahead of UTC right now. */
   offset: number;
+  /** The countries it covers, such as "India", for search. */
+  countries: string[];
 };
 
 /**
@@ -67,8 +40,8 @@ type TimeZoneOption = {
 function timeZoneOptions(extra: (string | undefined)[]): TimeZoneOption[] {
   const zones = new Map<string, string>();
   for (const zone of [...Intl.supportedValuesOf("timeZone"), ...extra, "UTC"]) {
-    if (zone && !zones.has(currentName(zone))) {
-      zones.set(currentName(zone), zone);
+    if (zone && !zones.has(currentTimeZoneName(zone))) {
+      zones.set(currentTimeZoneName(zone), zone);
     }
   }
   const now = Date.now();
@@ -76,7 +49,10 @@ function timeZoneOptions(extra: (string | undefined)[]): TimeZoneOption[] {
     .map(([name, zone]) => {
       const offset = utcOffset(zone, now);
       const label = `(UTC${formatOffset(offset)}) ${name}`;
-      return { zone, name, label, offset };
+      const countries = (getTimezone(zone)?.countries ?? []).map(
+        (code) => getCountry(code)?.name ?? code,
+      );
+      return { zone, name, label, offset, countries };
     })
     .sort((a, b) => a.offset - b.offset || a.name.localeCompare(b.name));
 }
@@ -106,24 +82,85 @@ function formatOffset(offset: number): string {
 }
 
 /**
- * Whether every word of the search is in the zone's label. The label also
- * matches without its spaces' underscores, without its offset's leading
- * zero, or by the zone's old name, so "new york", "utc+5" and "calcutta"
- * all find a zone.
+ * How well the search matches the zone, 0 being best, or null for no
+ * match. Each word of the search ranks by where it's found in the zone's
+ * name, old name or countries: 0 as a whole word, 1 at a word's start, 2
+ * inside a word. A word found only in its offset label ranks 3. The zone
+ * ranks as its worst word. Every label has "UTC" in it, so "utc" ranks
+ * the UTC zone first, and "india" ranks Kolkata above America/Indiana.
+ * Names match without their underscores and offsets without their leading
+ * zero, so "new york", "utc+5" and "calcutta" all find a zone.
  */
-function matches(option: TimeZoneOption, search: string): boolean {
-  const haystack = [
-    option.label,
+function matchRank(option: TimeZoneOption, search: string): number | null {
+  const place = [
     option.name.replace(/_/g, " "),
     option.zone.replace(/_/g, " "),
+    ...option.countries,
+  ]
+    .join(" ")
+    .toLowerCase();
+  const placeWords = place.split(/[\s/]+/);
+  const offset = [
+    option.label,
     `utc${formatOffset(option.offset).replace(/^([+-])0/, "$1")}`,
   ]
     .join(" ")
     .toLowerCase();
-  return search
-    .toLowerCase()
-    .split(/\s+/)
-    .every((word) => haystack.includes(word));
+  let rank = 0;
+  for (const word of search.toLowerCase().split(/\s+/).filter(Boolean)) {
+    if (placeWords.includes(word)) continue;
+    if (placeWords.some((placeWord) => placeWord.startsWith(word))) {
+      rank = Math.max(rank, 1);
+    } else if (place.includes(word)) {
+      rank = Math.max(rank, 2);
+    } else if (offset.includes(word)) {
+      rank = 3;
+    } else {
+      return null;
+    }
+  }
+  return rank;
+}
+
+/**
+ * The zones that match the search, best matches first, each with its rank
+ * (matchRank).
+ */
+function searchOptions(
+  options: TimeZoneOption[],
+  search: string,
+): { option: TimeZoneOption; rank: number }[] {
+  return options
+    .map((option) => ({ option, rank: matchRank(option, search) }))
+    .filter((match): match is { option: TimeZoneOption; rank: number } =>
+      match.rank !== null,
+    )
+    .sort((a, b) => a.rank - b.rank);
+}
+
+/**
+ * The list's groups for the search. The browser's own zone, `own`, gets a
+ * group of its own at the top, but while searching only when it matches
+ * as well as the best match, so a weaker match doesn't go above it.
+ */
+function listGroups(options: TimeZoneOption[], search: string, own: string) {
+  const matches = search.trim()
+    ? searchOptions(options, search)
+    : options.map((option) => ({ option, rank: 0 }));
+  const ownMatch = matches.find(({ option }) => option.name === own);
+  const ownFirst = ownMatch !== undefined && ownMatch.rank === matches[0].rank;
+  return [
+    {
+      heading: "Your time zone",
+      options: ownFirst ? [ownMatch.option] : [],
+    },
+    {
+      heading: "All time zones",
+      options: matches
+        .filter((match) => !ownFirst || match !== ownMatch)
+        .map(({ option }) => option),
+    },
+  ].filter((group) => group.options.length > 0);
 }
 
 /** Keeps the picked zone in view when the list opens on it. */
@@ -153,10 +190,8 @@ export function TimeZonePicker({
   const [options] = useState(() => timeZoneOptions([ownTimeZone, value]));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  // The list goes by current names, since the form's zone and the
-  // browser's can be under an old one.
-  const picked = currentName(value);
-  const own = currentName(ownTimeZone);
+  const picked = currentTimeZoneName(value);
+  const own = currentTimeZoneName(ownTimeZone);
   const [highlighted, setHighlighted] = useState(picked);
 
   function openChange(next: boolean) {
@@ -172,19 +207,18 @@ export function TimeZonePicker({
     setOpen(false);
   }
 
-  const shown = search.trim()
-    ? options.filter((option) => matches(option, search))
-    : options;
-  const groups = [
-    {
-      heading: "Your time zone",
-      options: shown.filter((option) => option.name === own),
-    },
-    {
-      heading: "All time zones",
-      options: shown.filter((option) => option.name !== own),
-    },
-  ].filter((group) => group.options.length > 0);
+  // A search highlights its best match, which the list scrolls to. Left
+  // on the picked zone, the list would stay scrolled to it.
+  function changeSearch(next: string) {
+    setSearch(next);
+    setHighlighted(
+      next.trim()
+        ? (listGroups(options, next, own)[0]?.options[0]?.name ?? "")
+        : picked,
+    );
+  }
+
+  const groups = listGroups(options, search, own);
   const label = options.find((option) => option.name === picked)?.label;
 
   return (
@@ -222,7 +256,7 @@ export function TimeZonePicker({
         >
           <CommandInput
             value={search}
-            onValueChange={setSearch}
+            onValueChange={changeSearch}
             placeholder="Search time zones…"
           />
           <CommandList>
@@ -232,12 +266,16 @@ export function TimeZonePicker({
                 {group.options.map((option) => (
                   <CommandItem
                     key={option.name}
+                    // Not while searching, when the picked zone can move
+                    // groups and mount again below the best match.
                     ref={
-                      option.name === picked ? scrollIntoViewOnMount : undefined
+                      option.name === picked && !search.trim()
+                        ? scrollIntoViewOnMount
+                        : undefined
                     }
                     value={option.name}
                     data-checked={option.name === picked}
-                    onSelect={() => pick(option.zone)}
+                    onSelect={() => pick(option.name)}
                   >
                     <span className="truncate">{option.label}</span>
                   </CommandItem>

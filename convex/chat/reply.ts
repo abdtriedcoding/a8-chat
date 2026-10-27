@@ -231,9 +231,9 @@ export const streamReply = internalAction({
           // before the new prompt, so the steps of this reply and the next
           // prompt read the history from the cache. An attachment from an
           // earlier turn that the model can't read goes as a note naming
-          // it. The note on the prompt's mentions goes on the prompt, not
-          // in the instructions, so a mention keeps the tools and
-          // instructions in the cache.
+          // it. The note on when the prompt was sent and its mentions goes
+          // on the prompt, not in the instructions, so the time and a
+          // mention keep the tools and instructions in the cache.
           contextHandler: async (
             _ctx,
             { search, recent, inputMessages, inputPrompt, existingResponses },
@@ -368,6 +368,7 @@ const vReplyStart = v.union(
   v.null(),
   v.object({
     promptText: v.string(),
+    promptSentAt: v.optional(v.number()),
     connections: v.array(schema.doc("connections")),
     toolLists: v.array(schema.doc("connectionToolLists")),
     threadDefersTools: v.boolean(),
@@ -398,6 +399,8 @@ type ReplyStart = Infer<typeof vReplyStart>;
  *   mentions. `promptMessageId` is the prompt, or the user's decisions on
  *   action cards when the reply continues. The turn's prompt is at or
  *   before it. Empty if the prompt has no text.
+ * - `promptSentAt`: when the prompt was saved, for its time note
+ *   (timeNote). Undefined if the turn has no prompt.
  * - `connections`: the thread owner's connections, tokens included, without
  *   their tool lists. The reply runs from the scheduler with no signed-in
  *   user, so the thread names the user.
@@ -464,6 +467,7 @@ export const getReplyStart = internalQuery({
     ]);
     return {
       promptText: prompt?.text ?? "",
+      promptSentAt: prompt?._creationTime,
       connections,
       toolLists,
       threadDefersTools: deferredToolThread !== null,

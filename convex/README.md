@@ -68,9 +68,9 @@ These modules hold helpers and register no Convex functions.
 - `lib/prompt.ts`: prompt and title checks, and the prompt message the model gets.
 - `lib/queue.ts`: the queue's size cap, how long a reply has to start and how long a queued prompt waits for an edit, shared with the client.
 - `lib/attachments.ts`: attachment limits, accepted file types and rejection reasons.
-- `lib/instructions.ts`: the system prompt, and its connector part.
+- `lib/instructions.ts`: the system prompt, its connector part, and the notes a reply adds to the prompt.
 - `lib/replyFailure.ts`: the reason a failed reply shows.
-- `lib/timeZone.ts`: the browser's time zone, which a reply uses for the user's date.
+- `lib/timeZone.ts`: the browser's time zone, which a reply uses for the user's date and time, and the current names of zones the browser lists under old ones.
 - `lib/sharedMessages.ts`: what a shared snapshot keeps of a message, and the redaction that drops the rest.
 - `lib/sharedFiles.ts`: the path a shared page loads its attachments from, shared with the client.
 - `lib/threadSearchSnippet.ts`: the snippet thread search shows around a match.

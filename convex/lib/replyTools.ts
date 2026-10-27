@@ -24,7 +24,7 @@ import {
 } from "./autoApprove";
 import { createConnectorTools, type ConnectorTools } from "./connectorTools";
 import { findMentions } from "./connectorView";
-import { connectorInstructions, mentionNote } from "./instructions";
+import { connectorInstructions, mentionNote, timeNote } from "./instructions";
 import { isClaude, type Model } from "./models";
 import {
   arrangeReplyTools,
@@ -73,14 +73,12 @@ export function withCacheBreakpoint(
  * The messages with `note` added as a text part to the last message with
  * role `user`, the prompt the reply answers. A continuing reply's
  * decisions on action cards have role `tool`, so the note still goes on
- * the turn's prompt. With no
- * note, the messages come back as they are.
+ * the turn's prompt.
  */
 export function withPromptNote(
   messages: ModelMessage[],
-  note: string | undefined,
+  note: string,
 ): ModelMessage[] {
-  if (note === undefined) return messages;
   const index = messages.findLastIndex((message) => message.role === "user");
   if (index === -1) return messages;
   return messages.map((message, i) => {
@@ -130,10 +128,10 @@ export type ReplyTools = {
    */
   connectorText: string | undefined;
   /**
-   * The note on the connectors the prompt mentions, for withPromptNote.
-   * Undefined when it mentions none.
+   * The note for withPromptNote: when the prompt was sent (timeNote), and
+   * the connectors it mentions (mentionNote).
    */
-  promptNote: string | undefined;
+  promptNote: string;
   /**
    * The most model calls this part of the reply can make, at least 1. The
    * cap counts steps across the whole reply. The Agent's count starts over
@@ -172,13 +170,16 @@ export type ReplyTools = {
  *
  * @param promptText The text of the prompt the reply answers, for its
  *   mentions.
+ * @param promptSentAt When the prompt was saved, for its time note. Now
+ *   when undefined.
  * @param connections The thread owner's connections, of any status.
  * @param toolLists The stored tool lists of the `connected` connections.
  * @param threadDefersTools Whether the thread already defers connector
  *   tools.
  * @param temporary Whether the thread is temporary. It gets no scheduled
  *   prompt tools.
- * @param timeZone The reply's time zone, for the scheduled prompt tools.
+ * @param timeZone The reply's time zone, for the scheduled prompt tools
+ *   and the prompt's time note.
  * @param stepsTaken The steps the reply took before it paused on action
  *   cards. 0 for a new reply.
  * @param autoApprove Whether the thread has auto-approve on.
@@ -195,6 +196,7 @@ export function createReplyTools(
   {
     threadId,
     promptText,
+    promptSentAt,
     connections,
     toolLists,
     threadDefersTools,
@@ -208,6 +210,7 @@ export function createReplyTools(
   }: {
     threadId: string;
     promptText: string;
+    promptSentAt?: number;
     connections: Doc<"connections">[];
     toolLists: Doc<"connectionToolLists">[];
     threadDefersTools: boolean;
@@ -298,7 +301,12 @@ export function createReplyTools(
       loading,
       searchTool: claude ? TOOL_SEARCH_KEY : FIND_TOOLS_KEY,
     }),
-    promptNote: mentionNote({ mentioned, connections }),
+    promptNote: [
+      timeNote(timeZone, new Date(promptSentAt ?? Date.now())),
+      mentionNote({ mentioned, connections }),
+    ]
+      .filter((note) => note !== undefined)
+      .join("\n"),
     maxSteps: Math.max(
       1,
       (connectorTools.groups.length > 0
