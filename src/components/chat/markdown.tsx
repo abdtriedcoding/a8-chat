@@ -53,6 +53,7 @@ const [hardenPlugin] = defaultRehypePlugins.harden as Extract<
 const rehypePlugins: RehypePlugins = [
   defaultRehypePlugins.raw,
   defaultRehypePlugins.sanitize,
+  prefixIds,
   [
     hardenPlugin,
     {
@@ -65,6 +66,11 @@ const rehypePlugins: RehypePlugins = [
     },
   ],
 ];
+
+const ID_PREFIX = "user-content-";
+
+// Attributes that hold an id or point at one, as hast names them.
+const ID_ATTRIBUTES = ["id", "name", "ariaDescribedBy", "ariaLabelledBy"];
 
 // A single newline in a paragraph stays a line break, as in an address or a
 // poem. Plain markdown joins the lines.
@@ -121,6 +127,38 @@ export function Markdown({
       {streaming ? withoutUnfinishedTable(children) : children}
     </Streamdown>
   );
+}
+
+type HastNode = {
+  type: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+/**
+ * Prefixes every id in a reply with user-content-, so HTML in a reply can't
+ * take an id the app looks up, like <b id="main-content">. The sanitize step
+ * can prefix ids, but Streamdown turns that off, since footnote ids already
+ * carry the prefix and would get a second one. This skips ids that have it.
+ */
+function prefixIds() {
+  const prefix = (value: unknown) =>
+    typeof value === "string" && !value.startsWith(ID_PREFIX)
+      ? ID_PREFIX + value
+      : value;
+  const visit = (node: HastNode) => {
+    if (node.type === "element" && node.properties) {
+      for (const attribute of ID_ATTRIBUTES) {
+        const value = node.properties[attribute];
+        if (value === undefined) continue;
+        node.properties[attribute] = Array.isArray(value)
+          ? value.map(prefix)
+          : prefix(value);
+      }
+    }
+    node.children?.forEach(visit);
+  };
+  return visit;
 }
 
 const INCOMPLETE_IMAGE = "streamdown:incomplete-image";
