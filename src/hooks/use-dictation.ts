@@ -1,9 +1,11 @@
 import { useAction } from "convex/react";
+import { ConvexError } from "convex/values";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { prefetchDNS } from "react-dom";
-import { errorMessage, throwIfRefused } from "@/lib/errors";
+import { errorMessage, isConnectFailed } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
-import type { RateLimited } from "../../convex/rateLimits";
+import type { TokenResult } from "../../convex/dictation";
+import { appError, ERROR_CODES } from "../../convex/lib/errors";
 
 // Dictation's client, and with convex/dictation.ts the only code that knows
 // about Deepgram (ADR 0012). It streams the mic straight to Deepgram's Flux
@@ -36,6 +38,16 @@ const CONNECT_TIMEOUT_MS = 10_000;
  * the pings that would keep it open.
  */
 const WARM_SOCKET_MS = 50_000;
+/**
+ * A token that took longer than this to arrive may have expired before the
+ * socket opens with it, and the socket would fail. Deepgram's tokens open a
+ * socket for 30s (TOKEN_TTL_SECONDS in convex/dictation.ts). A token arrives
+ * that late when the connection to Convex stalls, such as while the device
+ * is offline.
+ */
+const STALE_TOKEN_MS = 20_000;
+/** How long a prewarm that failed waits before it tries once more. */
+const WARM_RETRY_MS = 5_000;
 
 /**
  * Turns the mic's audio into 16 kHz mono PCM16 frames, and the loudness of
@@ -134,7 +146,7 @@ type Session = {
   markClosed: () => void;
 };
 
-type GetToken = () => Promise<{ token: string } | RateLimited>;
+type GetToken = () => Promise<TokenResult>;
 
 /**
  * A socket opened before the user taps the mic (useDictation's prewarm), so
@@ -184,19 +196,33 @@ function takeAudio() {
   return makeAudio();
 }
 
-/** Gets a token from convex/dictation.ts and opens a socket with it. */
+/**
+ * Gets a token from convex/dictation.ts and opens a socket with it. Throws a
+ * ConvexError that errorMessage can show if the token is refused or may have
+ * expired (STALE_TOKEN_MS). Another try would count another dictation start
+ * against the rate limits, so a stale token isn't replaced here.
+ */
 async function connect(getToken: GetToken) {
-  const { token } = throwIfRefused(await getToken());
-  const socket = new WebSocket(LISTEN_URL, ["bearer", token]);
+  const requestedAt = Date.now();
+  const result = await getToken();
+  if ("code" in result) throw new ConvexError(result);
+  if (Date.now() - requestedAt >= STALE_TOKEN_MS) {
+    throw appError(
+      ERROR_CODES.CONNECT_FAILED,
+      "Dictation couldn't connect. Please try again.",
+    );
+  }
+  const socket = new WebSocket(LISTEN_URL, ["bearer", result.token]);
   socket.binaryType = "arraybuffer";
   return socket;
 }
 
 /**
  * Makes the tab's warm audio context and opens its warm socket, unless
- * they're there already.
+ * they're there already. With `retry`, a token request that failed for a
+ * reason other than a refusal tries once more after WARM_RETRY_MS.
  */
-function warmUp(getToken: GetToken) {
+function warmUp(getToken: GetToken, { retry = true } = {}) {
   if (!warmAudio) {
     warmAudio = makeAudio();
     // Made outside a tap, it may start running, and an idle running context
@@ -224,8 +250,15 @@ function warmUp(getToken: GetToken) {
     },
     // A refused or failed warm-up shows nothing. The tap that follows
     // tries again and shows why.
-    () => {
-      if (warmSocket === entry) warmSocket = null;
+    (error: unknown) => {
+      if (warmSocket !== entry) return;
+      warmSocket = null;
+      if (!retry || !isTransient(error)) return;
+      window.setTimeout(() => {
+        if (!warmSocket && !document.hidden && navigator.onLine) {
+          warmUp(getToken, { retry: false });
+        }
+      }, WARM_RETRY_MS);
     },
   );
 }
@@ -239,6 +272,15 @@ async function takeSocket(getToken: GetToken) {
     if (socket && isLive(socket)) return socket;
   }
   return connect(getToken);
+}
+
+/**
+ * Whether a token request may work if tried again: it failed on the
+ * network, or Deepgram couldn't grant a token. Not a rate limit, or a
+ * deployment without dictation set up.
+ */
+function isTransient(error: unknown) {
+  return !(error instanceof ConvexError) || isConnectFailed(error);
 }
 
 /** Whether a socket is open or still opening. */
@@ -572,7 +614,7 @@ export function useDictation(callbacks: DictationCallbacks) {
      * `likely` when the user is reaching for the mic.
      */
     prewarm: ({ likely = false }: { likely?: boolean } = {}) => {
-      if (sessionRef.current || document.hidden) return;
+      if (sessionRef.current || document.hidden || !navigator.onLine) return;
       if (!likely && !hasDictated()) return;
       warmUp(getToken);
     },

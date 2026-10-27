@@ -31,7 +31,19 @@ async function isSignedIn(): Promise<boolean> {
   }
 }
 
+/**
+ * A thread page whose ID can't be a thread's: anything but 31 to 37
+ * lowercase letters and digits, the shape of a Convex document ID.
+ */
+const MALFORMED_THREAD_PATH = /^\/c\/(?![0-9a-z]{31,37}$)[^/]*$/;
+
 export async function proxy(request: NextRequest) {
+  // The chat layout streams before the page runs, so a notFound() there
+  // would answer 200. This path matches no route, so it renders the root
+  // not-found page with a 404.
+  if (MALFORMED_THREAD_PATH.test(request.nextUrl.pathname)) {
+    return NextResponse.rewrite(new URL("/c/not-found/x", request.url));
+  }
   const hasSessionCookie = getSessionCookie(request) !== null;
   if (AUTH_PAGES.includes(request.nextUrl.pathname)) {
     // An anonymous visitor gets the static page with no Convex call.
