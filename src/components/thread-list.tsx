@@ -205,15 +205,17 @@ export function ThreadList() {
 
   async function deleteThread(thread: Thread) {
     // A deleted row takes its menu button with it. Focus moves to the next
-    // row, or the one before it, or New chat when it was the only one. On
-    // Cancel the row stays, and focus goes back to its menu button.
+    // row, or the one before it, or New chat when it was the only one or its
+    // neighbor is in a collapsed section. On Cancel the row stays, and focus
+    // goes back to its menu button.
     const rows = [...(pinned ?? []), ...results];
     const index = rows.findIndex(({ _id }) => _id === thread._id);
     const neighbor = rows[index + 1] ?? rows[index - 1];
     const confirmed = await confirmDelete(thread, () => {
       if (document.getElementById(threadLinkId(thread._id))) return null;
-      return document.getElementById(
-        neighbor ? threadLinkId(neighbor._id) : NEW_CHAT_ID,
+      return (
+        (neighbor && document.getElementById(threadLinkId(neighbor._id))) ??
+        document.getElementById(NEW_CHAT_ID)
       );
     });
     if (confirmed && thread._id === activeId) router.replace("/chat");

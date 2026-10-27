@@ -108,21 +108,41 @@ function ShareDialogBody({
   // The button pressed goes away once its action lands, so focus moves to
   // the button that replaces it. That one can show a few renders later. Copy
   // follows Create link and Update link, and Create link follows Unshare.
-  const pendingFocus = useRef<RefObject<HTMLButtonElement | null>>(null);
+  const focusRequest = useRef<{
+    target: RefObject<HTMLButtonElement | null>;
+    pressed: Element | null;
+  }>(null);
 
   useEffect(() => {
-    const target = pendingFocus.current?.current;
-    if (!target) return;
-    pendingFocus.current = null;
+    const request = focusRequest.current;
+    if (!request) return;
+    const active = document.activeElement;
+    // Radix moves focus to the dialog when the focused button unmounts.
+    const dropped =
+      active === null ||
+      active === document.body ||
+      active.getAttribute("role") === "dialog";
+    // The user moved focus to another control while the action ran.
+    if (!dropped && active !== request.pressed) {
+      focusRequest.current = null;
+      return;
+    }
+    const target = request.target.current;
+    if (!dropped || !target) return;
+    focusRequest.current = null;
     target.focus();
   });
 
   async function run(action: "share" | "unshare") {
     if (pending) return;
+    const pressed = document.activeElement;
     setPending(action);
     try {
       await (action === "share" ? share : unshare)({ threadId });
-      pendingFocus.current = action === "share" ? copyButton : createButton;
+      focusRequest.current = {
+        target: action === "share" ? copyButton : createButton,
+        pressed,
+      };
     } catch (error) {
       toast.error(errorMessage(error));
     } finally {
