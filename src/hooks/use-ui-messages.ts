@@ -15,6 +15,7 @@ import { usePaginatedQuery } from "convex-helpers/react/cache/hooks";
 import type { PaginatedQueryArgs, UsePaginatedQueryResult } from "convex/react";
 import type { FunctionArgs, FunctionReference } from "convex/server";
 import { useMemo } from "react";
+import type { MessageMetadata } from "../../convex/chat/messages";
 
 // Copied from @convex-dev/agent 0.7.3 (src/vercel/react/useUIMessages.ts,
 // with the helpers it imports from UIMessages.ts and shared.ts, which the
@@ -22,7 +23,8 @@ import { useMemo } from "react";
 // cached usePaginatedQuery, so a thread's first page stays subscribed after
 // the thread view unmounts. It needs customPagination to page the agent's
 // merged stream without gaps. Streams stay on the agent's uncached hook.
-// Compare with the agent's file when upgrading it.
+// And mergeUIMessages drops an aborted stream from a turn that isn't
+// stopped (keepStream). Compare with the agent's file when upgrading it.
 
 type UIStatus = UIMessage["status"];
 
@@ -32,6 +34,7 @@ type UIMessageLike = {
   status: UIStatus;
   parts: UIMessage["parts"];
   role: UIMessage["role"];
+  metadata?: unknown;
 };
 
 type StreamQuery<Args = Record<string, unknown>> = FunctionReference<
@@ -108,10 +111,30 @@ function mergeUIMessages<M extends UIMessageLike>(
   messages: M[],
   streamMessages: M[],
 ): M[] {
-  const deduped = dedupeMessages(messages, streamMessages);
+  const stoppedOrders = new Set(
+    messages.flatMap(({ order, metadata }) =>
+      (metadata as MessageMetadata | undefined)?.stopped ? [order] : [],
+    ),
+  );
+  const deduped = dedupeMessages(
+    messages,
+    streamMessages.filter((stream) => keepStream(stream, stoppedOrders)),
+  );
   // Messages may have been split by pagination. Re-combine them here
   // after dedupe has had access to each message's original stepOrder.
   return combineUIMessages(deduped as unknown as UIMessage[]) as unknown as M[];
+}
+
+/**
+ * Whether to show a stream's message. listThreadMessages sends aborted
+ * streams so a stopped reply's text stays up until its runner saves it.
+ * Once a regenerate or an edit replaces the stopped turn, its prompt isn't
+ * stopped anymore, and the server deletes the old stream. This hook can
+ * still hold that stream until it gets the new one's deltas, and would show
+ * the old text over the new reply.
+ */
+function keepStream(stream: UIMessageLike, stoppedOrders: Set<number>) {
+  return stream.status !== "failed" || stoppedOrders.has(stream.order);
 }
 
 function dedupeMessages<

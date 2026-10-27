@@ -529,7 +529,8 @@ function ModelRow({
       <LabLogo lab={model.lab} className="mt-0.5" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-medium">{model.name}</span>
+          {/* Wraps rather than cutting off, as the row is narrow on a phone. */}
+          <span className="min-w-0 font-medium break-words">{model.name}</span>
           {model.isNew && (
             <span className="shrink-0 text-[0.625rem] font-medium text-link uppercase">
               New

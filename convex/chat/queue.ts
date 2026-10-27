@@ -1,4 +1,5 @@
 import { v, type Infer } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   internalMutation,
@@ -11,7 +12,7 @@ import { appError, ERROR_CODES } from "../lib/errors";
 import { findOwnThread, getOwnThread, requireUser } from "../lib/guards";
 import { checkPrompt } from "../lib/prompt";
 import { MAX_ATTACHMENTS_PER_PROMPT } from "../lib/attachments";
-import { MAX_QUEUED_PROMPTS } from "../lib/queue";
+import { MAX_QUEUED_PROMPTS, QUEUED_EDIT_MS } from "../lib/queue";
 
 // A thread's queue holds the prompts the user sent while a reply was
 // running, and scheduled runs that couldn't start right away (sendRun in
@@ -19,10 +20,19 @@ import { MAX_QUEUED_PROMPTS } from "../lib/queue";
 // startNextPrompt (convex/chat/send.ts) starts them oldest first, each as
 // its own turn. This module holds the queue's rows and the functions that
 // manage it. Starting a queued prompt is a Send, so it lives with the Sends.
+//
+// A queued prompt the user is editing doesn't start, so it never runs with
+// its old text. Opening the editor calls startQueuedPromptEdit, which keeps
+// the prompt back for QUEUED_EDIT_MS, and the queue stack calls it again
+// while the editor stays open. Saving, cancelling or deleting ends the edit,
+// and the next prompt starts if the thread is free. If the tab closes with
+// the editor open, the time runs out and the prompt starts.
 
 const vQueuedPromptView = v.object({
   _id: v.id("queuedPrompts"),
   _creationTime: v.number(),
+  // The prompt's row key in the queue stack: its queueKey, or its id.
+  key: v.string(),
   prompt: v.string(),
   attachmentCount: v.number(),
 });
@@ -50,9 +60,10 @@ export const getQueue = query({
     ]);
     return {
       prompts: prompts.map(
-        ({ _id, _creationTime, prompt, attachmentFileIds }) => ({
+        ({ _id, _creationTime, queueKey, prompt, attachmentFileIds }) => ({
           _id,
           _creationTime,
+          key: queueKey ?? _id,
           prompt,
           attachmentCount: attachmentFileIds.length,
         }),
@@ -63,8 +74,46 @@ export const getQueue = query({
 });
 
 /**
- * Replaces a queued prompt's text. Its attachments stay. Throws if the
- * prompt already started or was deleted.
+ * Keeps a queued prompt from starting for QUEUED_EDIT_MS, while the user
+ * edits it. Calling it again starts the time over. Throws if the prompt
+ * already started or was deleted.
+ */
+export const startQueuedPromptEdit = mutation({
+  args: { queuedPromptId: v.id("queuedPrompts") },
+  returns: v.null(),
+  handler: async (ctx, { queuedPromptId }) => {
+    const queued = await getOwnQueuedPrompt(ctx, queuedPromptId);
+    await ctx.db.patch("queuedPrompts", queued._id, {
+      editingUntil: Date.now() + QUEUED_EDIT_MS,
+    });
+    // Starts the prompt once the time runs out, unless the queue stack calls
+    // this again or the edit ends first.
+    await scheduleNextPrompt(ctx, queued.threadId, QUEUED_EDIT_MS);
+    return null;
+  },
+});
+
+/**
+ * Ends the edit of a queued prompt that the user cancelled, so the prompt
+ * can start. Does nothing if no edit is open, or the prompt is gone.
+ */
+export const cancelQueuedPromptEdit = mutation({
+  args: { queuedPromptId: v.id("queuedPrompts") },
+  returns: v.null(),
+  handler: async (ctx, { queuedPromptId }) => {
+    const queued = await findOwnQueuedPrompt(ctx, queuedPromptId);
+    if (queued?.editingUntil === undefined) return null;
+    await ctx.db.patch("queuedPrompts", queued._id, {
+      editingUntil: undefined,
+    });
+    await startIfWasEditing(ctx, queued);
+    return null;
+  },
+});
+
+/**
+ * Replaces a queued prompt's text and ends its edit. Its attachments stay.
+ * Throws if the prompt already started or was deleted.
  */
 export const editQueuedPrompt = mutation({
   args: { queuedPromptId: v.id("queuedPrompts"), prompt: v.string() },
@@ -73,7 +122,9 @@ export const editQueuedPrompt = mutation({
     const queued = await getOwnQueuedPrompt(ctx, queuedPromptId);
     await ctx.db.patch("queuedPrompts", queued._id, {
       prompt: checkPrompt(prompt, queued.attachmentFileIds.length),
+      editingUntil: undefined,
     });
+    await startIfWasEditing(ctx, queued);
     return null;
   },
 });
@@ -92,6 +143,7 @@ export const deleteQueuedPrompt = mutation({
     if ((await listQueuedPrompts(ctx, queued.threadId)).length === 0) {
       await unpauseThreadQueue(ctx, queued.threadId);
     }
+    await startIfWasEditing(ctx, queued);
     return null;
   },
 });
@@ -110,6 +162,55 @@ export const pauseQueue = internalMutation({
 });
 
 /**
+ * Starts the thread's next prompt if `queued` had an edit open, since the
+ * thread may have come free meanwhile. startNextPrompt starts nothing while
+ * the thread is busy or its queue is paused.
+ */
+async function startIfWasEditing(
+  ctx: MutationCtx,
+  queued: Doc<"queuedPrompts">,
+) {
+  if (queued.editingUntil !== undefined) {
+    await scheduleNextPrompt(ctx, queued.threadId, 0);
+  }
+}
+
+/** Schedules startNextPrompt for the thread, `delayMs` from now. */
+async function scheduleNextPrompt(
+  ctx: MutationCtx,
+  threadId: string,
+  delayMs: number,
+) {
+  await ctx.scheduler.runAfter(delayMs, internal.chat.send.startNextPrompt, {
+    threadId,
+  });
+}
+
+/**
+ * Whether the user is editing the queued prompt: its edit
+ * (startQueuedPromptEdit) is open and its time hasn't run out.
+ */
+export function isBeingEdited(queued: Doc<"queuedPrompts">) {
+  return queued.editingUntil !== undefined && queued.editingUntil > Date.now();
+}
+
+/**
+ * The queued prompt, or null if it isn't in one of the user's threads, or
+ * it's gone because it started or was deleted.
+ */
+async function findOwnQueuedPrompt(
+  ctx: MutationCtx,
+  queuedPromptId: Id<"queuedPrompts">,
+) {
+  const user = await requireUser(ctx);
+  const queued = await ctx.db.get("queuedPrompts", queuedPromptId);
+  if (!queued || !(await findOwnThread(ctx, user._id, queued.threadId))) {
+    return null;
+  }
+  return queued;
+}
+
+/**
  * The queued prompt, if it's in one of the user's threads. Throws NOT_FOUND
  * if it isn't, or it's gone because it started or was deleted.
  */
@@ -117,9 +218,8 @@ async function getOwnQueuedPrompt(
   ctx: MutationCtx,
   queuedPromptId: Id<"queuedPrompts">,
 ) {
-  const user = await requireUser(ctx);
-  const queued = await ctx.db.get("queuedPrompts", queuedPromptId);
-  if (!queued || !(await findOwnThread(ctx, user._id, queued.threadId))) {
+  const queued = await findOwnQueuedPrompt(ctx, queuedPromptId);
+  if (!queued) {
     throw appError(
       ERROR_CODES.NOT_FOUND,
       "This prompt already started or was deleted.",
