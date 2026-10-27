@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleAlertIcon, MailCheckIcon } from "lucide-react";
+import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
@@ -26,7 +26,7 @@ import {
 } from "@/lib/connect-callback";
 import {
   DEFAULT_NEXT,
-  safeNext,
+  nextAndLinkError,
   verifyEmailCallback,
   withNext,
 } from "@/lib/next-path";
@@ -45,19 +45,31 @@ type Notice = { message: string; destructive: boolean };
  * verification link sent them, as set by verifyEmailCallback. A bad link adds
  * `?error=`. A good one lands here only when it was already used, or when the
  * proxy couldn't confirm the new session. The email is verified either way.
- * `?error=` alone is a failed Google sign-in.
+ * `?error=` alone is a failed Google sign-in. `?reset=1` comes from the
+ * reset password form. `linkError` is from nextAndLinkError, and it means an
+ * old verification link expired.
  */
-function urlNotice(error: string | null, verify: boolean): Notice | null {
-  if (error && verify) {
+function urlNotice(
+  params: URLSearchParams,
+  linkError: string | null,
+): Notice | null {
+  const error = params.get("error");
+  if (linkError || (error && params.has("verify"))) {
     return {
       message: "This link has expired. Sign in to get a new one.",
       destructive: true,
     };
   }
   if (error) return { message: oauthErrorMessage(error), destructive: true };
-  if (verify) {
+  if (params.has("verify")) {
     return {
       message: "Your email is verified. Sign in to continue.",
+      destructive: false,
+    };
+  }
+  if (params.has("reset")) {
+    return {
+      message: "Your password is reset. Sign in with the new one.",
       destructive: false,
     };
   }
@@ -69,15 +81,14 @@ function subscribeToNothing() {
   return () => {};
 }
 
-/** SignInForm with what the URL holds: `?next=`, `?error=` and `?verify=`. */
+/**
+ * SignInForm with what the URL holds: `?next=`, `?error=`, `?verify=` and
+ * `?reset=`.
+ */
 export function SignInFormFromUrl() {
   const params = useSearchParams();
-  return (
-    <SignInForm
-      next={safeNext(params.get("next"))}
-      notice={urlNotice(params.get("error"), params.has("verify"))}
-    />
-  );
+  const { next, linkError } = nextAndLinkError(params.get("next"));
+  return <SignInForm next={next} notice={urlNotice(params, linkError)} />;
 }
 
 export function SignInForm({
@@ -158,7 +169,7 @@ export function SignInForm({
         <FieldGroup>
           {alert && (
             <Alert variant={alert.destructive ? "destructive" : "default"}>
-              {alert.destructive ? <CircleAlertIcon /> : <MailCheckIcon />}
+              {alert.destructive ? <CircleAlertIcon /> : <CircleCheckIcon />}
               <AlertDescription>{alert.message}</AlertDescription>
             </Alert>
           )}
@@ -202,15 +213,7 @@ export function SignInForm({
                 data-invalid={fieldState.invalid}
                 data-disabled={pending}
               >
-                <div className="flex items-center justify-between">
-                  <FieldLabel htmlFor="sign-in-password">Password</FieldLabel>
-                  <Link
-                    href="/forgot-password"
-                    className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
+                <FieldLabel htmlFor="sign-in-password">Password</FieldLabel>
                 <PasswordInput
                   {...field}
                   id="sign-in-password"
@@ -221,6 +224,15 @@ export function SignInForm({
                 {fieldState.invalid && (
                   <FieldError errors={[fieldState.error]} />
                 )}
+                {/* After the password, so Tab goes from Email to Password. */}
+                <div className="flex justify-end">
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
               </Field>
             )}
           />

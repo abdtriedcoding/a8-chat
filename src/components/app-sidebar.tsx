@@ -14,7 +14,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { AppIcon } from "@/components/icons/app-icon";
 import { NavUser, NavUserSkeleton } from "@/components/nav-user";
-import { ThreadList, ThreadListSkeleton } from "@/components/thread-list";
+import {
+  NEW_CHAT_ID,
+  ThreadList,
+  ThreadListSkeleton,
+} from "@/components/thread-list";
 import { ThreadSearchButton } from "@/components/thread-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -151,7 +155,12 @@ function SidebarFrame({
         </Link>
         <div className="flex flex-col gap-1">
           <Button variant="outline" className="justify-start" asChild>
-            <Link href="/chat" prefetch onClick={closeOnMobile}>
+            <Link
+              id={NEW_CHAT_ID}
+              href="/chat"
+              prefetch
+              onClick={closeOnMobile}
+            >
               <SquarePenIcon data-icon="inline-start" />
               New chat
             </Link>

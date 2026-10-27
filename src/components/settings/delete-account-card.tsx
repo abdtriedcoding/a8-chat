@@ -80,7 +80,7 @@ export function DeleteAccountCard() {
       // The server already ended the session. This clears the client's copy.
       await authClient.signOut().catch(() => {});
       await clearLocalCopy();
-      window.location.replace("/");
+      window.location.replace("/?deleted=1");
     } catch {
       setError("Couldn't delete your account. Please try again.");
     } finally {

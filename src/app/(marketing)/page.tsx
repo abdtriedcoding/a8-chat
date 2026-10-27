@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { AccountDeletedToast } from "@/components/landing/account-deleted-toast";
 import { ChatDemo } from "@/components/landing/chat-demo";
 import { Faq } from "@/components/landing/faq";
 import { Features } from "@/components/landing/features";
@@ -40,6 +41,10 @@ const APPS: { icon: LucideIcon; name: string; handle: string }[] = [
 export default function LandingPage() {
   return (
     <>
+      {/* useSearchParams in a static page needs a Suspense boundary. */}
+      <Suspense>
+        <AccountDeletedToast />
+      </Suspense>
       <Hero />
       <WorksWith />
       <WithoutSwitchingTabs />
@@ -226,7 +231,11 @@ function Terminal() {
         <span className="size-3 rounded-full bg-background/20" />
         <span className="size-3 rounded-full bg-background/20" />
       </div>
-      <pre className="overflow-x-auto p-5 font-mono text-sm leading-7">
+      {/* It scrolls sideways on narrow screens. tabIndex lets the keyboard scroll it. */}
+      <pre
+        tabIndex={0}
+        className="overflow-x-auto p-5 font-mono text-sm leading-7 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
+      >
         <code>
           <Prompt />
           git clone {GITHUB_URL}

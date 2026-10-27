@@ -38,6 +38,25 @@ export function safeNext(value: string | null | undefined): string {
   return path;
 }
 
+/**
+ * safeNext, with the `?error=` from a verification link sent before #389
+ * taken out of it. Those links went to /chat, so a bad one landed on
+ * /chat?error=TOKEN_EXPIRED, and the proxy sent the signed-out user to
+ * sign-in with that as `next`.
+ */
+export function nextAndLinkError(value: string | null | undefined): {
+  next: string;
+  linkError: string | null;
+} {
+  const next = safeNext(value);
+  const url = new URL(next, ORIGIN);
+  const linkError = url.searchParams.get("error");
+  if (linkError === null) return { next, linkError };
+  url.searchParams.delete("error");
+  const query = url.searchParams.toString();
+  return { next: url.pathname + (query ? `?${query}` : ""), linkError };
+}
+
 /** An auth page's path with `?next=` added, unless next is /chat. */
 export function withNext(path: string, next: string): string {
   return next === DEFAULT_NEXT

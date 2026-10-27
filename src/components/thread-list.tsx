@@ -59,6 +59,13 @@ import { api } from "../../convex/_generated/api";
 
 type Thread = FunctionReturnType<typeof api.threads.list>["page"][number];
 
+/** The sidebar's New chat link, for focus to go to. */
+export const NEW_CHAT_ID = "new-chat";
+
+function threadLinkId(threadId: string) {
+  return `thread-link-${threadId}`;
+}
+
 const SKELETON_WIDTHS = ["80%", "65%", "90%", "55%", "70%"];
 // How long the pointer stays on a thread before it starts loading. A pointer
 // moving down the list stays on each thread for less.
@@ -197,7 +204,20 @@ export function ThreadList() {
   }
 
   async function deleteThread(thread: Thread) {
-    const confirmed = await confirmDelete(thread);
+    // A deleted row takes its menu button with it. Focus moves to the next
+    // row, or the one before it, or New chat when it was the only one or its
+    // neighbor is in a collapsed section. On Cancel the row stays, and focus
+    // goes back to its menu button.
+    const rows = [...(pinned ?? []), ...results];
+    const index = rows.findIndex(({ _id }) => _id === thread._id);
+    const neighbor = rows[index + 1] ?? rows[index - 1];
+    const confirmed = await confirmDelete(thread, () => {
+      if (document.getElementById(threadLinkId(thread._id))) return null;
+      return (
+        (neighbor && document.getElementById(threadLinkId(neighbor._id))) ??
+        document.getElementById(NEW_CHAT_ID)
+      );
+    });
     if (confirmed && thread._id === activeId) router.replace("/chat");
   }
 
@@ -223,6 +243,7 @@ export function ThreadList() {
       <SidebarMenuItem key={thread._id}>
         <SidebarMenuButton asChild isActive={active}>
           <Link
+            id={threadLinkId(thread._id)}
             href={`/c/${thread._id}`}
             aria-current={active ? "page" : undefined}
             onClick={closeOnMobile}
