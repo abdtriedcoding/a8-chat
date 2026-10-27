@@ -271,13 +271,14 @@ export function ThreadView({ threadId }: { threadId: string }) {
         {shownThread?.archived && (
           <ArchivedNotice threadId={threadId} disabled={stale} />
         )}
-        {queuedPrompts.length > 0 && (
+        {/* Stays mounted while the queue is empty, so it can tell when the
+            last prompt started with its editor open. */}
+        {queue && (
           <QueueStack
-            prompts={queuedPrompts}
+            prompts={queue.prompts}
             paused={queuePaused}
             full={queueFull}
-            onEdit={queueActions.edit}
-            onDelete={queueActions.remove}
+            actions={queueActions}
             onResume={replyInProgress ? undefined : queueActions.resume}
             className="mx-auto max-w-3xl"
           />

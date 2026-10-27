@@ -4,6 +4,7 @@ import { AppLayoutSkeleton } from "@/components/app-layout-skeleton";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ApprovalAlerts } from "@/components/approval-alerts";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
+import { QuietBoundary } from "@/components/quiet-boundary";
 import { SessionGuard } from "@/components/session-guard";
 import { SkipLink } from "@/components/skip-link";
 import { TemporaryThreadProvider } from "@/components/temporary-thread";
@@ -45,8 +46,10 @@ export default async function ChatLayout({
         tokenPromise={tokenPromise}
         fallback={<AppLayoutSkeleton />}
       >
-        <SessionGuard />
-        <ApprovalAlerts />
+        <QuietBoundary>
+          <SessionGuard />
+          <ApprovalAlerts />
+        </QuietBoundary>
         <TemporaryThreadProvider>
           <ThreadSearchProvider>
             <KeyboardShortcutsProvider>

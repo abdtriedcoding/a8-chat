@@ -1,9 +1,11 @@
 /**
  * The one list of error codes the backend sends and the UI checks.
  *
- * Return or throw: functions the composer calls for a Send or an upload
- * return a refusal as `{ code, message }`, so the Convex client doesn't log
- * it as an error. Everything else throws `appError(...)`.
+ * Return or throw: functions the composer calls for a Send, an upload or a
+ * dictation return a refusal as `{ code, message }`, so the Convex client
+ * doesn't log it as an error. So does dictation's token when Deepgram can't
+ * be reached, since the prewarm asks for one without a tap. Everything else
+ * throws `appError(...)`.
  */
 import { ConvexError } from "convex/values";
 

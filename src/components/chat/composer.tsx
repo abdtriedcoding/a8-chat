@@ -5,6 +5,7 @@ import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
 import {
   useEffect,
   useEffectEvent,
+  useId,
   useRef,
   useState,
   type Ref,
@@ -34,6 +35,7 @@ import { useCredits } from "@/hooks/use-credits";
 import { useErrorToast } from "@/hooks/use-error-toast";
 import { useRestoredDraft } from "@/hooks/use-restored-draft";
 import { errorMessage } from "@/lib/errors";
+import { warnOnLeaveWhile } from "@/lib/leave-warning";
 import {
   getAcceptedMediaTypes,
   getAttachmentKind,
@@ -49,6 +51,7 @@ import { FileDropZone } from "./file-drop-zone";
 import { MentionHighlights } from "./mention-highlights";
 import { MentionMenu } from "./mention-menu";
 import { ModelPicker } from "./model-picker";
+import { OfflineNotice } from "./offline-notice";
 import { PromptLengthCount } from "./prompt-length";
 
 /**
@@ -86,6 +89,9 @@ const TEXT_BOX = "px-3 pt-3 pb-2 text-base md:text-sm";
  * While `onAutoApproveChange` is set, the toolbar has the auto-approve chip
  * (AutoApproveChip), on while `autoApprove` is. While `onModelChange` is
  * set, the model chip (ModelPicker) follows it.
+ *
+ * While the connection to Convex is down, a notice above the box says a
+ * Send goes once it's back (OfflineNotice).
  *
  * On the hosted a8, a notice above the box says when the user is out of
  * credits or low on them (CreditNotice). Out of credits, Send is off. When
@@ -126,6 +132,7 @@ export function Composer({
   className?: string;
 }) {
   const [text, setText] = useState(initialText);
+  const lengthCountId = useId();
   const model = modelOrDefault(modelId);
   const {
     acceptedMediaTypes,
@@ -192,7 +199,7 @@ export function Composer({
     setText("");
     clearAttachments();
     try {
-      await onSend(prompt, uploadedAttachments);
+      await warnOnLeaveWhile(onSend(prompt, uploadedAttachments));
       freePreviews(attachmentsToSend);
     } catch (error) {
       // Put the prompt back, unless something new was typed meanwhile.
@@ -244,6 +251,7 @@ export function Composer({
           onPick={mentions.pick}
         />
       )}
+      <OfflineNotice className="mb-2" />
       <CreditNotice credits={credits} className="mb-2" />
       <InputGroup>
         {mentions.blockedMentions.length > 0 && (
@@ -352,6 +360,7 @@ export function Composer({
             autoFocus={autoFocus}
             placeholder="Ask a8 anything…"
             aria-label="Message"
+            aria-describedby={lengthCountId}
             // relative paints the box over the highlights.
             className={cn("no-scrollbar relative max-h-52 min-h-11", TEXT_BOX)}
           />
@@ -395,7 +404,7 @@ export function Composer({
             />
           )}
           <div className="ml-auto flex items-center gap-2">
-            <PromptLengthCount text={text} />
+            <PromptLengthCount text={text} id={lengthCountId} />
             {dictation.available && (
               <DictationButton
                 state={dictation.state}
@@ -419,6 +428,7 @@ export function Composer({
               type="submit"
               variant="default"
               size="icon-sm"
+              aria-describedby={lengthCountId}
               disabled={!canSendOnceLive}
             >
               {disabled || sendPending ? <Spinner /> : <ArrowUpIcon />}

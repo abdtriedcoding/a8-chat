@@ -3,13 +3,15 @@
 import {
   ArchiveIcon,
   CalendarClockIcon,
+  CircleAlertIcon,
   PlugIcon,
   SearchIcon,
   SquarePenIcon,
 } from "lucide-react";
+import { catchError, type ErrorInfo } from "next/error";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AppIcon } from "@/components/icons/app-icon";
 import { NavUser, NavUserSkeleton } from "@/components/nav-user";
 import { ThreadList, ThreadListSkeleton } from "@/components/thread-list";
@@ -17,17 +19,72 @@ import { ThreadSearchButton } from "@/components/thread-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { useSignInOnUnauthenticated } from "@/components/session-guard";
 import { useCloseSidebarOnMobile } from "@/hooks/use-close-sidebar-on-mobile";
 import { useQueryWithLocalCopy } from "@/hooks/use-query-with-local-copy";
+import { errorMessage } from "@/lib/errors";
 import { api } from "../../convex/_generated/api";
 
+/**
+ * The sidebar, in its own error boundary. The layout renders it outside the
+ * pages' error.tsx, so without one a failed sidebar query would reach the
+ * root error.tsx and replace the whole app. A failure shows in place of the
+ * chat list instead, and the page stays.
+ */
 export function AppSidebar() {
+  return (
+    <SidebarBoundary>
+      <LiveSidebar />
+    </SidebarBoundary>
+  );
+}
+
+const SidebarBoundary = catchError(SidebarError);
+
+function SidebarError(_props: object, { error, retry }: ErrorInfo) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+  const signedOut = useSignInOnUnauthenticated(error);
+  return (
+    <StaticSidebar
+      threads={
+        signedOut ? null : (
+          <Empty className="p-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <CircleAlertIcon />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm">Chats couldn&apos;t load</EmptyTitle>
+              <EmptyDescription>{errorMessage(error)}</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button variant="outline" size="sm" onClick={retry}>
+                Try again
+              </Button>
+            </EmptyContent>
+          </Empty>
+        )
+      }
+    />
+  );
+}
+
+function LiveSidebar() {
   const { data: unreadRuns } = useQueryWithLocalCopy(
     api.scheduledPrompts.unreadCount,
     {},
@@ -47,6 +104,11 @@ export function AppSidebar() {
  * AppSidebar. Its links work, and search waits for the app.
  */
 export function AppSidebarSkeleton() {
+  return <StaticSidebar threads={<ThreadListSkeleton />} />;
+}
+
+/** The sidebar with no queries in it, and `threads` in the chat list's place. */
+function StaticSidebar({ threads }: { threads: ReactNode }) {
   return (
     <SidebarFrame
       search={
@@ -56,7 +118,7 @@ export function AppSidebarSkeleton() {
         </Button>
       }
       unreadRuns={0}
-      threads={<ThreadListSkeleton />}
+      threads={threads}
       user={<NavUserSkeleton />}
     />
   );

@@ -23,9 +23,12 @@ if (!convexUrl) {
 // accepts it, and fetches a new one shortly before it expires. Without it,
 // the client fetches a second token at once and every query runs again. Both
 // options are experimental in Convex, and either can be turned off alone.
+// Convex's leave prompt shows while any request is in flight, so the
+// composer asks only during a Send (lib/leave-warning).
 const convex = new ConvexReactClient(convexUrl, {
   expectAuth: true,
   initialAuthTokenReuse: true,
+  unsavedChangesWarning: false,
 });
 
 // The client opens its WebSocket on first use, which would be the first query

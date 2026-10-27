@@ -50,6 +50,7 @@ import { closeUnrunActions, waitingApprovalIds } from "./approval";
 import {
   addQueuedPrompt,
   getPausedQueue,
+  isBeingEdited,
   listQueuedPrompts,
   deleteQueuedPromptRows,
   pauseThreadQueue,
@@ -121,6 +122,9 @@ const QUEUE_FULL: QueueFull = {
 };
 
 const REPLY_IN_PROGRESS_MESSAGE = "Wait for the reply to finish first.";
+
+/** The longest queue key sendMessage keeps. A UUID has 36 characters. */
+const MAX_QUEUE_KEY_LENGTH = 64;
 
 export const startThread = mutation({
   args: {
@@ -207,6 +211,8 @@ export const sendMessage = mutation({
     threadId: v.string(),
     timeZone: vTimeZone,
     modelId: v.optional(v.string()),
+    // The queue stack's key for the prompt, if it's queued (getQueue).
+    queueKey: v.optional(v.string()),
   },
   returns: v.union(
     v.null(),
@@ -217,7 +223,7 @@ export const sendMessage = mutation({
   ),
   handler: async (
     ctx,
-    { prompt, attachmentFileIds = [], threadId, timeZone, modelId },
+    { prompt, attachmentFileIds = [], threadId, timeZone, modelId, queueKey },
   ) => {
     const user = await authorizeThreadAccess(ctx, threadId);
     const plan = await getPlanTerms(ctx, user._id);
@@ -265,6 +271,12 @@ export const sendMessage = mutation({
         prompt: text,
         attachmentFileIds: attachments.fileIds,
         timeZone,
+        // The client makes the key, so sendMessage drops one that's too
+        // long rather than save it.
+        queueKey:
+          queueKey && queueKey.length <= MAX_QUEUE_KEY_LENGTH
+            ? queueKey
+            : undefined,
       });
       return null;
     }
@@ -515,8 +527,9 @@ async function redoLastTurn(
  * counted again, since queueing it counted it. A queued scheduled run keeps
  * counting as its scheduled prompt's waiting run (moveWaitingRun).
  *
- * Starts nothing while the queue is paused, an action card waits or a
- * reply is running or could still start (isThreadBusy). Unless `resuming`,
+ * Starts nothing while the queue is paused, the user is editing the oldest
+ * prompt (startQueuedPromptEdit), an action card waits or a reply is running or
+ * could still start (isThreadBusy). Unless `resuming`,
  * it also pauses the queue after a failed reply, since the runner doesn't
  * always see the failure. A stopped reply with no text is saved as failed
  * too, and doesn't pause it. It pauses the queue too if one of the prompt's
@@ -534,7 +547,9 @@ async function startNextQueuedPrompt(
   { resuming }: { resuming: boolean },
 ) {
   const [next] = await listQueuedPrompts(ctx, threadId);
-  if (!next || (await getPausedQueue(ctx, threadId))) return null;
+  if (!next || isBeingEdited(next) || (await getPausedQueue(ctx, threadId))) {
+    return null;
+  }
   const turn = await getLastTurn(ctx, threadId);
   if (
     waitingApprovalIds(turn).length > 0 ||

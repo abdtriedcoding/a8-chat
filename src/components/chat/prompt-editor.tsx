@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -31,6 +31,7 @@ export function PromptEditor({
 }) {
   const [draft, setDraft] = useState(text);
   const [saving, setSaving] = useState(false);
+  const lengthCountId = useId();
   const showError = useErrorToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -90,14 +91,20 @@ export function PromptEditor({
           }}
           rows={1}
           aria-label="Edit message"
+          aria-describedby={lengthCountId}
           className="max-h-52 min-h-11 px-3 pt-3"
         />
         <InputGroupAddon align="block-end" className="justify-end">
-          <PromptLengthCount text={draft} />
+          <PromptLengthCount text={draft} id={lengthCountId} />
           <InputGroupButton size="sm" onClick={onCancel}>
             Cancel
           </InputGroupButton>
-          <InputGroupButton type="submit" variant="default" size="sm">
+          <InputGroupButton
+            type="submit"
+            variant="default"
+            size="sm"
+            aria-describedby={lengthCountId}
+          >
             {saving && <Spinner data-icon="inline-start" />}
             Save
           </InputGroupButton>

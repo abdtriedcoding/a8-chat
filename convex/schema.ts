@@ -241,6 +241,14 @@ export default defineSchema({
     // Set when a scheduled run queued the prompt, so starting it moves the
     // scheduled prompt's waitingRun to the prompt message.
     scheduledPromptId: v.optional(v.id("scheduledPrompts")),
+    // The key the composer made for the prompt (sendMessage's queueKey).
+    // The queue stack shows the prompt before the server saves it, and
+    // keys its row by this. With the same key, the saved prompt keeps the
+    // row, and an editor open in it stays open.
+    queueKey: v.optional(v.string()),
+    // While the user edits the prompt, it doesn't start before this time
+    // (startQueuedPromptEdit in convex/chat/queue.ts).
+    editingUntil: v.optional(v.number()),
   }).index("by_threadId", ["threadId"]),
   // One row per file a queued prompt attaches, so cleanUpUnsentUploads can
   // look a file up and keep it while the prompt waits. An array field can't
