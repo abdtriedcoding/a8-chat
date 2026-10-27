@@ -78,6 +78,7 @@ export const vUsageKind = v.union(
   v.literal("replyStep"),
   v.literal("webSearch"),
   v.literal("title"),
+  v.literal("dictation"),
 );
 
 /** A credit ledger row's period and credits. Times are in ms. */
@@ -488,7 +489,7 @@ export default defineSchema({
     userId: v.optional(v.string()),
     threadId: v.optional(v.string()),
     kind: vUsageKind,
-    // Unset for a web search.
+    // Unset for a web search or a dictation.
     model: v.optional(v.string()),
     tokens: v.optional(vTokenCounts),
     costUsd: v.number(),

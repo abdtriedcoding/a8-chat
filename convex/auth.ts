@@ -26,6 +26,7 @@ import {
 import { billingEnabled } from "./lib/billing";
 import { takeDeletedUsage } from "./lib/credits";
 import { EMAIL_TAKEN_MESSAGE } from "./lib/emailKey";
+import { readSignInDevice, setSignInDevice } from "./lib/signInDevice";
 import { checkUserImage, checkUserName } from "./lib/userName";
 import {
   checkSignIn,
@@ -57,22 +58,24 @@ async function queueEmail(
   await ctx.runMutation(internal.emails.sendAuthEmail, { kind, to, url });
 }
 
-// The email and client IP of a password sign-in, or null for other paths.
-// It reads the IP the way Better Auth's own rate limit does, and the IP is
-// null when Better Auth can't tell.
-function signInAttempt(authCtx: {
-  path?: string;
-  body?: { email?: unknown };
-  request?: Request;
-  headers?: Headers;
-  context: { options: BetterAuthOptions };
-}): SignInAttempt | null {
+// The email, client IP and device of a password sign-in, or null for other
+// paths. It reads the IP the way Better Auth's own rate limit does, and the
+// IP is null when Better Auth can't tell.
+async function signInAttempt(
+  authCtx: {
+    path?: string;
+    body?: { email?: unknown };
+    request?: Request;
+    headers?: Headers;
+    context: { options: BetterAuthOptions };
+  } & Parameters<typeof readSignInDevice>[0],
+): Promise<SignInAttempt | null> {
   if (authCtx.path !== "/sign-in/email") return null;
   const email = authCtx.body?.email;
   if (typeof email !== "string") return null;
   const source = authCtx.request ?? authCtx.headers;
   const ip = source ? getIp(source, authCtx.context.options) : null;
-  return { email, ip };
+  return { email, ip, device: await readSignInDevice(authCtx, email) };
 }
 
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
@@ -199,8 +202,9 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     },
     hooks: {
       // Checks the name and image a sign-up or profile change sends. Refuses
-      // a password sign-in once its email has too many wrong passwords, from
-      // its IP or from all IPs (rateLimits.ts).
+      // a password sign-in once its email has too many wrong passwords from
+      // its IP, or from all IPs. A browser with the email's device cookie
+      // counts its own wrong passwords in place of all IPs' (rateLimits.ts).
       before: createAuthMiddleware(async (authCtx) => {
         if (
           authCtx.path === "/sign-up/email" ||
@@ -225,7 +229,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
           if (checked === undefined) return;
           return { context: { body: { ...authCtx.body, name: checked } } };
         }
-        const attempt = signInAttempt(authCtx);
+        const attempt = await signInAttempt(authCtx);
         // Sign-ins arrive over HTTP, in an action. A query can't count.
         if (!attempt || !("runMutation" in ctx)) return;
         const retryAfter = await checkSignIn(ctx, attempt);
@@ -236,17 +240,19 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
         }
       }),
       // Counts a wrong password once Better Auth has checked it, so a correct
-      // password never counts, and clears the email and IP's count after a
-      // sign-in goes through. Only INVALID_EMAIL_OR_PASSWORD counts: other
+      // password never counts. After a sign-in goes through, it clears the
+      // email and IP's count and sets the email's device cookie
+      // (lib/signInDevice.ts). Only INVALID_EMAIL_OR_PASSWORD counts: other
       // 401s, like a failed session write after a correct password, aren't
       // guesses. Google sign-in and password reset use other paths and stay
       // open while the limit is hit.
       after: createAuthMiddleware(async (authCtx) => {
-        const attempt = signInAttempt(authCtx);
+        const attempt = await signInAttempt(authCtx);
         if (!attempt || !("runMutation" in ctx)) return;
         const returned = authCtx.context.returned;
         if (!isAPIError(returned)) {
           await clearSignInFailures(ctx, attempt);
+          await setSignInDevice(authCtx, attempt.email, attempt.device);
         } else if (returned.body?.code === "INVALID_EMAIL_OR_PASSWORD") {
           await countFailedSignIn(ctx, attempt);
         }
